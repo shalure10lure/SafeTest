@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: safetest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: safetest
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+    container_name: safetest-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: safetest
+      MINIO_ROOT_PASSWORD: safetest_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+volumes:
+  postgres_data:
+  minio_data:

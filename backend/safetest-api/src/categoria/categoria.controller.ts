@@ -9,8 +9,8 @@ import {
 } from '@nestjs/common';
 
 import { CategoriaService } from './categoria.service';
-import { CreateCategoriaDto } from './entity/dtos/create-categoria.dto';
-import { UpdateCategoriaDto } from './entity/dtos/update-categoria.dto';
+import { CreateCategoriaDto } from './entity/dtos/CreateCategoria.dto';
+import { UpdateCategoriaDto } from './entity/dtos/UpdateCategoria.dto';
 
 @Controller('categorias')
 export class CategoriaController {
