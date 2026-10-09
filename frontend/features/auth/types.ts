@@ -21,12 +21,34 @@ export interface RegisterEstudianteDto {
 
 export interface UsuarioAuth {
   id: number;
+  nombre: string;
+  correo: string;
   tipo: Rol;
-  [campo: string]: unknown;
 }
 
-export interface LoginResponse {
+export interface ApiMessage {
   message: string;
+}
+
+export interface LoginResponse extends ApiMessage {
   accessToken: string;
   usuario: UsuarioAuth;
+}
+
+export interface RefreshResponse {
+  accessToken: string;
+  usuario: UsuarioAuth;
+}
+
+export interface RegisterResponse extends ApiMessage {
+  docente?: {
+    id: number;
+    nombre: string;
+    correo: string;
+  };
+  estudiante?: {
+    id: number;
+    nombre: string;
+    correo: string;
+  };
 }

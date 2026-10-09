@@ -1,52 +1,72 @@
+import { BaseService } from '@/services/api/base.service';
 
 import type {
   LoginDto,
   LoginResponse,
+  RefreshResponse,
+  UsuarioAuth,
+  ApiMessage,
   RegisterDocenteDto,
   RegisterEstudianteDto,
-} from "../types";
+  RegisterResponse,
+} from '../types';
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:3000";
-
-async function post<T>(
-  endpoint: string,
-  data: object,
-): Promise<T> {
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => null);
-
-    const mensaje =
-      typeof error?.message === "string"
-        ? error.message
-        : "No se pudo completar la solicitud";
-
-    throw new Error(mensaje);
+class AuthService extends BaseService {
+  constructor() {
+    super('/auth');
   }
 
-  return response.json() as Promise<T>;
+  login(datos: LoginDto): Promise<LoginResponse> {
+    return this.post<LoginResponse, LoginDto>(
+      '/login',
+      datos,
+    );
+  }
+
+  registerDocente(
+    datos: RegisterDocenteDto,
+  ): Promise<RegisterResponse> {
+    return this.post<RegisterResponse, RegisterDocenteDto>(
+      '/register/docente',
+      datos,
+    );
+  }
+
+  registerEstudiante(
+    datos: RegisterEstudianteDto,
+  ): Promise<RegisterResponse> {
+    return this.post<RegisterResponse, RegisterEstudianteDto>(
+      '/register/estudiante',
+      datos,
+    );
+  }
+
+  refresh(): Promise<RefreshResponse> {
+    return this.post<RefreshResponse, Record<string, never>>(
+      '/refresh',
+      {},
+    );
+  }
+
+  checkStatus(accessToken: string): Promise<UsuarioAuth> {
+    return this.get<UsuarioAuth>('/check-status', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  }
+
+  logout(accessToken: string): Promise<ApiMessage> {
+    return this.post<ApiMessage, Record<string, never>>(
+      '/logout',
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+  }
 }
 
-export const authService = {
-  login(datos: LoginDto) {
-    return post<LoginResponse>("/auth/login", datos);
-  },
-
-  registerDocente(datos: RegisterDocenteDto) {
-    return post<unknown>("/auth/register/docente", datos);
-  },
-
-  registerEstudiante(datos: RegisterEstudianteDto) {
-    return post<unknown>("/auth/register/estudiante", datos);
-  },
-};
+export const authService = new AuthService();
