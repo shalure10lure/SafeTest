@@ -2,27 +2,31 @@ import {
   Column,
   Entity,
   JoinColumn,
-  ManyToOne,
+  OneToOne,
   PrimaryColumn,
 } from 'typeorm';
 
 import { Inciso } from '../../inciso/entity/inciso.entity';
+import { SolucionFormula } from '../../solucionformula/entity/solucionformula.entity';
 
-@Entity('opcion')
-export class Opcion {
+@Entity('solucion_inciso')
+export class SolucionInciso {
   @PrimaryColumn({ name: 'pregunta_id', type: 'int' })
   pregunta_id: number;
 
   @PrimaryColumn({ type: 'varchar' })
   letra: string;
 
-  @PrimaryColumn({ type: 'int' })
-  nro_opcion: number;
+  @Column({ type: 'decimal' })
+  valor_correcto: string;
 
-  @Column({ type: 'varchar' })
-  texto_opcion: string;
+  @Column({ type: 'decimal' })
+  tolerancia: string;
 
-  @ManyToOne(() => Inciso, (inciso) => inciso.opciones, {
+  @Column({ type: 'text' })
+  rubrica: string;
+
+  @OneToOne(() => Inciso, (inciso) => inciso.solucion, {
     nullable: false,
   })
   @JoinColumn([

@@ -16,9 +16,14 @@ export class Materia {
   @Column({ length: 150 })
   nombre: string;
 
+  // Una materia agrupa varios temas.
   @OneToMany(() => Tema, (tema) => tema.materia)
   temas: Tema[];
 
-  @OneToMany(() => Paralelo, (paralelo) => paralelo.materia)
+  // Una materia puede tener varios paralelos.
+  @OneToMany(
+    () => Paralelo,
+    (paralelo) => paralelo.materia,
+  )
   paralelos: Paralelo[];
 }

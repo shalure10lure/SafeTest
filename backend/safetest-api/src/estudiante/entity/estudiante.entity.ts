@@ -6,6 +6,8 @@ import {
 } from 'typeorm';
 
 import { Inscripcion } from '../../inscripcion/entity/inscripcion.entity';
+
+import { Rendicion } from '../../rendicion/entity/rendicion.entity';
 @Entity('estudiante')
 export class Estudiante {
   @PrimaryGeneratedColumn()
@@ -36,9 +38,17 @@ export class Estudiante {
   })
   refreshToken: string | null;
 
+  // Un estudiante puede tener varias inscripciones.
   @OneToMany(
     () => Inscripcion,
     (inscripcion) => inscripcion.estudiante,
   )
   inscripciones: Inscripcion[];
+
+  // Un estudiante puede rendir varios exámenes.
+  @OneToMany(
+    () => Rendicion,
+    (rendicion) => rendicion.estudiante,
+  )
+  rendiciones: Rendicion[];
 }

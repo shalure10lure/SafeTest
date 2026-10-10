@@ -6,16 +6,17 @@ import {
 } from 'typeorm';
 
 import { Paralelo } from '../../paralelo/entity/paralelo.entity';
+import { Examen } from '../../examen/entity/examen.entity';
 
 @Entity('semestre')
 export class Semestre {
-  @PrimaryGeneratedColumn()
+  @PrimaryGeneratedColumn({ name: 'semestre_id' })
   semestre_id: number;
 
-  @Column({ length: 50 })
+  @Column({ type: 'varchar', length: 50 })
   gestion: string;
 
-  @Column()
+  @Column({ type: 'int' })
   nro_pruebas: number;
 
   @OneToMany(
@@ -23,4 +24,10 @@ export class Semestre {
     (paralelo) => paralelo.semestre,
   )
   paralelos: Paralelo[];
+
+  @OneToMany(
+    () => Examen,
+    (examen) => examen.semestre,
+  )
+  examenes: Examen[];
 }

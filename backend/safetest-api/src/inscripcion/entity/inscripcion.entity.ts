@@ -10,15 +10,16 @@ import { Paralelo } from '../../paralelo/entity/paralelo.entity';
 
 @Entity('inscripcion')
 export class Inscripcion {
-  @PrimaryColumn()
+  @PrimaryColumn({ name: 'estudiante_id', type: 'int' })
   estudiante_id: number;
 
-  @PrimaryColumn()
+  @PrimaryColumn({ name: 'paralelo_id', type: 'int' })
   paralelo_id: number;
 
   @ManyToOne(
     () => Estudiante,
     (estudiante) => estudiante.inscripciones,
+    { nullable: false },
   )
   @JoinColumn({ name: 'estudiante_id' })
   estudiante: Estudiante;
@@ -26,6 +27,7 @@ export class Inscripcion {
   @ManyToOne(
     () => Paralelo,
     (paralelo) => paralelo.inscripciones,
+    { nullable: false },
   )
   @JoinColumn({ name: 'paralelo_id' })
   paralelo: Paralelo;

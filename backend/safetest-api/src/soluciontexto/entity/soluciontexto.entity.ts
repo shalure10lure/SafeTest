@@ -8,23 +8,22 @@ import {
 
 import { Inciso } from '../../inciso/entity/inciso.entity';
 
-@Entity('opcion')
-export class Opcion {
+@Entity('solucion_texto')
+export class SolucionTexto {
   @PrimaryColumn({ name: 'pregunta_id', type: 'int' })
   pregunta_id: number;
 
   @PrimaryColumn({ type: 'varchar' })
   letra: string;
 
-  @PrimaryColumn({ type: 'int' })
-  nro_opcion: number;
+  @PrimaryColumn({ type: 'varchar' })
+  respuesta_aceptada: string;
 
-  @Column({ type: 'varchar' })
-  texto_opcion: string;
-
-  @ManyToOne(() => Inciso, (inciso) => inciso.opciones, {
-    nullable: false,
-  })
+  @ManyToOne(
+    () => Inciso,
+    (inciso) => inciso.solucionesTexto,
+    { nullable: false },
+  )
   @JoinColumn([
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
     { name: 'letra', referencedColumnName: 'letra' },
