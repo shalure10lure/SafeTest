@@ -39,6 +39,7 @@ import { SolucionOpcion } from './solucionopcion/entity/solucionopcion.entity';
 import { SolucionTexto } from './soluciontexto/entity/soluciontexto.entity';
 import { Tema } from './tema/entity/tema.entity';
 import { MateriaModule } from './materia/materia.module';
+import { SemestreModule } from './semestre/semestre.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { MateriaModule } from './materia/materia.module';
     CategoriaModule,
     AuthModule,
     MateriaModule,
+    SemestreModule,
   ],
 
   controllers: [AppController],
