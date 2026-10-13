@@ -1,45 +1,45 @@
-
 "use client";
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { authService } from "../services/auth.service";
+import { useRouter } from "next/navigation";
+
+import { useAuth } from "../hooks/useAuth";
 
 export default function LoginForm() {
+  const router = useRouter();
+
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
   const [recordarme, setRecordarme] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [mensaje, setMensaje] = useState("");
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  const {
+    login,
+    isLoading: loading,
+    error,
+  } = useAuth();
+
+  async function handleSubmit(
+    e: FormEvent<HTMLFormElement>,
+  ) {
     e.preventDefault();
-    setError("");
-    setMensaje("");
-    setLoading(true);
 
     try {
-      const resultado = await authService.login({
+      const usuario = await login({
         correo,
         password,
       });
 
-      setMensaje(
-        `Credenciales aceptadas. Rol: ${resultado.usuario.tipo}`,
-      );
+      if (usuario.tipo === "docente") {
+        router.replace("/docente");
+        return;
+      }
 
-      // Pendiente: gestionar accessToken,
-      // sesión y redirección por rol.
-
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Error al iniciar sesión",
-      );
-    } finally {
-      setLoading(false);
+      if (usuario.tipo === "estudiante") {
+        router.replace("/estudiante");
+      }
+    } catch {
+      // useAuth administra y muestra el error.
     }
   }
 
@@ -113,18 +113,14 @@ export default function LoginForm() {
           </p>
         )}
 
-        {mensaje && (
-          <p role="status" className="text-sm text-green-700">
-            {mensaje}
-          </p>
-        )}
-
         <button
           type="submit"
           disabled={loading}
           className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
         >
-          {loading ? "Iniciando sesión..." : "Iniciar sesión"}
+          {loading
+            ? "Iniciando sesión..."
+            : "Iniciar sesión"}
         </button>
       </form>
 
