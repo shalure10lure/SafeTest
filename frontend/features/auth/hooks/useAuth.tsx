@@ -1,7 +1,13 @@
 
 "use client";
 
-import { useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import axios from "axios";
 
 import { authService } from "../services/auth.service";
@@ -12,6 +18,26 @@ import type {
   RegisterDocenteDto,
   RegisterEstudianteDto,
 } from "../types";
+
+interface AuthContextType {
+  usuario: UsuarioAuth | null;
+  accessToken: string | null;
+  isLoading: boolean;
+  isInitializing: boolean;
+  error: string;
+  mensaje: string;
+  login: (datos: LoginDto) => Promise<UsuarioAuth>;
+  registerDocente: (
+    datos: RegisterDocenteDto,
+  ) => Promise<unknown>;
+  registerEstudiante: (
+    datos: RegisterEstudianteDto,
+  ) => Promise<unknown>;
+  refreshSession: () => Promise<UsuarioAuth>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
 
 function obtenerMensajeError(
   err: unknown,
@@ -32,7 +58,11 @@ function obtenerMensajeError(
   return mensajePorDefecto;
 }
 
-export function useAuth() {
+export function AuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [usuario, setUsuario] =
     useState<UsuarioAuth | null>(null);
 
@@ -40,6 +70,7 @@ export function useAuth() {
     useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
 
@@ -54,7 +85,6 @@ export function useAuth() {
       setUsuario(resultado.usuario);
       setAccessToken(resultado.accessToken);
 
-      // Almacenamiento temporal para la integración inicial.
       sessionStorage.setItem(
         "accessToken",
         resultado.accessToken,
@@ -64,12 +94,12 @@ export function useAuth() {
 
       return resultado.usuario;
     } catch (err: unknown) {
-      const mensajeError = obtenerMensajeError(
-        err,
-        "No se pudo iniciar sesión.",
+      setError(
+        obtenerMensajeError(
+          err,
+          "No se pudo iniciar sesión.",
+        ),
       );
-
-      setError(mensajeError);
       throw err;
     } finally {
       setIsLoading(false);
@@ -81,7 +111,6 @@ export function useAuth() {
   ) {
     setIsLoading(true);
     setError("");
-    setMensaje("");
 
     try {
       const resultado =
@@ -96,7 +125,6 @@ export function useAuth() {
           "No se pudo registrar al docente.",
         ),
       );
-
       throw err;
     } finally {
       setIsLoading(false);
@@ -108,7 +136,6 @@ export function useAuth() {
   ) {
     setIsLoading(true);
     setError("");
-    setMensaje("");
 
     try {
       const resultado =
@@ -123,7 +150,6 @@ export function useAuth() {
           "No se pudo registrar al estudiante.",
         ),
       );
-
       throw err;
     } finally {
       setIsLoading(false);
@@ -135,7 +161,6 @@ export function useAuth() {
     setError("");
 
     try {
-      // El backend lee el refresh token de la cookie HttpOnly.
       const resultado = await authService.refresh();
 
       setUsuario(resultado.usuario);
@@ -184,7 +209,6 @@ export function useAuth() {
           "No se pudo cerrar la sesión en el servidor.",
         ),
       );
-
       throw err;
     } finally {
       setUsuario(null);
@@ -194,16 +218,44 @@ export function useAuth() {
     }
   }
 
-  return {
-    usuario,
-    accessToken,
-    isLoading,
-    error,
-    mensaje,
-    login,
-    registerDocente,
-    registerEstudiante,
-    refreshSession,
-    logout,
-  };
+  useEffect(() => {
+    refreshSession()
+      .catch(() => undefined)
+      .finally(() => setIsInitializing(false));
+
+    // La sesión se comprueba al montar el proveedor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        usuario,
+        accessToken,
+        isLoading,
+        isInitializing,
+        error,
+        mensaje,
+        login,
+        registerDocente,
+        registerEstudiante,
+        refreshSession,
+        logout,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const contexto = useContext(AuthContext);
+
+  if (!contexto) {
+    throw new Error(
+      "useAuth debe utilizarse dentro de AuthProvider.",
+    );
+  }
+
+  return contexto;
 }
