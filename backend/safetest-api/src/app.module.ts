@@ -38,6 +38,7 @@ import { SolucionInciso } from './solucioninciso/entity/solucioninciso.entity';
 import { SolucionOpcion } from './solucionopcion/entity/solucionopcion.entity';
 import { SolucionTexto } from './soluciontexto/entity/soluciontexto.entity';
 import { Tema } from './tema/entity/tema.entity';
+import { MateriaModule } from './materia/materia.module';
 
 @Module({
   imports: [
@@ -99,9 +100,10 @@ import { Tema } from './tema/entity/tema.entity';
 
     CategoriaModule,
     AuthModule,
+    MateriaModule,
   ],
 
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
