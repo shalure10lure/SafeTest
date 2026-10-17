@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 
 import { CategoriaModule } from './categoria/categoria.module';
 import { AuthModule } from './auth/auth.module';
+import { ParaleloModule } from './paralelo/paralelo.module';
 
 import { AsignacionPregunta } from './asignacionpregunta/entity/asignacionpregunta.entity';
 import { Categoria } from './categoria/entity/categoria.entity';
@@ -103,6 +104,7 @@ import { SemestreModule } from './semestre/semestre.module';
     AuthModule,
     MateriaModule,
     SemestreModule,
+    ParaleloModule,
   ],
 
   controllers: [AppController],

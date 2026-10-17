@@ -68,4 +68,18 @@ export abstract class BaseService {
 
     return response.data;
   }
+  protected async patch<T, D>(
+  endpoint: string,
+  data: D,
+  config?: AxiosRequestConfig,
+): Promise<T> {
+  const response: AxiosResponse<T> =
+    await apiClient.patch(
+      `${this.baseUrl}${endpoint}`,
+      data,
+      config,
+    );
+
+  return response.data;
+}
 }
