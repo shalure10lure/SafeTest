@@ -18,12 +18,27 @@ export class Docente {
   @Column({ length: 150, unique: true })
   correo: string;
 
-  @Column({
-    name: 'password_hash',
-    length: 255,
-    select: false,
-  })
-  passwordHash: string;
+    @Column({
+      name: 'password_hash',
+      type: 'varchar',
+      length: 255,
+      nullable: true,
+      select: false,
+    })
+    passwordHash: string | null;
+
+    // Identificador único de Google.
+    // Se completa únicamente cuando existe una
+    // vinculación autorizada con Google.
+    @Column({
+      name: 'google_sub',
+      type: 'varchar',
+      length: 255,
+      nullable: true,
+      select: false,
+    })
+    googleSub: string | null;
+
 
   @Column({
     name: 'refresh_token',

@@ -10,6 +10,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 
 import { Docente } from '../docente/entity/docente.entity';
 import { Estudiante } from '../estudiante/entity/estudiante.entity';
+import { GoogleAuthService } from './google-auth.service'; 
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { Estudiante } from '../estudiante/entity/estudiante.entity';
   providers: [
     AuthService,
     JwtStrategy,
+    GoogleAuthService,
   ],
 
   exports: [
