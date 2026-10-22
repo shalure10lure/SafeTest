@@ -2,6 +2,8 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -10,7 +12,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
-import * as nodemailer from 'nodemailer';
 import { MoreThan, Repository } from 'typeorm';
 
 import { Paralelo } from '../paralelo/entity/paralelo.entity';
@@ -21,6 +22,7 @@ import {
   Invitacion,
 } from './entity/invitacion.entity';
 import { CreateInvitacionDto } from './dto/create-invitacion.dto';
+import { ConexionCorreoService } from '../conexion-correo/conexion-correo.service';
 
 @Injectable()
 export class InvitacionService {
@@ -36,7 +38,7 @@ export class InvitacionService {
 
     @InjectRepository(Inscripcion)
     private readonly inscripcionRepository: Repository<Inscripcion>,
-
+    private readonly conexionCorreoService: ConexionCorreoService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -140,31 +142,30 @@ export class InvitacionService {
       );
     }
 
-    const smtpHost = this.configService.get<string>('SMTP_HOST');
-    const smtpPort = Number(
-      this.configService.get<string>('SMTP_PORT'),
-    );
-    const smtpUser = this.configService.get<string>('SMTP_USER');
-    const smtpPassword = this.configService.get<string>(
-      'SMTP_PASSWORD',
-    );
-    const smtpFrom = this.configService.get<string>('SMTP_FROM');
-    const frontendUrl = this.configService.get<string>(
-      'FRONTEND_URL',
-    );
+    
+// Obtener la dirección del frontend para crear el enlace.
+const frontendUrl = this.configService.get<string>(
+  'FRONTEND_URL',
+);
 
-    if (
-      !smtpHost ||
-      !smtpPort ||
-      !smtpUser ||
-      !smtpPassword ||
-      !smtpFrom ||
-      !frontendUrl
-    ) {
-      throw new ServiceUnavailableException(
-        'El servicio de correo no está configurado.',
-      );
-    }
+if (!frontendUrl) {
+  throw new ServiceUnavailableException(
+    'La dirección del frontend no está configurada.',
+  );
+}
+
+// Verificar que el docente haya autorizado Gmail.
+const conexionGmail =
+  await this.conexionCorreoService.obtenerEstado(
+    docenteId,
+  );
+
+if (!conexionGmail.conectado) {
+  throw new ForbiddenException(
+    'Debes conectar Gmail antes de enviar invitaciones.',
+  );
+}
+
 
     const token = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256')
@@ -193,36 +194,33 @@ export class InvitacionService {
     );
     enlace.searchParams.set('token', token);
 
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: {
-          user: smtpUser,
-          pass: smtpPassword,
-        },
-      });
+    
+try {
+  // Enviar desde el Gmail autorizado del docente.
+  await this.conexionCorreoService.enviarInvitacion(
+    docenteId,
+    correo,
+    paralelo.nombre_paralelo,
+    enlace.toString(),
+  );
+} catch (error: unknown) {
+  // La invitación existe, pero Gmail no confirmó
+  // correctamente el envío.
+  guardada.estado = EstadoInvitacion.ERROR;
 
-      await transporter.sendMail({
-        from: smtpFrom,
-        to: correo,
-        subject: 'Invitación a un paralelo de SafeTest',
-        text: [
-          'Has recibido una invitación a SafeTest.',
-          `Paralelo: ${paralelo.nombre_paralelo}`,
-          `Enlace: ${enlace.toString()}`,
-          'La invitación vence en 7 días.',
-        ].join('\n'),
-      });
-    } catch {
-      guardada.estado = EstadoInvitacion.ERROR;
-      await this.invitacionRepository.save(guardada);
+  await this.invitacionRepository.save(guardada);
 
-      throw new ServiceUnavailableException(
-        'La invitación se registró, pero falló el envío del correo.',
-      );
-    }
+  // Conservar los mensajes específicos del servicio:
+  // por ejemplo, Gmail desconectado o autorización vencida.
+  if (error instanceof HttpException) {
+    throw error;
+  }
+
+  throw new ServiceUnavailableException(
+    'La invitación se registró, pero Gmail no pudo enviarla.',
+  );
+}
+
 
     guardada.fecha_envio = new Date();
 

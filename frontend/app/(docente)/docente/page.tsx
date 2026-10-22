@@ -13,6 +13,7 @@ export default function Home() {
           <p className="mt-2 text-slate-600">
             Pantalla docente
           </p>
+          
         </section>
       </main>
     </RoleGuard>

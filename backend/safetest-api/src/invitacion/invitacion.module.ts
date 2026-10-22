@@ -9,6 +9,7 @@ import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 
 import { InvitacionController } from './invitacion.controller';
 import { InvitacionService } from './invitacion.service';
+import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { InvitacionService } from './invitacion.service';
       Estudiante,
       Inscripcion,
     ]),
+    ConexionCorreoModule,
   ],
   controllers: [InvitacionController],
   providers: [InvitacionService],

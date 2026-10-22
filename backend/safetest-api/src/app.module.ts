@@ -43,6 +43,7 @@ import { MateriaModule } from './materia/materia.module';
 import { SemestreModule } from './semestre/semestre.module';
 import { Invitacion } from './invitacion/entity/invitacion.entity';
 import { InvitacionModule } from './invitacion/invitacion.module';
+import { ConexionCorreoModule } from './conexion-correo/conexion-correo.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { InvitacionModule } from './invitacion/invitacion.module';
           SolucionTexto,
           Tema,
           Invitacion,
+          
         ],
         autoLoadEntities: true,
         synchronize: false,
@@ -109,6 +111,7 @@ import { InvitacionModule } from './invitacion/invitacion.module';
     SemestreModule,
     ParaleloModule,
     InvitacionModule,
+    ConexionCorreoModule,
   ],
 
   controllers: [AppController],
