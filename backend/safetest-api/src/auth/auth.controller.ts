@@ -15,10 +15,15 @@ import { AuthService } from './auth.service';
 
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
+import { GoogleAuthService } from './google-auth.service';
+import { timingSafeEqual } from 'crypto';
+import { ConflictException } from '@nestjs/common';
+
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   // REGISTRAR DOCENTE
@@ -179,4 +184,132 @@ export class AuthController {
       usuario.tipo,
     );
   }
+  
+  // INICIAR AUTENTICACIÓN CON GOOGLE
+
+  @Get('google')
+  async iniciarGoogle(
+    @Res() response: Response,
+  ) {
+    const { url, state, codeVerifier } =
+      await this.googleAuthService.crearSolicitud();
+
+    const opciones = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      path: '/auth/google/callback',
+      maxAge: 5 * 60 * 1000,
+    };
+
+    // Cookies temporales para validar el flujo OAuth.
+    response.cookie(
+      'safetest_google_state',
+      state,
+      opciones,
+    );
+
+    response.cookie(
+      'safetest_google_pkce',
+      codeVerifier,
+      opciones,
+    );
+
+    return response.redirect(url);
+  }
+
+  // RECIBIR LA RESPUESTA DE GOOGLE
+
+  @Get('google/callback')
+  async googleCallback(
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const frontendUrl =
+      process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    const codigo = request.query.code;
+    const estado = request.query.state;
+
+    const estadoGuardado =
+      request.cookies?.safetest_google_state;
+
+    const verificador =
+      request.cookies?.safetest_google_pkce;
+
+    // Eliminar las cookies temporales después del intento.
+    response.clearCookie('safetest_google_state', {
+      path: '/auth/google/callback',
+    });
+
+    response.clearCookie('safetest_google_pkce', {
+      path: '/auth/google/callback',
+    });
+
+    if (
+      typeof codigo !== 'string' ||
+      typeof estado !== 'string' ||
+      typeof estadoGuardado !== 'string' ||
+      typeof verificador !== 'string'
+    ) {
+      return response.redirect(
+        `${frontendUrl}/login?google_error=cancelado`,
+      );
+    }
+
+    // Evitar solicitudes de autenticación falsificadas.
+    const recibido = Buffer.from(estado);
+    const esperado = Buffer.from(estadoGuardado);
+
+    if (
+      recibido.length !== esperado.length ||
+      !timingSafeEqual(recibido, esperado)
+    ) {
+      return response.redirect(
+        `${frontendUrl}/login?google_error=estado`,
+      );
+    }
+
+    try {
+      // Validar la identidad mediante Google.
+      const perfil =
+        await this.googleAuthService.validarRespuesta(
+          codigo,
+          verificador,
+        );
+
+      // Crear o recuperar el docente y generar JWT.
+      const resultado =
+        await this.authService.loginConGoogle(perfil);
+
+      // Guardamos el refresh token en cookie HttpOnly.
+      response.cookie(
+        'refresh_token',
+        resultado.refreshToken,
+        {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        },
+      );
+
+      // Sin enviar access tokens en la URL.
+      return response.redirect(
+        `${frontendUrl}/google/resultado`,
+      );
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        return response.redirect(
+          `${frontendUrl}/login?google_error=cuenta_existente`,
+        );
+      }
+
+      return response.redirect(
+        `${frontendUrl}/login?google_error=autenticacion`,
+      );
+    }
+  }
+
 }

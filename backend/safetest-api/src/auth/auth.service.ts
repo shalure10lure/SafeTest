@@ -120,7 +120,16 @@ export class AuthService {
       .where('docente.correo = :correo', { correo })
       .getOne();
 
+    
     if (docente) {
+      // Las cuentas creadas solo con Google
+      // no tienen contraseña de SafeTest.
+      if (!docente.passwordHash) {
+        throw new UnauthorizedException(
+          'Correo o contraseña incorrectos',
+        );
+      }
+
       const passwordValida = await argon2.verify(
         docente.passwordHash,
         password,
@@ -139,6 +148,7 @@ export class AuthService {
         'docente',
       );
     }
+
 
     // Si no es docente, buscamos ESTUDIANTE
     
@@ -174,6 +184,70 @@ export class AuthService {
       estudiante.nombre_completo,
       estudiante.correo_institucional,
       'estudiante',
+    );
+  }
+  
+  // REGISTRAR O INICIAR SESIÓN CON GOOGLE
+
+  async loginConGoogle(perfil: {
+    googleSub: string;
+    nombre: string;
+    correo: string;
+  }) {
+    // Primero buscamos al docente mediante su ID de Google.
+    let docente = await this.docenteRepository.findOne({
+      where: {
+        googleSub: perfil.googleSub,
+      },
+    });
+
+    if (!docente) {
+      // No vinculamos automáticamente cuentas tradicionales.
+      const cuentaExistente =
+        await this.docenteRepository.findOne({
+          where: { correo: perfil.correo },
+        });
+
+      if (cuentaExistente) {
+        throw new ConflictException(
+          'Este correo ya tiene una cuenta en SafeTest. ' +
+          'Inicia sesión con tu contraseña para vincular Google.',
+        );
+      }
+
+      // Evitamos que Google cree una cuenta docente con
+      // el mismo correo de un estudiante registrado.
+      const estudianteExistente =
+        await this.estudianteRepository.findOne({
+          where: {
+            correo_institucional: perfil.correo,
+          },
+        });
+
+      if (estudianteExistente) {
+        throw new ConflictException(
+          'Este correo ya pertenece a una cuenta estudiante.',
+        );
+      }
+
+      // Crear un docente nuevo sin contraseña local.
+      const nuevoDocente = this.docenteRepository.create({
+        nombre: perfil.nombre,
+        correo: perfil.correo,
+        googleSub: perfil.googleSub,
+        passwordHash: null,
+      });
+
+      docente =
+        await this.docenteRepository.save(nuevoDocente);
+    }
+
+    // Reutilizamos nuestro sistema JWT existente.
+    return this.generarTokens(
+      docente.docente_id,
+      docente.nombre,
+      docente.correo,
+      'docente',
     );
   }
 

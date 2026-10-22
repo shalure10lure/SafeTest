@@ -12,6 +12,7 @@ import type {
 } from '../types';
 
 class AuthService extends BaseService {
+  private refreshEnCurso: Promise<RefreshResponse> | null = null;
   constructor() {
     super('/auth');
   }
@@ -41,12 +42,26 @@ class AuthService extends BaseService {
     );
   }
 
-  refresh(): Promise<RefreshResponse> {
-    return this.post<RefreshResponse, Record<string, never>>(
-      '/refresh',
-      {},
-    );
-  }
+  
+    refresh(): Promise<RefreshResponse> {
+      // Si ya estamos recuperando la sesión,
+      // reutilizamos la misma solicitud.
+      if (this.refreshEnCurso) {
+        return this.refreshEnCurso;
+      }
+
+      this.refreshEnCurso =
+        this.post<
+          RefreshResponse,
+          Record<string, never>
+        >('/refresh', {}).finally(() => {
+          // Cuando termina, permitimos futuras renovaciones.
+          this.refreshEnCurso = null;
+        });
+
+      return this.refreshEnCurso;
+    }
+
 
   checkStatus(accessToken: string): Promise<UsuarioAuth> {
     return this.get<UsuarioAuth>('/check-status', {

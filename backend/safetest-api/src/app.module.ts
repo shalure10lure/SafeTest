@@ -41,6 +41,9 @@ import { SolucionTexto } from './soluciontexto/entity/soluciontexto.entity';
 import { Tema } from './tema/entity/tema.entity';
 import { MateriaModule } from './materia/materia.module';
 import { SemestreModule } from './semestre/semestre.module';
+import { Invitacion } from './invitacion/entity/invitacion.entity';
+import { InvitacionModule } from './invitacion/invitacion.module';
+import { ConexionCorreoModule } from './conexion-correo/conexion-correo.module';
 
 @Module({
   imports: [
@@ -94,9 +97,11 @@ import { SemestreModule } from './semestre/semestre.module';
           SolucionOpcion,
           SolucionTexto,
           Tema,
+          Invitacion,
+          
         ],
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: false,
       }),
     }),
 
@@ -105,6 +110,8 @@ import { SemestreModule } from './semestre/semestre.module';
     MateriaModule,
     SemestreModule,
     ParaleloModule,
+    InvitacionModule,
+    ConexionCorreoModule,
   ],
 
   controllers: [AppController],

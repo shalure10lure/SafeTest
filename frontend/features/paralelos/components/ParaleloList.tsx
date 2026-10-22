@@ -75,14 +75,25 @@ export default function ParaleloList({
                   </span>
                 </td>
 
+
                 <td className="px-5 py-4">
-                  <Link
-                    href={`/docente/paralelos/${paralelo.paralelo_id}/editar`}
-                    className="font-medium text-violet-700 hover:text-violet-900"
-                  >
-                    Editar
-                  </Link>
+                  <div className="flex items-center gap-4">
+                    <Link
+                      href={`/docente/paralelos/${paralelo.paralelo_id}`}
+                      className="font-medium text-blue-700 hover:text-blue-900"
+                    >
+                      Ver detalle
+                    </Link>
+
+                    <Link
+                      href={`/docente/paralelos/${paralelo.paralelo_id}/editar`}
+                      className="font-medium text-violet-700 hover:text-violet-900"
+                    >
+                      Editar
+                    </Link>
+                  </div>
                 </td>
+
               </tr>
             ))}
 

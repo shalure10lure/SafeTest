@@ -124,6 +124,38 @@ export default function LoginForm() {
         </button>
       </form>
 
+      <div className="mt-6">
+        <div className="mb-5 flex items-center gap-4">
+          <div className="h-px flex-1 bg-slate-200" />
+
+          <span className="text-sm text-slate-400">
+            O continúa con
+          </span>
+
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const apiUrl =
+              process.env.NEXT_PUBLIC_API_URL ??
+              "http://localhost:3001";
+
+            window.location.assign(
+              `${apiUrl.replace(/\/$/, "")}/auth/google`,
+            );
+          }}
+          className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+          <span className="text-lg font-bold text-blue-600">
+            G
+          </span>
+
+          Continuar como docente con Google
+        </button>
+      </div>
+
       <p className="mt-7 text-center text-sm text-slate-500">
         ¿No tienes una cuenta?{" "}
         <Link
