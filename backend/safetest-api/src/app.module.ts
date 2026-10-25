@@ -16,6 +16,7 @@ import { EnvioCalificacion } from './enviocalificacion/entity/enviocalificacion.
 import { Estudiante } from './estudiante/entity/estudiante.entity';
 import { EventoSeguridad } from './eventoseguridad/entity/eventoseguridad.entity';
 import { Examen } from './examen/entity/examen.entity';
+import { ExamenModule } from './examen/examen.module';
 import { ExamenPregunta } from './examenpregunta/entity/examenpregunta.entity';
 import { ExamenTema } from './examentema/entity/examentema.entity';
 import { Formula } from './formula/entity/formula.entity';
@@ -49,6 +50,7 @@ import { IaGeneracion } from './iageneracion/entity/iageneracion.entity';
 import { IaGeneracionMaterial } from './iageneracionmaterial/entity/iageneracionmaterial.entity';
 import { IaPropuestaPregunta } from './iapropuestapregunta/entity/iapropuestapregunta.entity';
 import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionreferencia.entity';
+
 
 @Module({
   imports: [
@@ -121,6 +123,7 @@ import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionre
     ParaleloModule,
     InvitacionModule,
     ConexionCorreoModule,
+    ExamenModule,
   ],
 
   controllers: [AppController],
