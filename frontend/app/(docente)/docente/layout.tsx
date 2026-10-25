@@ -9,7 +9,6 @@ import {
     useResumenDocente,
 } from '@/features/docente/hooks/useResumenDocente';
 import {
-    ACCIONES_TOPBAR_DOCENTE,
     NAV_DOCENTE,
     ROUTES,
 } from '@/constants/routes';
@@ -20,7 +19,6 @@ function DocenteShell({ children }: { children: ReactNode }) {
     return (
         <AppShell
             navegacion={NAV_DOCENTE}
-            acciones={ACCIONES_TOPBAR_DOCENTE}
             etiquetaRol="DOC"
             nombreRol="Docente"
             inicioHref={ROUTES.docente.inicio}
