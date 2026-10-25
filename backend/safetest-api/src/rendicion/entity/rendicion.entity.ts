@@ -24,11 +24,21 @@ export class Rendicion {
   @Column({ name: 'paralelo_id', type: 'int' })
   paralelo_id: number;
 
-  @Column({ name: 'nota_final', type: 'decimal' })
-  nota_final: string;
+  // CAMBIO: opcional (la nota no existe hasta corregir).
+  @Column({ name: 'nota_final', type: 'decimal', nullable: true })
+  nota_final: string | null;
 
-  @Column({ type: 'varchar' })
+  // CAMBIO: valor por defecto. 'en_curso' | 'enviada' | 'corregida'
+  @Column({ type: 'varchar', default: 'en_curso' })
   estado: string;
+
+  // ---------- NUEVO ----------
+  @Column({ name: 'fecha_inicio', type: 'timestamptz', nullable: true })
+  fecha_inicio: Date | null;
+
+  @Column({ name: 'fecha_envio', type: 'timestamptz', nullable: true })
+  fecha_envio: Date | null;
+  // ---------- FIN NUEVO ----------
 
   @ManyToOne(
     () => Estudiante,

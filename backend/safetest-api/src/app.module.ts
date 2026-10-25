@@ -44,6 +44,11 @@ import { SemestreModule } from './semestre/semestre.module';
 import { Invitacion } from './invitacion/entity/invitacion.entity';
 import { InvitacionModule } from './invitacion/invitacion.module';
 import { ConexionCorreoModule } from './conexion-correo/conexion-correo.module';
+import { MaterialAcademico } from './materialacademico/entity/materialacademico.entity';
+import { IaGeneracion } from './iageneracion/entity/iageneracion.entity';
+import { IaGeneracionMaterial } from './iageneracionmaterial/entity/iageneracionmaterial.entity';
+import { IaPropuestaPregunta } from './iapropuestapregunta/entity/iapropuestapregunta.entity';
+import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionreferencia.entity';
 
 @Module({
   imports: [
@@ -98,7 +103,11 @@ import { ConexionCorreoModule } from './conexion-correo/conexion-correo.module';
           SolucionTexto,
           Tema,
           Invitacion,
-          
+          MaterialAcademico,
+          IaGeneracion,
+          IaGeneracionMaterial,
+          IaPropuestaPregunta,
+          IaSolucionReferencia,
         ],
         autoLoadEntities: true,
         synchronize: false,

@@ -26,6 +26,20 @@ export class Pregunta {
   @Column({ name: 'tema_id', type: 'int' })
   tema_id: number;
 
+  // ---------- NUEVO ----------
+  // 'facil' | 'media' | 'dificil'
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  dificultad: string | null;
+
+  // 'manual' | 'ia'
+  @Column({ type: 'varchar', length: 10, default: 'manual' })
+  origen: string;
+
+  // Baja lógica: no borrar físicamente preguntas usadas en exámenes.
+  @Column({ type: 'boolean', default: true })
+  activo: boolean;
+  // ---------- FIN NUEVO ----------
+
   @ManyToOne(() => Tema, (tema) => tema.preguntas, {
     nullable: false,
   })
