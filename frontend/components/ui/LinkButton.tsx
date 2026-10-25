@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 interface LinkButtonProps {
     href: string;
     children: ReactNode;
-    variante?: 'primaria' | 'secundaria';
+    variante?: 'primaria' | 'secundaria' | 'suave';
     icono?: LucideIcon;
     /** `false` = la pantalla destino aún no existe (se muestra deshabilitado). */
     disponible?: boolean;
@@ -20,6 +20,7 @@ const BASE =
 const VARIANTES = {
     primaria: 'bg-violet-600 text-white hover:bg-violet-700',
     secundaria: 'border border-slate-200 bg-white text-slate-800 hover:bg-slate-50',
+    suave: 'bg-violet-100 text-violet-700 hover:bg-violet-200',
 } as const;
 
 export default function LinkButton({
@@ -48,6 +49,7 @@ export default function LinkButton({
                     'cursor-not-allowed opacity-50',
                     variante === 'primaria' && 'hover:bg-violet-600',
                     variante === 'secundaria' && 'hover:bg-white',
+                    variante === 'suave' && 'hover:bg-violet-100',
                     className,
                 )}
             >

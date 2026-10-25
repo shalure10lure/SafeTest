@@ -69,7 +69,29 @@ export const NAV_DOCENTE: NavSection[] = [
     {
         titulo: 'Docente',
         items: [
-            { label: 'Inicio', href: ROUTES.docente.inicio, icono: House, disponible: true },
+            {
+                label: 'Inicio',
+                href: ROUTES.docente.inicio,
+                icono: House,
+                disponible: true,
+                topbar: {
+                    acciones: [
+                        {
+                            label: 'Gestión académica',
+                            href: ROUTES.docente.materias,
+                            variante: 'secundaria',
+                            disponible: true,
+                        },
+                        {
+                            label: 'Nueva pregunta',
+                            href: ROUTES.docente.preguntaNueva,
+                            variante: 'primaria',
+                            icono: Plus,
+                            disponible: false,
+                        },
+                    ],
+                },
+            },
         ],
     },
     {
@@ -102,8 +124,22 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Mis evaluaciones',
                 href: ROUTES.docente.evaluaciones,
                 icono: ClipboardList,
-                disponible: false,
+                disponible: true,
                 badgeKey: 'evaluaciones',
+                topbar: {
+                    seccion: 'Evaluaciones',
+                    titulo: 'Mis evaluaciones',
+                    subtitulo: 'Gestión de todas tus evaluaciones',
+                    acciones: [
+                        {
+                            label: 'Crear evaluación',
+                            href: ROUTES.docente.evaluacionNueva,
+                            variante: 'primaria',
+                            icono: Plus,
+                            disponible: false,
+                        },
+                    ],
+                },
             },
             { label: 'Crear evaluación', href: ROUTES.docente.evaluacionNueva, icono: Plus, disponible: false },
         ],
@@ -130,21 +166,6 @@ export const NAV_DOCENTE: NavSection[] = [
     },
 ];
 
-export const ACCIONES_TOPBAR_DOCENTE: AccionTopbar[] = [
-    {
-        label: 'Gestión académica',
-        href: ROUTES.docente.materias,
-        variante: 'secundaria',
-        disponible: true,
-    },
-    {
-        label: 'Nueva pregunta',
-        href: ROUTES.docente.preguntaNueva,
-        variante: 'primaria',
-        icono: Plus,
-        disponible: false,
-    },
-];
 
 /**
  * Devuelve el ítem de menú que corresponde a la URL actual.
@@ -166,4 +187,23 @@ export function buscarItemActivo(
         );
 
     return coincidencias.sort((a, b) => b.href.length - a.href.length)[0];
+}
+
+export interface TopbarItem {
+    titulo?: string;
+    subtitulo?: string;
+    /** Texto intermedio del breadcrumb: SafeTest > Docente > {seccion} > {label} */
+    seccion?: string;
+    acciones?: AccionTopbar[];
+}
+
+export interface NavItem {
+    label: string;
+    href: string;
+    icono: LucideIcon;
+    /** `false` = la pantalla todavía no existe (se muestra deshabilitado). */
+    disponible: boolean;
+    badgeKey?: BadgeKey;
+    /** Qué muestra el Topbar cuando este ítem está activo. */
+    topbar?: TopbarItem;
 }

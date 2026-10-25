@@ -9,7 +9,6 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import {
     ROUTES,
     buscarItemActivo,
-    type AccionTopbar,
     type BadgeKey,
     type NavSection,
 } from '@/constants/routes';
@@ -22,7 +21,6 @@ interface AppShellProps {
     /** Nombre del rol en el breadcrumb: "Docente", "Estudiante"... */
     nombreRol: string;
     inicioHref: string;
-    acciones?: AccionTopbar[];
     badges?: Partial<Record<BadgeKey, number>>;
     notificaciones?: number;
 }
@@ -33,7 +31,6 @@ export default function AppShell({
     etiquetaRol,
     nombreRol,
     inicioHref,
-    acciones,
     badges,
     notificaciones,
 }: AppShellProps) {
@@ -57,10 +54,12 @@ export default function AppShell({
 
     const itemActivo = buscarItemActivo(pathname, navegacion, inicioHref);
     const esInicio = pathname === inicioHref;
+    const topbar = itemActivo?.topbar;
 
     const migas: Migaja[] = [
         { label: 'SafeTest' },
         { label: nombreRol, href: inicioHref },
+        ...(topbar?.seccion ? [{ label: topbar.seccion }] : []),
         { label: esInicio ? 'Inicio' : (itemActivo?.label ?? '') },
     ].filter((miga) => miga.label !== '');
 
@@ -114,9 +113,11 @@ export default function AppShell({
             <div className="flex min-w-0 flex-1 flex-col">
                 <Topbar
                     migas={migas}
-                    titulo={esInicio ? `Bienvenido, ${primerNombre}` : undefined}
-                    subtitulo={esInicio ? 'Panel de gestión · SafeTest' : undefined}
-                    acciones={acciones}
+                    titulo={esInicio ? `Bienvenido, ${primerNombre}` : topbar?.titulo}
+                    subtitulo={
+                        esInicio ? 'Panel de gestión · SafeTest' : topbar?.subtitulo
+                    }
+                    acciones={topbar?.acciones}
                     notificaciones={notificaciones}
                     onAbrirMenu={() => setMenuAbierto(true)}
                 />
