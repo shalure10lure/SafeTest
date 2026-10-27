@@ -43,3 +43,23 @@ export interface EvaluacionCreada {
     titulo: string | null;
     estado: EstadoExamen;
 }
+
+export type ModoSeleccion = 'manual' | 'aleatorio';
+
+export interface CriterioTema {
+    tema_id: number;
+    cantidad: number;
+}
+
+/** Lo que devuelve `GET /examenes/:id/seleccion`. */
+export interface SeleccionEvaluacion {
+    examen_id: number;
+    materia_id: number | null;
+    modo_seleccion: ModoSeleccion;
+    preguntaIds: number[];
+    criterios: CriterioTema[];
+}
+
+export type GuardarSeleccionDto =
+    | { modo_seleccion: 'manual'; preguntaIds: number[] }
+    | { modo_seleccion: 'aleatorio'; criterios: CriterioTema[] };

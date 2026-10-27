@@ -144,7 +144,7 @@ export default function EvaluacionInfoForm() {
         setEnviando(true);
 
         try {
-            await evaluacionesService.create({
+            const creada = await evaluacionesService.create({
                 titulo: titulo.trim(),
                 materia_id: materiaId,
                 semestre_id: periodoId,
@@ -152,8 +152,8 @@ export default function EvaluacionInfoForm() {
                 instrucciones: instrucciones.trim() || undefined,
             });
 
-            // TODO(paso 2 del asistente): ir a la selección de preguntas.
-            router.push(ROUTES.docente.evaluaciones);
+            // Paso 2 del asistente: selección de preguntas.
+            router.push(`${ROUTES.docente.evaluaciones}/${creada.examen_id}/preguntas`);
         } catch (error) {
             setErrorEnvio(mensajeDeError(error));
             setEnviando(false);

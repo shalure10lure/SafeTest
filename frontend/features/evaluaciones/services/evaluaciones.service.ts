@@ -4,6 +4,8 @@ import type {
     CreateEvaluacionDto,
     Evaluacion,
     EvaluacionCreada,
+    GuardarSeleccionDto,
+    SeleccionEvaluacion,
 } from '../types';
 
 class EvaluacionesService extends BaseService {
@@ -21,6 +23,14 @@ class EvaluacionesService extends BaseService {
 
     create(data: CreateEvaluacionDto) {
         return this.post<EvaluacionCreada, CreateEvaluacionDto>('', data);
+    }
+
+    getSeleccion(id: number) {
+        return this.get<SeleccionEvaluacion>(`/${id}/seleccion`);
+    }
+
+    guardarSeleccion(id: number, data: GuardarSeleccionDto) {
+        return this.put<unknown, GuardarSeleccionDto>(`/${id}/seleccion`, data);
     }
 }
 
