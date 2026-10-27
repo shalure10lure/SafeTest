@@ -136,12 +136,23 @@ export const NAV_DOCENTE: NavSection[] = [
                             href: ROUTES.docente.evaluacionNueva,
                             variante: 'primaria',
                             icono: Plus,
-                            disponible: false,
+                            disponible: true,
                         },
                     ],
                 },
             },
-            { label: 'Crear evaluación', href: ROUTES.docente.evaluacionNueva, icono: Plus, disponible: false },
+            {
+                label: 'Crear evaluación',
+                href: ROUTES.docente.evaluacionNueva,
+                icono: Plus,
+                disponible: true,
+                topbar: {
+                    seccion: 'Evaluaciones',
+                    migaFinal: 'Información',
+                    titulo: 'Crear evaluación',
+                    subtitulo: 'Paso 1 de 5 — Información general',
+                },
+            },
         ],
     },
     {
@@ -195,6 +206,7 @@ export interface TopbarItem {
     /** Texto intermedio del breadcrumb: SafeTest > Docente > {seccion} > {label} */
     seccion?: string;
     acciones?: AccionTopbar[];
+    migaFinal?: string;
 }
 
 export interface NavItem {
