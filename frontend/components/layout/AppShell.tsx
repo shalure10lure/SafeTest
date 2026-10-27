@@ -60,7 +60,11 @@ export default function AppShell({
         { label: 'SafeTest' },
         { label: nombreRol, href: inicioHref },
         ...(topbar?.seccion ? [{ label: topbar.seccion }] : []),
-        { label: esInicio ? 'Inicio' : (itemActivo?.label ?? '') },
+        {
+            label: esInicio
+                ? 'Inicio'
+                : (topbar?.migaFinal ?? itemActivo?.label ?? ''),
+        },
     ].filter((miga) => miga.label !== '');
 
     const primerNombre = usuario?.nombre.split(' ')[0] ?? nombreRol;
