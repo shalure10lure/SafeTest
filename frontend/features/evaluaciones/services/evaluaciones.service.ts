@@ -1,11 +1,13 @@
 import { BaseService } from '@/services/api/base.service';
 
 import type {
+    BancoEvaluacion,
     CreateEvaluacionDto,
     Evaluacion,
     EvaluacionCreada,
+    EvaluacionDetalle,
     GuardarSeleccionDto,
-    SeleccionEvaluacion,
+    SeleccionGuardada,
 } from '../types';
 
 class EvaluacionesService extends BaseService {
@@ -18,19 +20,26 @@ class EvaluacionesService extends BaseService {
     }
 
     getById(id: number) {
-        return this.get<Evaluacion>(`/${id}`);
+        return this.get<EvaluacionDetalle>(`/${id}`);
     }
 
     create(data: CreateEvaluacionDto) {
         return this.post<EvaluacionCreada, CreateEvaluacionDto>('', data);
     }
 
-    getSeleccion(id: number) {
-        return this.get<SeleccionEvaluacion>(`/${id}/seleccion`);
+    /** Banco de preguntas del docente; por defecto, el de la materia de la evaluación. */
+    getBanco(id: number, materiaId?: number | null) {
+        return this.get<BancoEvaluacion>(
+            `/${id}/banco`,
+            materiaId ? { params: { materia_id: materiaId } } : undefined,
+        );
     }
 
     guardarSeleccion(id: number, data: GuardarSeleccionDto) {
-        return this.put<unknown, GuardarSeleccionDto>(`/${id}/seleccion`, data);
+        return this.put<SeleccionGuardada, GuardarSeleccionDto>(
+            `/${id}/preguntas`,
+            data,
+        );
     }
 }
 

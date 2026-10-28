@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-export type Tono = 'violet' | 'blue' | 'amber' | 'emerald' | 'slate';
+export type Tono = 'violet' | 'blue' | 'indigo' | 'amber' | 'emerald' | 'slate';
 
 const TONOS: Record<
     Tono,
@@ -20,6 +20,12 @@ const TONOS: Record<
         icono: 'bg-blue-100 text-blue-600',
         badge: 'border-blue-200 bg-blue-50 text-blue-700',
         tile: 'bg-blue-100 text-blue-700',
+    },
+    indigo: {
+        valor: 'text-indigo-600',
+        icono: 'bg-indigo-100 text-indigo-600',
+        badge: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+        tile: 'bg-indigo-100 text-indigo-700',
     },
     amber: {
         valor: 'text-amber-600',

@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
 
 import { evaluacionesService } from '../services/evaluaciones.service';
-import type { Evaluacion } from '../types';
+import type { EvaluacionDetalle } from '../types';
 
-export function useEvaluaciones() {
-    const [evaluaciones, setEvaluaciones] = useState<Evaluacion[]>([]);
+export function useEvaluacion(examenId: number) {
+    const [evaluacion, setEvaluacion] = useState<EvaluacionDetalle | null>(null);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
 
@@ -15,17 +16,21 @@ export function useEvaluaciones() {
         setError('');
 
         try {
-            setEvaluaciones(await evaluacionesService.getAll());
-        } catch {
-            setError('No se pudieron cargar las evaluaciones.');
+            setEvaluacion(await evaluacionesService.getById(examenId));
+        } catch (e) {
+            setError(
+                axios.isAxiosError(e) && e.response?.status === 404
+                    ? 'La evaluación no existe.'
+                    : 'No se pudo cargar la evaluación.',
+            );
         } finally {
             setCargando(false);
         }
-    }, []);
+    }, [examenId]);
 
     useEffect(() => {
         void recargar();
     }, [recargar]);
 
-    return { evaluaciones, cargando, error, recargar };
+    return { evaluacion, cargando, error, recargar };
 }
