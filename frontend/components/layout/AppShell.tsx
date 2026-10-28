@@ -9,6 +9,7 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import {
     ROUTES,
     buscarItemActivo,
+    obtenerTopbar,
     type BadgeKey,
     type NavSection,
 } from '@/constants/routes';
@@ -54,7 +55,7 @@ export default function AppShell({
 
     const itemActivo = buscarItemActivo(pathname, navegacion, inicioHref);
     const esInicio = pathname === inicioHref;
-    const topbar = itemActivo?.topbar;
+    const topbar = obtenerTopbar(itemActivo, pathname);
 
     const migas: Migaja[] = [
         { label: 'SafeTest' },

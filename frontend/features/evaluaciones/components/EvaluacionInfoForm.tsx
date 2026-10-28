@@ -3,7 +3,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
+import { mensajeDeError } from '../mensaje-error';
 
 import LinkButton from '@/components/ui/LinkButton';
 import { ROUTES } from '@/constants/routes';
@@ -21,16 +21,7 @@ function contarPalabras(texto: string): number {
     return limpio ? limpio.split(/\s+/).length : 0;
 }
 
-function mensajeDeError(error: unknown): string {
-    if (axios.isAxiosError<{ message?: string | string[] }>(error)) {
-        const mensaje = error.response?.data?.message;
 
-        if (Array.isArray(mensaje)) return mensaje.join(' ');
-        if (mensaje) return mensaje;
-    }
-
-    return 'No se pudo guardar la evaluación. Inténtalo de nuevo.';
-}
 
 function Campo({
     id,
@@ -152,11 +143,14 @@ export default function EvaluacionInfoForm() {
                 instrucciones: instrucciones.trim() || undefined,
             });
 
-            // Paso 2 del asistente: selección de preguntas.
-            router.push(`${ROUTES.docente.evaluaciones}/${creada.examen_id}/preguntas`);
+            router.push(ROUTES.docente.evaluacionPreguntas(creada.examen_id));
         } catch (error) {
-            setErrorEnvio(mensajeDeError(error));
-            setEnviando(false);
+            setErrorEnvio(
+                mensajeDeError(
+                    error,
+                    'No se pudo guardar la evaluación. Inténtalo de nuevo.',
+                ),
+            );
         }
     }
 
@@ -298,13 +292,12 @@ export default function EvaluacionInfoForm() {
             <div className="mt-5 flex items-center justify-between">
                 <LinkButton href={ROUTES.docente.evaluaciones}>Cancelar</LinkButton>
 
-                <button
+                <input
                     type="submit"
                     disabled={enviando}
                     className="inline-flex h-9 items-center justify-center rounded-lg bg-violet-600 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                    {enviando ? 'Guardando...' : 'Guardar borrador'}
-                </button>
+                    value={enviando ? 'Guardando...' : 'Siguiente →'}
+                />
             </div>
         </form>
     );
