@@ -4,7 +4,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 
 import { Examen } from './entity/examen.entity';
 import { Materia } from '../materia/entity/materia.entity';
@@ -13,14 +13,11 @@ import { Paralelo } from '../paralelo/entity/paralelo.entity';
 import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
-
-import { CreateExamenDto } from './dto/create-examen.dto';
-
-
-import { In } from 'typeorm';
 import { ExamenTema } from '../examentema/entity/examentema.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
+
+import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 
 @Injectable()
@@ -42,6 +39,7 @@ export class ExamenService {
 
         @InjectRepository(Inscripcion)
         private readonly inscripcionRepository: Repository<Inscripcion>,
+
         @InjectRepository(Pregunta)
         private readonly preguntaRepository: Repository<Pregunta>,
 
@@ -199,6 +197,21 @@ export class ExamenService {
             filasInscritos.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
         );
 
+        // En modo aleatorio las preguntas aún no están elegidas:
+        // se muestran las cantidades pedidas en los criterios.
+        const filasCriterios = await this.dataSource
+            .getRepository(ExamenTema)
+            .createQueryBuilder('et')
+            .select('et.examen_id', 'examen_id')
+            .addSelect('SUM(et.cantidad)', 'total')
+            .where('et.examen_id IN (:...ids)', { ids })
+            .groupBy('et.examen_id')
+            .getRawMany<{ examen_id: number; total: string }>();
+
+        const criteriosPorExamen = new Map(
+            filasCriterios.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
+        );
+
         return examenes.map((examen) => ({
             examen_id: examen.examen_id,
             titulo: examen.titulo,
@@ -220,7 +233,10 @@ export class ExamenService {
                 paralelo_id: item.paralelo.paralelo_id,
                 nombre_paralelo: item.paralelo.nombre_paralelo,
             })),
-            total_preguntas: preguntasPorExamen.get(examen.examen_id) ?? 0,
+            total_preguntas:
+                examen.modo_seleccion === 'aleatorio'
+                    ? (criteriosPorExamen.get(examen.examen_id) ?? 0)
+                    : (preguntasPorExamen.get(examen.examen_id) ?? 0),
             total_inscritos: inscritosPorExamen.get(examen.examen_id) ?? 0,
         }));
     }
@@ -229,6 +245,7 @@ export class ExamenService {
         return this.consultar(docenteId);
     }
 
+    // Detalle de una evaluación, incluida la selección de preguntas guardada.
     async findOne(examenId: number, docenteId: number) {
         const [examen] = await this.consultar(docenteId, examenId);
 
@@ -236,191 +253,23 @@ export class ExamenService {
             throw new NotFoundException('La evaluación no existe.');
         }
 
-        return examen;
-    }
-
-    // ---------- PASO 2: SELECCIÓN DE PREGUNTAS ----------
-
-    // Solo se edita una evaluación propia y en borrador.
-    private async obtenerBorrador(examenId: number, docenteId: number) {
-        const examen = await this.examenRepository.findOneBy({
-            examen_id: examenId,
-            docente_id: docenteId,
-        });
-
-        if (!examen) {
-            throw new NotFoundException('La evaluación no existe.');
-        }
-
-        if (examen.estado !== 'borrador') {
-            throw new BadRequestException(
-                'Solo se puede editar una evaluación en borrador.',
-            );
-        }
-
-        if (examen.materia_id === null) {
-            throw new BadRequestException('La evaluación no tiene materia.');
-        }
-
-        return examen as Examen & { materia_id: number };
-    }
-
-    async obtenerSeleccion(examenId: number, docenteId: number) {
-        const examen = await this.examenRepository.findOneBy({
-            examen_id: examenId,
-            docente_id: docenteId,
-        });
-
-        if (!examen) {
-            throw new NotFoundException('La evaluación no existe.');
-        }
-
-        const preguntas = await this.dataSource
-            .getRepository(ExamenPregunta)
-            .find({ where: { examen_id: examenId }, order: { orden: 'ASC' } });
-
-        const temas = await this.dataSource
-            .getRepository(ExamenTema)
-            .find({ where: { examen_id: examenId } });
+        const [preguntas, temas] = await Promise.all([
+            this.dataSource
+                .getRepository(ExamenPregunta)
+                .find({ where: { examen_id: examenId }, order: { orden: 'ASC' } }),
+            this.dataSource
+                .getRepository(ExamenTema)
+                .find({ where: { examen_id: examenId } }),
+        ]);
 
         return {
-            examen_id: examenId,
-            materia_id: examen.materia_id,
-            modo_seleccion: examen.modo_seleccion,
-            preguntaIds: preguntas.map((item) => item.pregunta_id),
-            criterios: temas.map((item) => ({
-                tema_id: item.tema_id,
-                cantidad: item.cantidad,
+            ...examen,
+            pregunta_ids: preguntas.map((fila) => fila.pregunta_id),
+            criterios: temas.map((fila) => ({
+                tema_id: fila.tema_id,
+                cantidad: fila.cantidad,
             })),
         };
-    }
-
-    // Las preguntas deben existir, estar activas y ser de la materia del examen.
-    private async validarPreguntas(ids: number[], materiaId: number) {
-        const encontradas = await this.dataSource.getRepository(Pregunta).count({
-            where: {
-                pregunta_id: In(ids),
-                activo: true,
-                tema: { materia_id: materiaId },
-            },
-        });
-
-        if (encontradas !== ids.length) {
-            throw new BadRequestException(
-                'Una o más preguntas no existen o no pertenecen a la materia de la evaluación.',
-            );
-        }
-    }
-
-    // Los temas deben ser de la materia y alcanzar las preguntas pedidas.
-    private async validarCriterios(
-        criterios: { tema_id: number; cantidad: number }[],
-        materiaId: number,
-    ) {
-        const ids = criterios.map((criterio) => criterio.tema_id);
-
-        if (new Set(ids).size !== ids.length) {
-            throw new BadRequestException('No repitas el mismo tema en los criterios.');
-        }
-
-        const temas = await this.dataSource.getRepository(Tema).find({
-            where: { tema_id: In(ids), materia_id: materiaId },
-        });
-
-        if (temas.length !== ids.length) {
-            throw new BadRequestException(
-                'Uno o más temas no pertenecen a la materia de la evaluación.',
-            );
-        }
-
-        const filas = await this.dataSource
-            .getRepository(Pregunta)
-            .createQueryBuilder('p')
-            .select('p.tema_id', 'tema_id')
-            .addSelect('COUNT(*)', 'total')
-            .where('p.tema_id IN (:...ids)', { ids })
-            .andWhere('p.activo = true')
-            .groupBy('p.tema_id')
-            .getRawMany<{ tema_id: number; total: string }>();
-
-        const disponibles = new Map(
-            filas.map((fila) => [Number(fila.tema_id), Number(fila.total)]),
-        );
-
-        for (const criterio of criterios) {
-            const total = disponibles.get(criterio.tema_id) ?? 0;
-
-            if (criterio.cantidad > total) {
-                const tema = temas.find((item) => item.tema_id === criterio.tema_id);
-
-                throw new BadRequestException(
-                    `El tema "${tema?.nombre_tema}" solo tiene ${total} preguntas disponibles.`,
-                );
-            }
-        }
-    }
-
-    async guardarSeleccion(
-        examenId: number,
-        dto: GuardarSeleccionDto,
-        docenteId: number,
-    ) {
-        const examen = await this.obtenerBorrador(examenId, docenteId);
-
-        const preguntaIds = dto.preguntaIds ?? [];
-        const criterios = dto.criterios ?? [];
-
-        if (dto.modo_seleccion === 'manual') {
-            await this.validarPreguntas(preguntaIds, examen.materia_id);
-        } else {
-            await this.validarCriterios(criterios, examen.materia_id);
-        }
-
-        // Se reemplaza la selección anterior completa, o no se guarda nada.
-        return this.dataSource.transaction(async (manager) => {
-            await manager.update(
-                Examen,
-                { examen_id: examenId },
-                { modo_seleccion: dto.modo_seleccion },
-            );
-
-            await manager.delete(ExamenPregunta, { examen_id: examenId });
-            await manager.delete(ExamenTema, { examen_id: examenId });
-
-            if (dto.modo_seleccion === 'manual') {
-                await manager.save(
-                    ExamenPregunta,
-                    preguntaIds.map((pregunta_id, indice) =>
-                        manager.create(ExamenPregunta, {
-                            examen_id: examenId,
-                            pregunta_id,
-                            orden: indice + 1,
-                        }),
-                    ),
-                );
-            } else {
-                await manager.save(
-                    ExamenTema,
-                    criterios.map((criterio) =>
-                        manager.create(ExamenTema, {
-                            examen_id: examenId,
-                            tema_id: criterio.tema_id,
-                            cantidad: criterio.cantidad,
-                        }),
-                    ),
-                );
-            }
-
-            return {
-                examen_id: examenId,
-                modo_seleccion: dto.modo_seleccion,
-                total_preguntas:
-                    dto.modo_seleccion === 'manual'
-                        ? preguntaIds.length
-                        : criterios.reduce((suma, item) => suma + item.cantidad, 0),
-            };
-        });
-
     }
 
     // BANCO DE PREGUNTAS PARA ARMAR LA EVALUACIÓN
@@ -554,5 +403,179 @@ export class ExamenService {
                 ).length,
             })),
         };
+    }
+
+    // GUARDAR LA SELECCIÓN DE PREGUNTAS (manual o aleatoria)
+
+    async guardarSeleccion(
+        examenId: number,
+        dto: GuardarSeleccionDto,
+        docenteId: number,
+    ) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        if (examen.estado !== 'borrador') {
+            throw new BadRequestException(
+                'Solo se puede cambiar la selección de una evaluación en borrador.',
+            );
+        }
+
+        if (dto.modo_seleccion === 'manual') {
+            const ids = dto.pregunta_ids ?? [];
+
+            await this.validarPreguntasManual(ids, docenteId);
+
+            await this.dataSource.transaction(async (manager) => {
+                await manager.delete(ExamenPregunta, { examen_id: examenId });
+                await manager.delete(ExamenTema, { examen_id: examenId });
+
+                if (ids.length > 0) {
+                    await manager.insert(
+                        ExamenPregunta,
+                        ids.map((pregunta_id, indice) => ({
+                            examen_id: examenId,
+                            pregunta_id,
+                            orden: indice + 1,
+                        })),
+                    );
+                }
+
+                await manager.update(
+                    Examen,
+                    { examen_id: examenId },
+                    { modo_seleccion: 'manual' },
+                );
+            });
+
+            return {
+                modo_seleccion: 'manual',
+                pregunta_ids: ids,
+                criterios: [],
+                total_preguntas: ids.length,
+            };
+        }
+
+        const criterios = dto.criterios ?? [];
+
+        await this.validarCriterios(criterios, examen);
+
+        await this.dataSource.transaction(async (manager) => {
+            await manager.delete(ExamenPregunta, { examen_id: examenId });
+            await manager.delete(ExamenTema, { examen_id: examenId });
+
+            if (criterios.length > 0) {
+                await manager.insert(
+                    ExamenTema,
+                    criterios.map((criterio) => ({
+                        examen_id: examenId,
+                        tema_id: criterio.tema_id,
+                        cantidad: criterio.cantidad,
+                    })),
+                );
+            }
+
+            await manager.update(
+                Examen,
+                { examen_id: examenId },
+                { modo_seleccion: 'aleatorio' },
+            );
+        });
+
+        return {
+            modo_seleccion: 'aleatorio',
+            pregunta_ids: [],
+            criterios: criterios.map((criterio) => ({
+                tema_id: criterio.tema_id,
+                cantidad: criterio.cantidad,
+            })),
+            total_preguntas: criterios.reduce(
+                (suma, criterio) => suma + criterio.cantidad,
+                0,
+            ),
+        };
+    }
+
+    // Las preguntas deben existir, estar activas y ser del docente.
+    private async validarPreguntasManual(ids: number[], docenteId: number) {
+        if (ids.length === 0) return;
+
+        const validas = await this.preguntaRepository
+            .createQueryBuilder('pregunta')
+            .innerJoin('pregunta.tema', 'tema')
+            .innerJoin('tema.materia', 'materia')
+            .where('pregunta.pregunta_id IN (:...ids)', { ids })
+            .andWhere('pregunta.activo = true')
+            .andWhere('materia.docente_id = :docenteId', { docenteId })
+            .getCount();
+
+        if (validas !== ids.length) {
+            throw new BadRequestException(
+                'Alguna pregunta no existe, está inactiva o no pertenece al docente.',
+            );
+        }
+    }
+
+    // Los temas deben ser de la materia de la evaluación, sin repetirse,
+    // y la cantidad no puede superar las preguntas disponibles.
+    private async validarCriterios(
+        criterios: { tema_id: number; cantidad: number }[],
+        examen: Examen,
+    ) {
+        if (criterios.length === 0) return;
+
+        if (examen.materia_id === null) {
+            throw new BadRequestException(
+                'La evaluación no tiene una materia asociada.',
+            );
+        }
+
+        const idsTemas = criterios.map((criterio) => criterio.tema_id);
+
+        if (new Set(idsTemas).size !== idsTemas.length) {
+            throw new BadRequestException(
+                'No repitas el mismo tema en los criterios.',
+            );
+        }
+
+        const temas = await this.temaRepository.find({
+            where: { tema_id: In(idsTemas), materia_id: examen.materia_id },
+        });
+
+        if (temas.length !== idsTemas.length) {
+            throw new BadRequestException(
+                'Algún tema no pertenece a la materia de la evaluación.',
+            );
+        }
+
+        const filas = await this.preguntaRepository
+            .createQueryBuilder('pregunta')
+            .select('pregunta.tema_id', 'tema_id')
+            .addSelect('COUNT(*)', 'total')
+            .where('pregunta.tema_id IN (:...ids)', { ids: idsTemas })
+            .andWhere('pregunta.activo = true')
+            .groupBy('pregunta.tema_id')
+            .getRawMany<{ tema_id: number; total: string }>();
+
+        const disponibles = new Map(
+            filas.map((fila) => [Number(fila.tema_id), Number(fila.total)]),
+        );
+
+        for (const criterio of criterios) {
+            const hay = disponibles.get(criterio.tema_id) ?? 0;
+
+            if (criterio.cantidad > hay) {
+                const tema = temas.find((item) => item.tema_id === criterio.tema_id);
+
+                throw new BadRequestException(
+                    `El tema "${tema?.nombre_tema}" solo tiene ${hay} preguntas disponibles.`,
+                );
+            }
+        }
     }
 }

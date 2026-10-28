@@ -5,6 +5,7 @@ import {
     Param,
     ParseIntPipe,
     Post,
+    Put,
     Query,
     Req,
     UseGuards,
@@ -12,6 +13,7 @@ import {
 
 import { ExamenService } from './examen.service';
 import { CreateExamenDto } from './dto/create-examen.dto';
+import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocenteGuard } from '../auth/guards/docente.guard';
@@ -38,6 +40,17 @@ export class ExamenController {
         @Req() request: any,
     ) {
         return this.examenService.getBanco(id, request.user.id, materiaId);
+    }
+
+    // GUARDAR LA SELECCIÓN DE PREGUNTAS (manual o aleatoria)
+
+    @Put(':id/preguntas')
+    guardarSeleccion(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: GuardarSeleccionDto,
+        @Req() request: any,
+    ) {
+        return this.examenService.guardarSeleccion(id, body, request.user.id);
     }
 
     // CONSULTAR UNA EVALUACIÓN

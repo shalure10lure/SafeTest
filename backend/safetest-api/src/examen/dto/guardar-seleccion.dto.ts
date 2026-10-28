@@ -1,11 +1,10 @@
 import { Type } from 'class-transformer';
 import {
-    ArrayNotEmpty,
+    ArrayMaxSize,
     ArrayUnique,
     IsArray,
     IsIn,
     IsInt,
-    Max,
     Min,
     ValidateIf,
     ValidateNested,
@@ -13,14 +12,13 @@ import {
 
 export class CriterioTemaDto {
     @Type(() => Number)
-    @IsInt({ message: 'El tema es obligatorio' })
+    @IsInt()
     @Min(1)
     tema_id: number;
 
     @Type(() => Number)
-    @IsInt({ message: 'La cantidad debe ser un entero' })
-    @Min(1, { message: 'La cantidad mínima es 1' })
-    @Max(100)
+    @IsInt()
+    @Min(1)
     cantidad: number;
 }
 
@@ -30,17 +28,20 @@ export class GuardarSeleccionDto {
     })
     modo_seleccion: 'manual' | 'aleatorio';
 
+    // Solo se exige en modo manual.
     @ValidateIf((dto: GuardarSeleccionDto) => dto.modo_seleccion === 'manual')
     @IsArray()
-    @ArrayNotEmpty({ message: 'Selecciona al menos una pregunta' })
+    @ArrayMaxSize(200)
     @ArrayUnique()
     @Type(() => Number)
     @IsInt({ each: true })
-    preguntaIds?: number[];
+    @Min(1, { each: true })
+    pregunta_ids?: number[];
 
+    // Solo se exige en modo aleatorio.
     @ValidateIf((dto: GuardarSeleccionDto) => dto.modo_seleccion === 'aleatorio')
     @IsArray()
-    @ArrayNotEmpty({ message: 'Agrega al menos un criterio por tema' })
+    @ArrayMaxSize(50)
     @ValidateNested({ each: true })
     @Type(() => CriterioTemaDto)
     criterios?: CriterioTemaDto[];
