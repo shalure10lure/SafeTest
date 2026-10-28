@@ -106,7 +106,7 @@ export default function EvaluacionesTabla({
                                 <td className="px-4 py-3.5">
                                     <div className="flex gap-2">
                                         <LinkButton
-                                            href={ROUTES.docente.evaluacionPreguntas(
+                                            href={ROUTES.docente.evaluacionEditar(
                                                 evaluacion.examen_id,
                                             )}
                                             variante="suave"

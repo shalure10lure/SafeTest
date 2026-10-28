@@ -103,3 +103,16 @@ export interface SeleccionGuardada {
     criterios: CriterioTema[];
     total_preguntas: number;
 }
+
+export interface UpdateEvaluacionDto {
+    titulo?: string;
+    materia_id?: number;
+    semestre_id?: number;
+    paralelo_id?: number;
+    instrucciones?: string;
+}
+
+export interface EvaluacionActualizada extends EvaluacionDetalle {
+    /** `true` si al cambiar de materia se borraron los criterios por tema. */
+    criterios_reiniciados: boolean;
+}

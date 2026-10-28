@@ -11,7 +11,7 @@ import { useMaterias } from '@/features/materias/hooks/useMaterias';
 import { cn } from '@/lib/utils';
 
 import { useBancoPreguntas } from '../hooks/useBancoPreguntas';
-import { useEvaluacion } from '../hooks/useEvaluacion';
+import { useEvaluacion } from '../hooks/useEvaluaciones';
 import { mensajeDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import type {
@@ -294,8 +294,7 @@ function FormularioSeleccion({
                 )}
 
                 <div className="flex items-center justify-between pt-1">
-                    {/* TODO(paso 6): habilitar cuando se pueda editar la información. */}
-                    <LinkButton href={ROUTES.docente.evaluaciones} disponible={false}>
+                    <LinkButton href={ROUTES.docente.evaluacionEditar(evaluacion.examen_id)}>
                         ← Anterior
                     </LinkButton>
 

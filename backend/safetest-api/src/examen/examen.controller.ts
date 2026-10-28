@@ -4,6 +4,7 @@ import {
     Get,
     Param,
     ParseIntPipe,
+    Patch,
     Post,
     Put,
     Query,
@@ -14,6 +15,7 @@ import {
 import { ExamenService } from './examen.service';
 import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
+import { UpdateExamenDto } from './dto/update-examen.dto';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocenteGuard } from '../auth/guards/docente.guard';
@@ -58,6 +60,16 @@ export class ExamenController {
     @Get(':id')
     findOne(@Param('id', ParseIntPipe) id: number, @Req() request: any) {
         return this.examenService.findOne(id, request.user.id);
+    }
+    // EDITAR LA INFORMACIÓN GENERAL (paso 1)
+
+    @Patch(':id')
+    update(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: UpdateExamenDto,
+        @Req() request: any,
+    ) {
+        return this.examenService.update(id, body, request.user.id);
     }
 
     // CREAR EVALUACIÓN EN BORRADOR

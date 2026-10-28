@@ -12,6 +12,7 @@ import { usePeriodos } from '@/features/periodos/hooks/usePeriodos';
 import { cn } from '@/lib/utils';
 
 import { evaluacionesService } from '../services/evaluaciones.service';
+import type { EvaluacionDetalle } from '../types';
 
 const ENTRADA =
     'w-full rounded-lg border bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
@@ -65,7 +66,12 @@ function Campo({
     );
 }
 
-export default function EvaluacionInfoForm() {
+export default function EvaluacionInfoForm({
+    evaluacion,
+}: {
+    /** Si viene, el formulario funciona en modo edición. */
+    evaluacion?: EvaluacionDetalle;
+}) {
     const router = useRouter();
 
     const {
@@ -80,11 +86,19 @@ export default function EvaluacionInfoForm() {
         error: errorParalelos,
     } = useParalelos();
 
-    const [titulo, setTitulo] = useState('');
-    const [periodoElegido, setPeriodoElegido] = useState<number | null>(null);
-    const [materiaId, setMateriaId] = useState<number | null>(null);
-    const [paraleloId, setParaleloId] = useState<number | null>(null);
-    const [instrucciones, setInstrucciones] = useState('');
+    const materiaOriginalId = evaluacion?.materia?.materia_id ?? null;
+
+    const [titulo, setTitulo] = useState(evaluacion?.titulo ?? '');
+    const [periodoElegido, setPeriodoElegido] = useState<number | null>(
+        evaluacion?.semestre.semestre_id ?? null,
+    );
+    const [materiaId, setMateriaId] = useState<number | null>(materiaOriginalId);
+    const [paraleloId, setParaleloId] = useState<number | null>(
+        evaluacion?.paralelos[0]?.paralelo_id ?? null,
+    );
+    const [instrucciones, setInstrucciones] = useState(
+        evaluacion?.instrucciones ?? '',
+    );
 
     const [intentoGuardar, setIntentoGuardar] = useState(false);
     const [enviando, setEnviando] = useState(false);
@@ -135,15 +149,28 @@ export default function EvaluacionInfoForm() {
         setEnviando(true);
 
         try {
-            const creada = await evaluacionesService.create({
-                titulo: titulo.trim(),
-                materia_id: materiaId,
-                semestre_id: periodoId,
-                paralelo_id: paraleloId,
-                instrucciones: instrucciones.trim() || undefined,
-            });
+            if (evaluacion) {
+                await evaluacionesService.update(evaluacion.examen_id, {
+                    titulo: titulo.trim(),
+                    materia_id: materiaId,
+                    semestre_id: periodoId,
+                    paralelo_id: paraleloId,
+                    // "" permite borrar las instrucciones.
+                    instrucciones: instrucciones.trim(),
+                });
 
-            router.push(ROUTES.docente.evaluacionPreguntas(creada.examen_id));
+                router.push(ROUTES.docente.evaluacionPreguntas(evaluacion.examen_id));
+            } else {
+                const creada = await evaluacionesService.create({
+                    titulo: titulo.trim(),
+                    materia_id: materiaId,
+                    semestre_id: periodoId,
+                    paralelo_id: paraleloId,
+                    instrucciones: instrucciones.trim() || undefined,
+                });
+
+                router.push(ROUTES.docente.evaluacionPreguntas(creada.examen_id));
+            }
         } catch (error) {
             setErrorEnvio(
                 mensajeDeError(
@@ -151,6 +178,7 @@ export default function EvaluacionInfoForm() {
                     'No se pudo guardar la evaluación. Inténtalo de nuevo.',
                 ),
             );
+            setEnviando(false); // antes quedaba bloqueado tras un error
         }
     }
 
@@ -281,6 +309,13 @@ export default function EvaluacionInfoForm() {
                         className={cn(ENTRADA, 'min-h-32 resize-y border-slate-200 py-2.5')}
                     />
                 </Campo>
+
+                {evaluacion && materiaId !== materiaOriginalId ? (
+                    <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800" role="status">
+                        Al cambiar la materia se reiniciarán los criterios por tema del
+                        modo aleatorio. Las preguntas elegidas manualmente se conservan.
+                    </p>
+                ) : null}
             </div>
 
             {errorEnvio && (

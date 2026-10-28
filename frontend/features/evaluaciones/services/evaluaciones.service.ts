@@ -8,6 +8,8 @@ import type {
     EvaluacionDetalle,
     GuardarSeleccionDto,
     SeleccionGuardada,
+    EvaluacionActualizada,
+    UpdateEvaluacionDto,
 } from '../types';
 
 class EvaluacionesService extends BaseService {
@@ -38,6 +40,12 @@ class EvaluacionesService extends BaseService {
     guardarSeleccion(id: number, data: GuardarSeleccionDto) {
         return this.put<SeleccionGuardada, GuardarSeleccionDto>(
             `/${id}/preguntas`,
+            data,
+        );
+    }
+    update(id: number, data: UpdateEvaluacionDto) {
+        return this.patch<EvaluacionActualizada, UpdateEvaluacionDto>(
+            `/${id}`,
             data,
         );
     }

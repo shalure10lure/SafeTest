@@ -40,6 +40,8 @@ export const ROUTES = {
         estadisticas: '/docente/estadisticas',
         evaluacionPreguntas: (id: number) =>
             `/docente/evaluaciones/${id}/preguntas`,
+        evaluacionEditar: (id: number) =>
+            `/docente/evaluaciones/${id}/editar`,
     },
     estudiante: {
         inicio: '/estudiante',

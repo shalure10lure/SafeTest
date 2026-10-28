@@ -19,6 +19,7 @@ import { Tema } from '../tema/entity/tema.entity';
 
 import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
+import { UpdateExamenDto } from './dto/update-examen.dto';
 
 @Injectable()
 export class ExamenService {
@@ -50,7 +51,10 @@ export class ExamenService {
     // La materia, el periodo y el paralelo deben ser del docente,
     // la materia debe estar asociada al periodo y el paralelo
     // debe corresponder a esa materia y a ese periodo.
-    private async validarRelaciones(dto: CreateExamenDto, docenteId: number) {
+    private async validarRelaciones(
+        dto: Pick<CreateExamenDto, 'materia_id' | 'semestre_id' | 'paralelo_id'>,
+        docenteId: number,
+    ) {
         const materia = await this.materiaRepository.findOne({
             where: { materia_id: dto.materia_id, docente_id: docenteId },
         });
@@ -141,6 +145,107 @@ export class ExamenService {
         });
     }
 
+    // EDITAR LA INFORMACIÓN GENERAL (paso 1)
+
+    async update(examenId: number, dto: UpdateExamenDto, docenteId: number) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+            relations: { paralelos: true },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        if (examen.estado !== 'borrador') {
+            throw new BadRequestException(
+                'Solo se puede editar la información de una evaluación en borrador.',
+            );
+        }
+
+        const titulo =
+            dto.titulo !== undefined ? dto.titulo.trim() : (examen.titulo ?? '');
+
+        if (!titulo) {
+            throw new BadRequestException(
+                'El nombre de la evaluación es obligatorio.',
+            );
+        }
+
+        const instrucciones =
+            dto.instrucciones !== undefined
+                ? dto.instrucciones.trim() || null
+                : examen.instrucciones;
+
+        // Lo que no se envía se conserva.
+        const materiaId = dto.materia_id ?? examen.materia_id;
+        const semestreId = dto.semestre_id ?? examen.semestre_id;
+        const paralelosActuales = (examen.paralelos ?? []).map(
+            (item) => item.paralelo_id,
+        );
+        const paraleloId = dto.paralelo_id ?? paralelosActuales[0];
+
+        if (materiaId === null || paraleloId === undefined) {
+            throw new BadRequestException(
+                'La evaluación no tiene materia o paralelo asociado.',
+            );
+        }
+
+        // Se valida el conjunto final: materia, periodo y paralelo coherentes.
+        await this.validarRelaciones(
+            {
+                materia_id: materiaId,
+                semestre_id: semestreId,
+                paralelo_id: paraleloId,
+            },
+            docenteId,
+        );
+
+        const cambiaMateria = materiaId !== examen.materia_id;
+        const cambiaContexto = cambiaMateria || semestreId !== examen.semestre_id;
+        const cambiaParalelo = !paralelosActuales.includes(paraleloId);
+
+        const criteriosReiniciados = await this.dataSource.transaction(
+            async (manager) => {
+                await manager.update(
+                    Examen,
+                    { examen_id: examenId },
+                    {
+                        titulo,
+                        instrucciones,
+                        materia_id: materiaId,
+                        semestre_id: semestreId,
+                    },
+                );
+
+                // Si no cambia el contexto ni el paralelo, no se tocan los
+                // paralelos (por ejemplo, los que se asignen en el paso 4).
+                if (cambiaContexto || cambiaParalelo) {
+                    await manager.delete(ParaleloExamen, { examen_id: examenId });
+                    await manager.insert(ParaleloExamen, {
+                        paralelo_id: paraleloId,
+                        examen_id: examenId,
+                    });
+                }
+
+                // Los criterios por tema pertenecen a la materia anterior.
+                if (cambiaMateria) {
+                    const borrados = await manager.delete(ExamenTema, {
+                        examen_id: examenId,
+                    });
+
+                    return (borrados.affected ?? 0) > 0;
+                }
+
+                return false;
+            },
+        );
+
+        return {
+            ...(await this.findOne(examenId, docenteId)),
+            criterios_reiniciados: criteriosReiniciados,
+        };
+    }
     // CONSULTAR EVALUACIONES (una o todas las del docente)
 
     private async consultar(docenteId: number, examenId?: number) {
