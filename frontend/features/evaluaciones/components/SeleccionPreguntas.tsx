@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Copy } from 'lucide-react';
@@ -11,11 +11,16 @@ import { useMaterias } from '@/features/materias/hooks/useMaterias';
 import { cn } from '@/lib/utils';
 
 import { useBancoPreguntas } from '../hooks/useBancoPreguntas';
-import { useEvaluacion } from '../hooks/useEvaluaciones';
+import { useEvaluacion } from '../hooks/useEvaluacion';
 import { mensajeDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
-import type { EvaluacionDetalle, ModoSeleccion } from '../types';
+import type {
+    EvaluacionDetalle,
+    GuardarSeleccionDto,
+    ModoSeleccion,
+} from '../types';
 
+import CriteriosAleatorios, { type FilaCriterio } from './CriteriosAleatorios';
 import PanelSeleccionadas from './PanelSeleccionadas';
 import PreguntaBancoItem from './PreguntaBancoItem';
 import SelectorModo from './SelectorModo';
@@ -36,21 +41,40 @@ function FormularioSeleccion({
     const router = useRouter();
     const { materias } = useMaterias();
 
-    const [modo, setModo] = useState<ModoSeleccion>('manual');
+    const materiaEvaluacionId = evaluacion.materia?.materia_id ?? null;
+
+    const [modo, setModo] = useState<ModoSeleccion>(evaluacion.modo_seleccion);
+
+    // Modo manual
     const [seleccionIds, setSeleccionIds] = useState<number[]>(
         evaluacion.pregunta_ids,
     );
-    const [materiaId, setMateriaId] = useState<number | null>(
-        evaluacion.materia?.materia_id ?? null,
-    );
+    const [materiaId, setMateriaId] = useState<number | null>(materiaEvaluacionId);
     const [busqueda, setBusqueda] = useState('');
+
+    // Modo aleatorio
+    const [filas, setFilas] = useState<FilaCriterio[]>(() =>
+        evaluacion.criterios.length > 0
+            ? evaluacion.criterios.map((criterio, indice) => ({
+                clave: indice + 1,
+                tema_id: criterio.tema_id,
+                cantidad: criterio.cantidad,
+            }))
+            : [{ clave: 1, tema_id: null, cantidad: 2 }],
+    );
+    const siguienteClave = useRef(filas.length + 1);
+
     const [guardando, setGuardando] = useState(false);
     const [errorGuardar, setErrorGuardar] = useState('');
 
+    // En modo aleatorio los temas deben ser los de la materia de la evaluación.
     const { banco, conocidas, cargando, error } = useBancoPreguntas(
         evaluacion.examen_id,
-        materiaId,
+        modo === 'aleatorio' ? materiaEvaluacionId : materiaId,
     );
+
+    const bancoActualizado =
+        materiaEvaluacionId === null || banco?.materia_id === materiaEvaluacionId;
 
     const visibles = useMemo(() => {
         const preguntas = banco?.preguntas ?? [];
@@ -75,15 +99,73 @@ function FormularioSeleccion({
         );
     }
 
+    function cambiarTema(clave: number, temaId: number | null) {
+        const disponibles = temaId
+            ? (banco?.temas.find((tema) => tema.tema_id === temaId)?.disponibles ?? 0)
+            : 0;
+
+        setFilas((actual) =>
+            actual.map((fila) => {
+                if (fila.clave !== clave) return fila;
+
+                // Al elegir un tema, la cantidad no puede superar lo disponible.
+                const cantidad = temaId
+                    ? Math.min(Math.max(fila.cantidad, 1), Math.max(disponibles, 1))
+                    : fila.cantidad;
+
+                return { ...fila, tema_id: temaId, cantidad };
+            }),
+        );
+    }
+
+    function cambiarCantidad(clave: number, cantidad: number) {
+        setFilas((actual) =>
+            actual.map((fila) =>
+                fila.clave === clave ? { ...fila, cantidad: Math.max(1, cantidad) } : fila,
+            ),
+        );
+    }
+
+    function agregarFila() {
+        const clave = siguienteClave.current++;
+
+        setFilas((actual) => [...actual, { clave, tema_id: null, cantidad: 2 }]);
+    }
+
+    function quitarFila(clave: number) {
+        setFilas((actual) =>
+            actual.length === 1 ? actual : actual.filter((fila) => fila.clave !== clave),
+        );
+    }
+
     async function guardar() {
-        setGuardando(true);
         setErrorGuardar('');
 
+        let datos: GuardarSeleccionDto;
+
+        if (modo === 'manual') {
+            datos = { modo_seleccion: 'manual', pregunta_ids: seleccionIds };
+        } else {
+            const criterios = filas.flatMap((fila) =>
+                fila.tema_id === null
+                    ? []
+                    : [{ tema_id: fila.tema_id, cantidad: fila.cantidad }],
+            );
+
+            if (criterios.length !== filas.length) {
+                setErrorGuardar(
+                    'Selecciona un tema en cada criterio o quita las filas que no uses.',
+                );
+                return;
+            }
+
+            datos = { modo_seleccion: 'aleatorio', criterios };
+        }
+
+        setGuardando(true);
+
         try {
-            await evaluacionesService.guardarSeleccion(evaluacion.examen_id, {
-                modo_seleccion: 'manual',
-                pregunta_ids: seleccionIds,
-            });
+            await evaluacionesService.guardarSeleccion(evaluacion.examen_id, datos);
 
             // TODO(paso 3 del asistente): ir a la configuración de la evaluación.
             router.push(ROUTES.docente.evaluaciones);
@@ -119,9 +201,9 @@ function FormularioSeleccion({
                     </p>
                 </div>
 
-                <SelectorModo modo={modo} onCambiar={setModo} />
+                <SelectorModo modo={modo} onCambiar={setModo} aleatorioDisponible />
 
-                {modo === 'manual' && (
+                {modo === 'manual' ? (
                     <>
                         <div className="flex gap-2.5 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800">
                             <Copy className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -148,7 +230,9 @@ function FormularioSeleccion({
                                 aria-label="Filtrar por materia"
                                 className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600 sm:w-48"
                             >
-                                {materiaId === null && <option value="">Selecciona una materia</option>}
+                                {materiaId === null && (
+                                    <option value="">Selecciona una materia</option>
+                                )}
                                 {opcionesMateria.map((materia) => (
                                     <option key={materia.materia_id} value={materia.materia_id}>
                                         {materia.nombre}
@@ -188,6 +272,19 @@ function FormularioSeleccion({
                             </ul>
                         )}
                     </>
+                ) : (
+                    <CriteriosAleatorios
+                        filas={filas}
+                        temas={banco?.temas ?? []}
+                        materiaNombre={evaluacion.materia?.nombre ?? 'la materia'}
+                        totalMateria={banco?.preguntas.length ?? 0}
+                        cargando={cargando || !bancoActualizado}
+                        error={error}
+                        onCambiarTema={cambiarTema}
+                        onCambiarCantidad={cambiarCantidad}
+                        onAgregar={agregarFila}
+                        onQuitar={quitarFila}
+                    />
                 )}
 
                 {errorGuardar && (
@@ -210,7 +307,7 @@ function FormularioSeleccion({
                     >
                         {guardando
                             ? 'Guardando...'
-                            : seleccionIds.length > 0
+                            : modo === 'manual' && seleccionIds.length > 0
                                 ? `Guardar selección (${seleccionIds.length})`
                                 : 'Guardar selección'}
                     </button>
