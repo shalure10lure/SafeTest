@@ -5,7 +5,7 @@ import {
     Param,
     ParseIntPipe,
     Post,
-    Put,
+    Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
@@ -15,7 +15,6 @@ import { CreateExamenDto } from './dto/create-examen.dto';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocenteGuard } from '../auth/guards/docente.guard';
-import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 
 @Controller('examenes')
 @UseGuards(JwtAuthGuard, DocenteGuard)
@@ -27,6 +26,18 @@ export class ExamenController {
     @Get()
     findAll(@Req() request: any) {
         return this.examenService.findAll(request.user.id);
+    }
+
+    // BANCO DE PREGUNTAS PARA ARMAR LA EVALUACIÓN
+
+    @Get(':id/banco')
+    getBanco(
+        @Param('id', ParseIntPipe) id: number,
+        @Query('materia_id', new ParseIntPipe({ optional: true }))
+        materiaId: number | undefined,
+        @Req() request: any,
+    ) {
+        return this.examenService.getBanco(id, request.user.id, materiaId);
     }
 
     // CONSULTAR UNA EVALUACIÓN
@@ -41,21 +52,5 @@ export class ExamenController {
     @Post()
     create(@Body() body: CreateExamenDto, @Req() request: any) {
         return this.examenService.create(body, request.user.id);
-    }
-
-    // PASO 2: CONSULTAR LA SELECCIÓN GUARDADA
-    @Get(':id/seleccion')
-    obtenerSeleccion(@Param('id', ParseIntPipe) id: number, @Req() request: any) {
-        return this.examenService.obtenerSeleccion(id, request.user.id);
-    }
-
-    // PASO 2: GUARDAR LA SELECCIÓN (manual o aleatoria)
-    @Put(':id/seleccion')
-    guardarSeleccion(
-        @Param('id', ParseIntPipe) id: number,
-        @Body() body: GuardarSeleccionDto,
-        @Req() request: any,
-    ) {
-        return this.examenService.guardarSeleccion(id, body, request.user.id);
     }
 }

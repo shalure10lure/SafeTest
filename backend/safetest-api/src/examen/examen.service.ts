@@ -42,6 +42,11 @@ export class ExamenService {
 
         @InjectRepository(Inscripcion)
         private readonly inscripcionRepository: Repository<Inscripcion>,
+        @InjectRepository(Pregunta)
+        private readonly preguntaRepository: Repository<Pregunta>,
+
+        @InjectRepository(Tema)
+        private readonly temaRepository: Repository<Tema>,
     ) { }
 
     // La materia, el periodo y el paralelo deben ser del docente,
@@ -415,5 +420,139 @@ export class ExamenService {
                         : criterios.reduce((suma, item) => suma + item.cantidad, 0),
             };
         });
+
+    }
+
+    // BANCO DE PREGUNTAS PARA ARMAR LA EVALUACIÓN
+
+    async getBanco(
+        examenId: number,
+        docenteId: number,
+        materiaIdSolicitada?: number,
+    ) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        const materiaId = materiaIdSolicitada ?? examen.materia_id;
+
+        if (materiaId === null || materiaId === undefined) {
+            throw new BadRequestException(
+                'La evaluación no tiene una materia asociada.',
+            );
+        }
+
+        const materia = await this.materiaRepository.findOne({
+            where: { materia_id: materiaId, docente_id: docenteId },
+        });
+
+        if (!materia) {
+            throw new BadRequestException(
+                'La materia no existe o no pertenece al docente.',
+            );
+        }
+
+        // Todas las preguntas activas del docente (de todas sus materias).
+        // El tipo y los puntos se calculan a partir de los incisos.
+        const filas = await this.preguntaRepository
+            .createQueryBuilder('pregunta')
+            .innerJoin('pregunta.tema', 'tema')
+            .innerJoin('tema.materia', 'materia')
+            .leftJoin('pregunta.incisos', 'inciso')
+            .select('pregunta.pregunta_id', 'pregunta_id')
+            .addSelect('pregunta.enunciado', 'enunciado')
+            .addSelect('pregunta.dificultad', 'dificultad')
+            .addSelect('tema.tema_id', 'tema_id')
+            .addSelect('tema.nombre_tema', 'nombre_tema')
+            .addSelect('materia.materia_id', 'materia_id')
+            .addSelect('materia.nombre', 'materia_nombre')
+            .addSelect('COALESCE(SUM(inciso.puntaje_max), 0)', 'puntos')
+            .addSelect(
+                `CASE
+           WHEN COUNT(DISTINCT inciso.tipo_respuesta) = 1 THEN MIN(inciso.tipo_respuesta)
+           WHEN COUNT(DISTINCT inciso.tipo_respuesta) > 1 THEN 'mixto'
+           ELSE NULL
+         END`,
+                'tipo_respuesta',
+            )
+            .where('materia.docente_id = :docenteId', { docenteId })
+            .andWhere('pregunta.activo = true')
+            .groupBy('pregunta.pregunta_id')
+            .addGroupBy('tema.tema_id')
+            .addGroupBy('materia.materia_id')
+            .orderBy('pregunta.pregunta_id', 'ASC')
+            .getRawMany<{
+                pregunta_id: number;
+                enunciado: string;
+                dificultad: string | null;
+                tema_id: number;
+                nombre_tema: string;
+                materia_id: number;
+                materia_nombre: string;
+                puntos: string;
+                tipo_respuesta: string | null;
+            }>();
+
+        // "Usada en N evaluaciones" (sin contar esta evaluación).
+        const idsPreguntas = filas.map((fila) => Number(fila.pregunta_id));
+
+        const filasUsos =
+            idsPreguntas.length === 0
+                ? []
+                : await this.dataSource
+                    .getRepository(ExamenPregunta)
+                    .createQueryBuilder('ep')
+                    .select('ep.pregunta_id', 'pregunta_id')
+                    .addSelect('COUNT(*)', 'total')
+                    .where('ep.pregunta_id IN (:...ids)', { ids: idsPreguntas })
+                    .andWhere('ep.examen_id <> :examenId', { examenId })
+                    .groupBy('ep.pregunta_id')
+                    .getRawMany<{ pregunta_id: number; total: string }>();
+
+        const usosPorPregunta = new Map(
+            filasUsos.map((fila) => [Number(fila.pregunta_id), Number(fila.total)]),
+        );
+
+        const preguntasMateria = filas.filter(
+            (fila) => Number(fila.materia_id) === materiaId,
+        );
+
+        const temas = await this.temaRepository.find({
+            where: { materia_id: materiaId },
+            order: { nombre_tema: 'ASC' },
+        });
+
+        return {
+            materia_id: materiaId,
+            // Total de preguntas del docente, de todas sus materias.
+            total_banco: filas.length,
+            preguntas: preguntasMateria.map((fila) => ({
+                pregunta_id: Number(fila.pregunta_id),
+                enunciado: fila.enunciado,
+                dificultad: fila.dificultad,
+                tipo_respuesta: fila.tipo_respuesta,
+                puntos: Number(fila.puntos),
+                usada_en: usosPorPregunta.get(Number(fila.pregunta_id)) ?? 0,
+                tema: {
+                    tema_id: Number(fila.tema_id),
+                    nombre_tema: fila.nombre_tema,
+                },
+                materia: {
+                    materia_id: Number(fila.materia_id),
+                    nombre: fila.materia_nombre,
+                },
+            })),
+            temas: temas.map((tema) => ({
+                tema_id: tema.tema_id,
+                nombre_tema: tema.nombre_tema,
+                disponibles: preguntasMateria.filter(
+                    (fila) => Number(fila.tema_id) === tema.tema_id,
+                ).length,
+            })),
+        };
     }
 }
