@@ -8,10 +8,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
-import { Pregunta } from './entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
 import { CreatePreguntaDto } from './entity/dtos/create-pregunta.dto';
 import { UpdatePreguntaDto } from './entity/dtos/update-pregunta.dto';
+import { Pregunta } from './entity/pregunta.entity';
 
 @Injectable()
 export class PreguntaService {
@@ -84,7 +84,7 @@ export class PreguntaService {
   private async validarTemaDelDocente(
     temaId: number,
     docenteId: number,
-  ) {
+  ): Promise<Tema> {
     const tema = await this.temaRepository
       .createQueryBuilder('tema')
       .innerJoin('tema.materia', 'materia')
@@ -105,7 +105,7 @@ export class PreguntaService {
   // Comprobar si la pregunta está vinculada a algún examen.
   private async validarNoVinculadaAExamen(
     preguntaId: number,
-  ) {
+  ): Promise<void> {
     const vinculada =
       await this.examenPreguntaRepository.existsBy({
         pregunta_id: preguntaId,
@@ -120,11 +120,14 @@ export class PreguntaService {
 
   // Crear una pregunta nueva.
   async create(dto: CreatePreguntaDto, docenteId: number) {
-    await this.validarTemaDelDocente(dto.tema_id, docenteId);
+    const tema = await this.validarTemaDelDocente(
+      dto.tema_id,
+      docenteId,
+    );
 
     const pregunta = this.preguntaRepository.create({
       enunciado: dto.enunciado.trim(),
-      tema_id: dto.tema_id,
+      tema,
       dificultad: dto.dificultad ?? null,
       origen: 'manual',
       activo: true,
@@ -144,8 +147,14 @@ export class PreguntaService {
     await this.validarNoVinculadaAExamen(id);
 
     if (dto.tema_id !== undefined) {
-      await this.validarTemaDelDocente(dto.tema_id, docenteId);
-      pregunta.tema_id = dto.tema_id;
+      const tema = await this.validarTemaDelDocente(
+        dto.tema_id,
+        docenteId,
+      );
+
+      // Actualizar la relación y no solamente el ID.
+      pregunta.tema = tema;
+      pregunta.tema_id = tema.tema_id;
     }
 
     if (dto.enunciado !== undefined) {
@@ -156,7 +165,10 @@ export class PreguntaService {
       pregunta.dificultad = dto.dificultad;
     }
 
-    return this.preguntaRepository.save(pregunta);
+    await this.preguntaRepository.save(pregunta);
+
+    // Devolver la pregunta actualizada con su tema.
+    return this.findOne(id, docenteId);
   }
 
   // Baja lógica: no borrar físicamente la pregunta.
