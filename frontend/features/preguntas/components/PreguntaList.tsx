@@ -2,7 +2,7 @@
 'use client';
 
 import type { Pregunta } from '../types';
-
+import { ROUTES } from '@/constants/routes';
 interface PreguntaListProps {
     preguntas: Pregunta[];
     isLoading: boolean;
@@ -81,7 +81,7 @@ export default function PreguntaList({
 
                             <div className="flex shrink-0 items-start gap-3">
                                 <a
-                                    href={`/docente/preguntas/${pregunta.pregunta_id}/editar`}
+                                    href={ROUTES.docente.preguntaEditar(pregunta.pregunta_id)}
                                     className="text-sm font-medium text-blue-700 hover:text-blue-900"
                                 >
                                     Editar

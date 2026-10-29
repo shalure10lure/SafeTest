@@ -29,7 +29,9 @@ export const ROUTES = {
         estudiantes: '/docente/estudiantes',
         materiales: '/docente/materiales',
         preguntas: '/docente/preguntas',
-        preguntaNueva: '/docente/preguntas/nueva',
+        preguntaNueva: '/docente/preguntas/nuevo',
+        preguntaEditar: (id: number | string) =>
+            `/docente/preguntas/${id}/editar`,
         preguntaIA: '/docente/preguntas/generar-ia',
         evaluaciones: '/docente/evaluaciones',
         evaluacionNueva: '/docente/evaluaciones/nueva',
@@ -37,6 +39,12 @@ export const ROUTES = {
         reglas: '/docente/reglas',
         resultados: '/docente/resultados',
         estadisticas: '/docente/estadisticas',
+// Temas
+        temas: '/docente/temas',
+        temaNuevo: '/docente/temas/nueva',
+        temaEditar: (id: number | string) =>
+            `/docente/temas/${id}/editar`,
+
     },
 
     estudiante: {
@@ -122,11 +130,20 @@ export const NAV_DOCENTE: NavSection[] = [
     {
         titulo: 'Banco de preguntas',
         items: [
-            { label: 'Todas las preguntas', href: ROUTES.docente.preguntas, icono: AlignLeft, disponible: false },
-            { label: 'Crear pregunta', href: ROUTES.docente.preguntaNueva, icono: Plus, disponible: false },
+            { label: 'Todas las preguntas', href: ROUTES.docente.preguntas, icono: AlignLeft, disponible: true },
+            { label: 'Crear pregunta', href: ROUTES.docente.preguntaNueva, icono: Plus, disponible: true },
             { label: 'Generar con IA', href: ROUTES.docente.preguntaIA, icono: Sparkles, disponible: false },
         ],
     },
+    
+    {
+        titulo: 'Gestión de temas',
+        items: [
+            {label: 'Todos los temas',href:  ROUTES.docente.temas,icono: BookOpen,disponible: true,},
+            {label: 'Crear tema',href: ROUTES.docente.temaNuevo,icono: Plus,disponible: true,},
+        ],
+    },
+
     {
         titulo: 'Evaluaciones',
         items: [
