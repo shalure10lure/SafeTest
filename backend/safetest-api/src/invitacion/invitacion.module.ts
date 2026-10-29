@@ -11,6 +11,9 @@ import { InvitacionController } from './invitacion.controller';
 import { InvitacionService } from './invitacion.service';
 import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module';
 
+import { InvitacionAceptacionController } from './invitacion-aceptacion.controller';
+import { InvitacionAceptacionService } from './invitacion-aceptacion.service';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -21,7 +24,7 @@ import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module'
     ]),
     ConexionCorreoModule,
   ],
-  controllers: [InvitacionController],
-  providers: [InvitacionService],
+  controllers: [InvitacionController, InvitacionAceptacionController],
+  providers: [InvitacionService, InvitacionAceptacionService],
 })
 export class InvitacionModule {}

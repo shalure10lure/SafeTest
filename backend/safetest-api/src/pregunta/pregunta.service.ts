@@ -1,79 +1,188 @@
-import { Injectable } from '@nestjs/common';
+
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { Pregunta } from './entity/pregunta.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
+import { Tema } from '../tema/entity/tema.entity';
+import { CreatePreguntaDto } from './entity/dtos/create-pregunta.dto';
+import { UpdatePreguntaDto } from './entity/dtos/update-pregunta.dto';
+import { Pregunta } from './entity/pregunta.entity';
 
 @Injectable()
 export class PreguntaService {
-    constructor(
-        @InjectRepository(Pregunta)
-        private readonly preguntaRepository: Repository<Pregunta>,
-        @InjectRepository(ExamenPregunta)
-        private readonly examenPreguntaRepository: Repository<ExamenPregunta>,
-    ) { }
+  constructor(
+    @InjectRepository(Pregunta)
+    private readonly preguntaRepository: Repository<Pregunta>,
 
-    // Banco del docente: solo preguntas activas de temas de SUS materias
-    async findAll(docenteId: number, materiaId?: number) {
-        const consulta = this.preguntaRepository
-            .createQueryBuilder('pregunta')
-            .innerJoinAndSelect('pregunta.tema', 'tema')
-            .innerJoinAndSelect('tema.materia', 'materia')
-            .leftJoinAndSelect('pregunta.incisos', 'inciso')
-            .where('materia.docente_id = :docenteId', { docenteId })
-            .andWhere('pregunta.activo = true')
-            .orderBy('pregunta.pregunta_id', 'DESC');
+    @InjectRepository(Tema)
+    private readonly temaRepository: Repository<Tema>,
 
-        if (materiaId !== undefined) {
-            consulta.andWhere('materia.materia_id = :materiaId', { materiaId });
-        }
+    @InjectRepository(ExamenPregunta)
+    private readonly examenPreguntaRepository: Repository<ExamenPregunta>,
+  ) {}
 
-        const preguntas = await consulta.getMany();
+  // Consultar preguntas de las materias del docente autenticado.
+  async findAll(docenteId: number) {
+    return this.preguntaRepository
+      .createQueryBuilder('pregunta')
+      .innerJoin('pregunta.tema', 'tema')
+      .innerJoin('tema.materia', 'materia')
+      .where('materia.docente_id = :docenteId', { docenteId })
+      .andWhere('pregunta.activo = :activo', { activo: true })
+      .select([
+        'pregunta.pregunta_id',
+        'pregunta.enunciado',
+        'pregunta.tema_id',
+        'pregunta.dificultad',
+        'pregunta.origen',
+        'pregunta.activo',
+        'tema.tema_id',
+        'tema.nombre_tema',
+        'materia.materia_id',
+        'materia.nombre',
+      ])
+      .orderBy('pregunta.pregunta_id', 'DESC')
+      .getMany();
+  }
 
-        if (preguntas.length === 0) {
-            return [];
-        }
+  // Consultar una pregunta verificando que pertenezca al docente.
+  async findOne(id: number, docenteId: number) {
+    const pregunta = await this.preguntaRepository
+      .createQueryBuilder('pregunta')
+      .innerJoin('pregunta.tema', 'tema')
+      .innerJoin('tema.materia', 'materia')
+      .where('pregunta.pregunta_id = :id', { id })
+      .andWhere('materia.docente_id = :docenteId', { docenteId })
+      .andWhere('pregunta.activo = :activo', { activo: true })
+      .select([
+        'pregunta.pregunta_id',
+        'pregunta.enunciado',
+        'pregunta.tema_id',
+        'pregunta.dificultad',
+        'pregunta.origen',
+        'pregunta.activo',
+        'tema.tema_id',
+        'tema.nombre_tema',
+        'materia.materia_id',
+        'materia.nombre',
+      ])
+      .getOne();
 
-        const ids = preguntas.map((pregunta) => pregunta.pregunta_id);
-
-        const usos = await this.examenPreguntaRepository
-            .createQueryBuilder('ep')
-            .select('ep.pregunta_id', 'pregunta_id')
-            .addSelect('COUNT(*)', 'total')
-            .where('ep.pregunta_id IN (:...ids)', { ids })
-            .groupBy('ep.pregunta_id')
-            .getRawMany<{ pregunta_id: number; total: string }>();
-
-        const usoPorPregunta = new Map(
-            usos.map((uso) => [Number(uso.pregunta_id), Number(uso.total)]),
-        );
-
-        return preguntas.map((pregunta) => {
-            const incisos = pregunta.incisos ?? [];
-            const tipos = [...new Set(incisos.map((inciso) => inciso.tipo_respuesta))];
-
-            return {
-                pregunta_id: pregunta.pregunta_id,
-                enunciado: pregunta.enunciado,
-                dificultad: pregunta.dificultad,
-                // un solo tipo => ese tipo; varios => 'mixta'
-                tipo_respuesta:
-                    tipos.length === 0 ? null : tipos.length === 1 ? tipos[0] : 'mixta',
-                puntaje_total: incisos.reduce(
-                    (suma, inciso) => suma + Number(inciso.puntaje_max),
-                    0,
-                ),
-                tema: {
-                    tema_id: pregunta.tema.tema_id,
-                    nombre_tema: pregunta.tema.nombre_tema,
-                },
-                materia: {
-                    materia_id: pregunta.tema.materia.materia_id,
-                    nombre: pregunta.tema.materia.nombre,
-                },
-                usada_en: usoPorPregunta.get(pregunta.pregunta_id) ?? 0,
-            };
-        });
+    if (!pregunta) {
+      throw new NotFoundException('Pregunta no encontrada');
     }
+
+    return pregunta;
+  }
+
+  // Verificar que el tema pertenezca a una materia activa del docente.
+  private async validarTemaDelDocente(
+    temaId: number,
+    docenteId: number,
+  ): Promise<Tema> {
+    const tema = await this.temaRepository
+      .createQueryBuilder('tema')
+      .innerJoin('tema.materia', 'materia')
+      .where('tema.tema_id = :temaId', { temaId })
+      .andWhere('materia.docente_id = :docenteId', { docenteId })
+      .andWhere('materia.activo = :activo', { activo: true })
+      .getOne();
+
+    if (!tema) {
+      throw new NotFoundException(
+        'Tema no encontrado en tus materias activas',
+      );
+    }
+
+    return tema;
+  }
+
+  // Comprobar si la pregunta está vinculada a algún examen.
+  private async validarNoVinculadaAExamen(
+    preguntaId: number,
+  ): Promise<void> {
+    const vinculada =
+      await this.examenPreguntaRepository.existsBy({
+        pregunta_id: preguntaId,
+      });
+
+    if (vinculada) {
+      throw new ConflictException(
+        'No puedes modificar ni desactivar una pregunta vinculada a un examen',
+      );
+    }
+  }
+
+  // Crear una pregunta nueva.
+  async create(dto: CreatePreguntaDto, docenteId: number) {
+    const tema = await this.validarTemaDelDocente(
+      dto.tema_id,
+      docenteId,
+    );
+
+    const pregunta = this.preguntaRepository.create({
+      enunciado: dto.enunciado.trim(),
+      tema,
+      dificultad: dto.dificultad ?? null,
+      origen: 'manual',
+      activo: true,
+    });
+
+    return this.preguntaRepository.save(pregunta);
+  }
+
+  // Actualizar una pregunta existente.
+  async update(
+    id: number,
+    dto: UpdatePreguntaDto,
+    docenteId: number,
+  ) {
+    const pregunta = await this.findOne(id, docenteId);
+
+    await this.validarNoVinculadaAExamen(id);
+
+    if (dto.tema_id !== undefined) {
+      const tema = await this.validarTemaDelDocente(
+        dto.tema_id,
+        docenteId,
+      );
+
+      // Actualizar la relación y no solamente el ID.
+      pregunta.tema = tema;
+      pregunta.tema_id = tema.tema_id;
+    }
+
+    if (dto.enunciado !== undefined) {
+      pregunta.enunciado = dto.enunciado.trim();
+    }
+
+    if (dto.dificultad !== undefined) {
+      pregunta.dificultad = dto.dificultad;
+    }
+
+    await this.preguntaRepository.save(pregunta);
+
+    // Devolver la pregunta actualizada con su tema.
+    return this.findOne(id, docenteId);
+  }
+
+  // Baja lógica: no borrar físicamente la pregunta.
+  async remove(id: number, docenteId: number) {
+    const pregunta = await this.findOne(id, docenteId);
+
+    await this.validarNoVinculadaAExamen(id);
+
+    pregunta.activo = false;
+
+    await this.preguntaRepository.save(pregunta);
+
+    return {
+      mensaje: 'Pregunta desactivada correctamente',
+    };
+  }
 }

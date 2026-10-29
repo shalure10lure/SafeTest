@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "../hooks/useAuth";
+
+import { rutaSeguraAceptacion } from "@/features/invitacion/services/aceptacion-invitacion.service";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -12,6 +14,25 @@ export default function LoginForm() {
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
   const [recordarme, setRecordarme] = useState(false);
+
+  const [registroHref, setRegistroHref] =
+    useState("/registro");
+
+  useEffect(() => {
+    const parametros = new URLSearchParams(
+      window.location.search,
+    );
+
+    const retorno = rutaSeguraAceptacion(
+      parametros.get("next"),
+    );
+
+    if (retorno) {
+      setRegistroHref(
+        `/registro?next=${encodeURIComponent(retorno)}`,
+      );
+    }
+  }, []);
 
   const {
     login,
@@ -35,9 +56,19 @@ export default function LoginForm() {
         return;
       }
 
+
       if (usuario.tipo === "estudiante") {
-        router.replace("/estudiante");
+        const parametros = new URLSearchParams(
+          window.location.search,
+        );
+
+        const retorno = rutaSeguraAceptacion(
+          parametros.get("next"),
+        );
+
+        router.replace(retorno ?? "/estudiante");
       }
+
     } catch {
       // useAuth administra y muestra el error.
     }
@@ -159,7 +190,7 @@ export default function LoginForm() {
       <p className="mt-7 text-center text-sm text-slate-500">
         ¿No tienes una cuenta?{" "}
         <Link
-          href="/registro"
+          href={registroHref}
           className="font-semibold text-blue-600 hover:underline"
         >
           Crear cuenta

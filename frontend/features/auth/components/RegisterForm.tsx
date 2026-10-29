@@ -8,11 +8,13 @@ import { authService } from "../services/auth.service";
 interface RegisterFormProps {
   rol: Rol;
   onBack: () => void;
+  loginHref?: string;
 }
 
 export default function RegisterForm({
   rol,
   onBack,
+  loginHref="/login",
 }: RegisterFormProps) {
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
@@ -270,7 +272,7 @@ export default function RegisterForm({
           >
             <p>{mensaje}</p>
             <a
-              href="/login"
+              href={loginHref}
               className="mt-2 inline-block font-semibold underline"
             >
               Ir a iniciar sesión
