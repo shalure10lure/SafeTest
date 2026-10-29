@@ -11,7 +11,7 @@ import { useMaterias } from '@/features/materias/hooks/useMaterias';
 import { cn } from '@/lib/utils';
 
 import { useBancoPreguntas } from '../hooks/useBancoPreguntas';
-import { useEvaluacion } from '../hooks/useEvaluaciones';
+import { useEvaluacion } from '../hooks/useEvaluacion';
 import { mensajeDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import type {
