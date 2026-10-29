@@ -8,7 +8,8 @@ import { AppService } from './app.service';
 import { CategoriaModule } from './categoria/categoria.module';
 import { AuthModule } from './auth/auth.module';
 import { ParaleloModule } from './paralelo/paralelo.module';
-
+import { PreguntaModule } from './pregunta/pregunta.module';
+import { TemaModule } from './tema/tema.module';
 import { AsignacionPregunta } from './asignacionpregunta/entity/asignacionpregunta.entity';
 import { Categoria } from './categoria/entity/categoria.entity';
 import { Docente } from './docente/entity/docente.entity';
@@ -124,6 +125,8 @@ import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionre
     InvitacionModule,
     ConexionCorreoModule,
     ExamenModule,
+    PreguntaModule,
+    TemaModule,
   ],
 
   controllers: [AppController],
