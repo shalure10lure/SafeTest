@@ -106,9 +106,11 @@ export default function EvaluacionesTabla({
                                 <td className="px-4 py-3.5">
                                     <div className="flex gap-2">
                                         <LinkButton
-                                            href={ROUTES.docente.evaluaciones}
+                                            href={ROUTES.docente.evaluacionEditar(
+                                                evaluacion.examen_id,
+                                            )}
                                             variante="suave"
-                                            disponible={false}
+                                            disponible={evaluacion.estado === 'borrador'}
                                             className="h-8 px-3 text-xs"
                                         >
                                             Editar

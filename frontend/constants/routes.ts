@@ -18,6 +18,10 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 
+/* ------------------------------------------------------------------ */
+/* Rutas                                                               */
+/* ------------------------------------------------------------------ */
+
 export const ROUTES = {
     login: '/login',
     docente: {
@@ -39,12 +43,10 @@ export const ROUTES = {
         reglas: '/docente/reglas',
         resultados: '/docente/resultados',
         estadisticas: '/docente/estadisticas',
-// Temas
-        temas: '/docente/temas',
-        temaNuevo: '/docente/temas/nueva',
-        temaEditar: (id: number | string) =>
-            `/docente/temas/${id}/editar`,
-
+        evaluacionPreguntas: (id: number) =>
+            `/docente/evaluaciones/${id}/preguntas`,
+        evaluacionEditar: (id: number) =>
+            `/docente/evaluaciones/${id}/editar`,
     },
 
     estudiante: {
@@ -58,22 +60,12 @@ export const ROUTES = {
 
 } as const;
 
+/* ------------------------------------------------------------------ */
+/* Tipos de navegación (los reutiliza cualquier rol)                   */
+/* ------------------------------------------------------------------ */
+
 /** Claves de contadores que el Sidebar sabe mostrar como badge. */
 export type BadgeKey = 'evaluaciones' | 'correccion';
-
-export interface NavItem {
-    label: string;
-    href: string;
-    icono: LucideIcon;
-    /** `false` = la pantalla todavía no existe (se muestra deshabilitado). */
-    disponible: boolean;
-    badgeKey?: BadgeKey;
-}
-
-export interface NavSection {
-    titulo?: string;
-    items: NavItem[];
-}
 
 export interface AccionTopbar {
     label: string;
@@ -82,6 +74,49 @@ export interface AccionTopbar {
     icono?: LucideIcon;
     disponible: boolean;
 }
+
+export interface TopbarItem {
+    titulo?: string;
+    subtitulo?: string;
+    /** Texto intermedio del breadcrumb: SafeTest > Docente > {seccion} > {label} */
+    seccion?: string;
+    /** Reemplaza el último texto del breadcrumb (por defecto, el label del ítem). */
+    migaFinal?: string;
+    acciones?: AccionTopbar[];
+}
+
+export interface RutaExtra {
+    /** Rutas con parámetros que también activan el ítem (ej. /docente/evaluaciones/5/preguntas). */
+    patron: RegExp;
+    /** Topbar propio de esa ruta (otro paso del asistente, otro subtítulo). */
+    topbar: TopbarItem;
+}
+
+export interface NavItem {
+    label: string;
+    href: string;
+    icono: LucideIcon;
+    /**
+     * `false` = la pantalla todavía no existe. El ítem se muestra
+     * deshabilitado en vez de llevar a un 404. Al crear la página,
+     * solo hay que cambiar esto a `true`.
+     */
+    disponible: boolean;
+    badgeKey?: BadgeKey;
+    /** Qué muestra el Topbar cuando este ítem está activo. */
+    topbar?: TopbarItem;
+    /** Rutas dinámicas que también activan este ítem. */
+    rutasExtra?: RutaExtra[];
+}
+
+export interface NavSection {
+    titulo?: string;
+    items: NavItem[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Navegación del docente                                              */
+/* ------------------------------------------------------------------ */
 
 export const NAV_DOCENTE: NavSection[] = [
     {
@@ -115,16 +150,46 @@ export const NAV_DOCENTE: NavSection[] = [
     {
         titulo: 'Gestión académica',
         items: [
-            { label: 'Resumen', href: ROUTES.docente.resumen, icono: LayoutGrid, disponible: false },
-            { label: 'Mis materias', href: ROUTES.docente.materias, icono: AlignLeft, disponible: true },
-            { label: 'Mis periodos', href: ROUTES.docente.periodos, icono: CalendarDays, disponible: true },
-            { label: 'Mis paralelos', href: ROUTES.docente.paralelos, icono: LayoutGrid, disponible: true },
-            { label: 'Mis estudiantes', href: ROUTES.docente.estudiantes, icono: User, disponible: false },
+            {
+                label: 'Resumen',
+                href: ROUTES.docente.resumen,
+                icono: LayoutGrid,
+                disponible: false,
+            },
+            {
+                label: 'Mis materias',
+                href: ROUTES.docente.materias,
+                icono: AlignLeft,
+                disponible: true,
+            },
+            {
+                label: 'Mis periodos',
+                href: ROUTES.docente.periodos,
+                icono: CalendarDays,
+                disponible: true,
+            },
+            {
+                label: 'Mis paralelos',
+                href: ROUTES.docente.paralelos,
+                icono: LayoutGrid,
+                disponible: true,
+            },
+            {
+                label: 'Mis estudiantes',
+                href: ROUTES.docente.estudiantes,
+                icono: User,
+                disponible: false,
+            },
         ],
     },
     {
         items: [
-            { label: 'Materiales académicos', href: ROUTES.docente.materiales, icono: FileText, disponible: false },
+            {
+                label: 'Materiales académicos',
+                href: ROUTES.docente.materiales,
+                icono: FileText,
+                disponible: false,
+            },
         ],
     },
     {
@@ -179,6 +244,17 @@ export const NAV_DOCENTE: NavSection[] = [
                     titulo: 'Crear evaluación',
                     subtitulo: 'Paso 1 de 5 — Información general',
                 },
+                rutasExtra: [
+                    {
+                        patron: /^\/docente\/evaluaciones\/\d+\/preguntas\/?$/,
+                        topbar: {
+                            seccion: 'Evaluaciones',
+                            migaFinal: 'Preguntas',
+                            titulo: 'Crear evaluación',
+                            subtitulo: 'Paso 2 de 5 — Selección de preguntas',
+                        },
+                    },
+                ],
             },
         ],
     },
@@ -192,18 +268,36 @@ export const NAV_DOCENTE: NavSection[] = [
                 disponible: false,
                 badgeKey: 'correccion',
             },
-            { label: 'Reglas y puntajes', href: ROUTES.docente.reglas, icono: ListChecks, disponible: false },
+            {
+                label: 'Reglas y puntajes',
+                href: ROUTES.docente.reglas,
+                icono: ListChecks,
+                disponible: false,
+            },
         ],
     },
     {
         titulo: 'Resultados',
         items: [
-            { label: 'Resultados', href: ROUTES.docente.resultados, icono: TrendingUp, disponible: false },
-            { label: 'Estadísticas', href: ROUTES.docente.estadisticas, icono: ChartColumn, disponible: false },
+            {
+                label: 'Resultados',
+                href: ROUTES.docente.resultados,
+                icono: TrendingUp,
+                disponible: false,
+            },
+            {
+                label: 'Estadísticas',
+                href: ROUTES.docente.estadisticas,
+                icono: ChartColumn,
+                disponible: false,
+            },
         ],
     },
 ];
 
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
 
 /**
  * Navegación del estudiante.
@@ -265,8 +359,9 @@ export const NAV_ESTUDIANTE: NavSection[] = [
 
 /**
  * Devuelve el ítem de menú que corresponde a la URL actual.
- * Gana el href más largo, así `/docente/preguntas/nueva` activa
- * "Crear pregunta" y no "Todas las preguntas".
+ * 1. Primero revisa las rutas con parámetros (`rutasExtra`).
+ * 2. Después gana el href más largo, así `/docente/preguntas/nueva`
+ *    activa "Crear pregunta" y no "Todas las preguntas".
  * Inicio solo coincide con la ruta exacta.
  */
 export function buscarItemActivo(
@@ -274,33 +369,29 @@ export function buscarItemActivo(
     navegacion: NavSection[],
     inicioHref: string,
 ): NavItem | undefined {
-    const coincidencias = navegacion
-        .flatMap((seccion) => seccion.items)
-        .filter((item) =>
-            item.href === inicioHref
-                ? pathname === inicioHref
-                : pathname === item.href || pathname.startsWith(`${item.href}/`),
-        );
+    const items = navegacion.flatMap((seccion) => seccion.items);
+
+    const porPatron = items.find((item) =>
+        item.rutasExtra?.some((ruta) => ruta.patron.test(pathname)),
+    );
+
+    if (porPatron) return porPatron;
+
+    const coincidencias = items.filter((item) =>
+        item.href === inicioHref
+            ? pathname === inicioHref
+            : pathname === item.href || pathname.startsWith(`${item.href}/`),
+    );
 
     return coincidencias.sort((a, b) => b.href.length - a.href.length)[0];
 }
 
-export interface TopbarItem {
-    titulo?: string;
-    subtitulo?: string;
-    /** Texto intermedio del breadcrumb: SafeTest > Docente > {seccion} > {label} */
-    seccion?: string;
-    acciones?: AccionTopbar[];
-    migaFinal?: string;
-}
+/** Topbar que corresponde a la URL: el de la ruta extra, o el del ítem. */
+export function obtenerTopbar(
+    item: NavItem | undefined,
+    pathname: string,
+): TopbarItem | undefined {
+    const extra = item?.rutasExtra?.find((ruta) => ruta.patron.test(pathname));
 
-export interface NavItem {
-    label: string;
-    href: string;
-    icono: LucideIcon;
-    /** `false` = la pantalla todavía no existe (se muestra deshabilitado). */
-    disponible: boolean;
-    badgeKey?: BadgeKey;
-    /** Qué muestra el Topbar cuando este ítem está activo. */
-    topbar?: TopbarItem;
+    return extra?.topbar ?? item?.topbar;
 }

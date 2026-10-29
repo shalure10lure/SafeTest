@@ -7,6 +7,8 @@ import { Semestre } from '../semestre/entity/semestre.entity';
 import { Paralelo } from '../paralelo/entity/paralelo.entity';
 import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
+import { Pregunta } from '../pregunta/entity/pregunta.entity';
+import { Tema } from '../tema/entity/tema.entity';
 
 import { ExamenController } from './examen.controller';
 import { ExamenService } from './examen.service';
@@ -20,6 +22,8 @@ import { ExamenService } from './examen.service';
             Paralelo,
             ParaleloExamen,
             Inscripcion,
+            Pregunta,
+            Tema,
         ]),
     ],
     controllers: [ExamenController],

@@ -51,7 +51,8 @@ import { IaGeneracion } from './iageneracion/entity/iageneracion.entity';
 import { IaGeneracionMaterial } from './iageneracionmaterial/entity/iageneracionmaterial.entity';
 import { IaPropuestaPregunta } from './iapropuestapregunta/entity/iapropuestapregunta.entity';
 import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionreferencia.entity';
-
+import { TemaModule } from './tema/tema.module';
+import { PreguntaModule } from './pregunta/pregunta.module';
 
 @Module({
   imports: [
@@ -121,6 +122,8 @@ import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionre
     AuthModule,
     MateriaModule,
     SemestreModule,
+    TemaModule,
+    PreguntaModule,
     ParaleloModule,
     InvitacionModule,
     ConexionCorreoModule,
