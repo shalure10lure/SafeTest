@@ -10,6 +10,12 @@ import { Inscripcion } from '../../inscripcion/entity/inscripcion.entity';
 import { Rendicion } from '../../rendicion/entity/rendicion.entity';
 @Entity('estudiante')
 export class Estudiante {
+  @Column({
+  name: 'correo_verificado',
+  type: 'boolean',
+  default: false,
+})
+correoVerificado: boolean;
   @PrimaryGeneratedColumn()
   estudiante_id: number;
 
