@@ -2,6 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ROUTES } from '@/constants/routes';
 import Link from 'next/link';
 
 import { temasService } from '@/features/temas/services/temas.service';
@@ -138,7 +139,7 @@ export default function TemasPage() {
                                             </td>
                                             <td className="px-5 py-4 text-right">
                                                 <Link
-                                                    href={`/docente/temas/${tema.tema_id}/editar`}
+                                                    href={ROUTES.docente.temaEditar(tema.tema_id)}
                                                     className="font-medium text-blue-700 hover:underline"
                                                 >
                                                     Editar
