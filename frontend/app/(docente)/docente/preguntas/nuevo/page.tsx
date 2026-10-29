@@ -1,12 +1,15 @@
 
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { preguntasService } from '@/features/preguntas/services/preguntas.service';
+import { temasService } from '@/features/temas/services/temas.service';
+
 import type { DificultadPregunta } from '@/features/preguntas/types';
+import type { Tema } from '@/features/temas/types';
 
 export default function NuevaPreguntaPage() {
     const router = useRouter();
@@ -14,8 +17,28 @@ export default function NuevaPreguntaPage() {
     const [enunciado, setEnunciado] = useState('');
     const [dificultad, setDificultad] =
         useState<DificultadPregunta>('media');
+    const [temaId, setTemaId] = useState('');
+    const [temas, setTemas] = useState<Tema[]>([]);
+    const [cargandoTemas, setCargandoTemas] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [guardando, setGuardando] = useState(false);
+
+    useEffect(() => {
+        async function cargarTemas() {
+            try {
+                const resultado = await temasService.getAll();
+                setTemas(resultado);
+            } catch {
+                setError(
+                    'No se pudieron cargar los temas. Comprueba tu sesión y la conexión con el servidor.',
+                );
+            } finally {
+                setCargandoTemas(false);
+            }
+        }
+
+        void cargarTemas();
+    }, []);
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -26,38 +49,58 @@ export default function NuevaPreguntaPage() {
             return;
         }
 
-        setError(
-            'Falta seleccionar un tema. Podrás guardar la pregunta cuando esté disponible el selector de temas.',
-        );
+        if (!temaId) {
+            setError('Selecciona un tema para la pregunta.');
+            return;
+        }
+
+        try {
+            setGuardando(true);
+
+            await preguntasService.create({
+                enunciado: enunciado.trim(),
+                tema_id: Number(temaId),
+                dificultad,
+            });
+
+            router.push('/docente/preguntas');
+            router.refresh();
+        } catch {
+            setError(
+                'No se pudo guardar la pregunta. Verifica los datos y que tu sesión de docente siga activa.',
+            );
+        } finally {
+            setGuardando(false);
+        }
     }
 
     return (
         <main className="mx-auto max-w-3xl space-y-6 p-6">
-            <div>
+            <header>
                 <Link
                     href="/docente/preguntas"
-                    className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                    className="text-sm font-medium text-blue-700 hover:underline"
                 >
                     ← Volver al banco de preguntas
                 </Link>
 
-                <h1 className="mt-4 text-2xl font-bold text-gray-900">
+                <h1 className="mt-3 text-2xl font-bold text-gray-900">
                     Crear pregunta
                 </h1>
 
                 <p className="mt-1 text-sm text-gray-500">
-                    Registra una pregunta para utilizarla en tus evaluaciones.
+                    Registra una pregunta y relaciónala con uno de tus temas.
                 </p>
-            </div>
+            </header>
 
             <form
                 onSubmit={handleSubmit}
-                className="space-y-6 rounded-xl border border-gray-200 bg-white p-6"
+                className="space-y-5 rounded-xl border border-gray-200 bg-white p-6"
             >
-                <div className="space-y-2">
+                <div>
                     <label
                         htmlFor="enunciado"
-                        className="block text-sm font-medium text-gray-700"
+                        className="mb-2 block text-sm font-medium text-gray-700"
                     >
                         Enunciado de la pregunta
                     </label>
@@ -66,22 +109,64 @@ export default function NuevaPreguntaPage() {
                         id="enunciado"
                         value={enunciado}
                         onChange={(event) => setEnunciado(event.target.value)}
-                        placeholder="Escribe aquí tu pregunta..."
-                        rows={5}
-                        maxLength={2000}
+                        rows={4}
                         required
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                        placeholder="Escribe aquí la pregunta..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                     />
-
-                    <p className="text-right text-xs text-gray-500">
-                        {enunciado.length}/2000 caracteres
-                    </p>
                 </div>
 
-                <div className="space-y-2">
+                <div>
+                    <label
+                        htmlFor="temaId"
+                        className="mb-2 block text-sm font-medium text-gray-700"
+                    >
+                        Tema
+                    </label>
+
+                    <select
+                        id="temaId"
+                        value={temaId}
+                        onChange={(event) => setTemaId(event.target.value)}
+                        required
+                        disabled={cargandoTemas || temas.length === 0}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+                    >
+                        <option value="">
+                            {cargandoTemas
+                                ? 'Cargando temas...'
+                                : temas.length === 0
+                                  ? 'No hay temas disponibles'
+                                  : 'Selecciona un tema'}
+                        </option>
+
+                        {temas.map((tema) => (
+                            <option
+                                key={tema.tema_id}
+                                value={tema.tema_id}
+                            >
+                                {tema.nombre_tema}
+                            </option>
+                        ))}
+                    </select>
+
+                    {!cargandoTemas && temas.length === 0 && (
+                        <p className="mt-2 text-sm text-gray-500">
+                            Primero registra un tema en Gestión de temas.
+                            <Link
+                                href="/docente/temas/nuevo"
+                                className="ml-1 font-medium text-blue-700 hover:underline"
+                            >
+                                Crear tema
+                            </Link>
+                        </p>
+                    )}
+                </div>
+
+                <div>
                     <label
                         htmlFor="dificultad"
-                        className="block text-sm font-medium text-gray-700"
+                        className="mb-2 block text-sm font-medium text-gray-700"
                     >
                         Dificultad
                     </label>
@@ -94,7 +179,7 @@ export default function NuevaPreguntaPage() {
                                 event.target.value as DificultadPregunta,
                             )
                         }
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                     >
                         <option value="facil">Fácil</option>
                         <option value="media">Media</option>
@@ -102,26 +187,16 @@ export default function NuevaPreguntaPage() {
                     </select>
                 </div>
 
-                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-                    <p className="text-sm font-medium text-gray-700">
-                        Tema de la pregunta
-                    </p>
-                    <p className="mt-1 text-sm text-gray-500">
-                        El selector se conectará cuando implementes la HU de
-                        gestión de temas.
-                    </p>
-                </div>
-
                 {error && (
-                    <div
+                    <p
                         role="alert"
                         className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
                     >
                         {error}
-                    </div>
+                    </p>
                 )}
 
-                <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                     <Link
                         href="/docente/preguntas"
                         className="rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -131,8 +206,12 @@ export default function NuevaPreguntaPage() {
 
                     <button
                         type="submit"
-                        disabled={guardando}
-                        className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={
+                            guardando ||
+                            cargandoTemas ||
+                            temas.length === 0
+                        }
+                        className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         {guardando ? 'Guardando...' : 'Guardar pregunta'}
                     </button>
