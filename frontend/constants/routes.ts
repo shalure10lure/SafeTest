@@ -12,6 +12,9 @@ import {
     Sparkles,
     TrendingUp,
     User,
+    BookOpen,
+    Mail,
+    History,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -35,9 +38,16 @@ export const ROUTES = {
         resultados: '/docente/resultados',
         estadisticas: '/docente/estadisticas',
     },
+
     estudiante: {
         inicio: '/estudiante',
+        invitaciones: '/estudiante/invitaciones',
+        paralelos: '/estudiante/paralelos',
+        evaluaciones: '/estudiante/evaluaciones',
+        resultados: '/estudiante/resultados',
+        historial: '/estudiante/historial',
     },
+
 } as const;
 
 /** Claves de contadores que el Sidebar sabe mostrar como badge. */
@@ -177,6 +187,64 @@ export const NAV_DOCENTE: NavSection[] = [
     },
 ];
 
+
+/**
+ * Navegación del estudiante.
+ * Comparte Sidebar y Topbar con el módulo docente.
+ */
+export const NAV_ESTUDIANTE: NavSection[] = [
+  {
+    titulo: 'Estudiante',
+    items: [
+      {
+        label: 'Inicio',
+        href: ROUTES.estudiante.inicio,
+        icono: House,
+        disponible: true,
+      },
+      {
+        label: 'Invitaciones',
+        href: ROUTES.estudiante.invitaciones,
+        icono: Mail,
+        disponible: true,
+        topbar: {
+          seccion: 'Invitaciones',
+          titulo: 'Mis invitaciones',
+          subtitulo: 'Consulta tus invitaciones a paralelos',
+        },
+      },
+      {
+        label: 'Mis paralelos',
+        href: ROUTES.estudiante.paralelos,
+        icono: BookOpen,
+        disponible: false,
+        topbar: {
+          seccion: 'Paralelos',
+          titulo: 'Mis paralelos',
+          subtitulo: 'Grupos académicos en los que participas',
+        },
+      },
+      {
+        label: 'Mis evaluaciones',
+        href: ROUTES.estudiante.evaluaciones,
+        icono: ClipboardList,
+        disponible: false,
+      },
+      {
+        label: 'Resultados',
+        href: ROUTES.estudiante.resultados,
+        icono: TrendingUp,
+        disponible: false,
+      },
+      {
+        label: 'Historial',
+        href: ROUTES.estudiante.historial,
+        icono: History,
+        disponible: false,
+      },
+    ],
+  },
+];
 
 /**
  * Devuelve el ítem de menú que corresponde a la URL actual.

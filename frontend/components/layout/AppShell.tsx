@@ -23,6 +23,7 @@ interface AppShellProps {
     inicioHref: string;
     badges?: Partial<Record<BadgeKey, number>>;
     notificaciones?: number;
+    subtituloInicio?: string;
 }
 
 export default function AppShell({
@@ -31,6 +32,7 @@ export default function AppShell({
     etiquetaRol,
     nombreRol,
     inicioHref,
+    subtituloInicio = 'Panel de gestión · SafeTest',
     badges,
     notificaciones,
 }: AppShellProps) {
@@ -119,7 +121,7 @@ export default function AppShell({
                     migas={migas}
                     titulo={esInicio ? `Bienvenido, ${primerNombre}` : topbar?.titulo}
                     subtitulo={
-                        esInicio ? 'Panel de gestión · SafeTest' : topbar?.subtitulo
+                        esInicio ? subtituloInicio : topbar?.subtitulo
                     }
                     acciones={topbar?.acciones}
                     notificaciones={notificaciones}
