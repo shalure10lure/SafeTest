@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
@@ -10,10 +10,29 @@ import RoleSelection from "@/features/auth/components/RoleSelection";
 import RegisterForm from "@/features/auth/components/RegisterForm";
 
 import type { Rol } from "@/features/auth/types";
+import { rutaSeguraAceptacion } from "@/features/invitacion/services/aceptacion-invitacion.service";
 
 export default function RegistroPage() {
   const [paso, setPaso] = useState<1 | 2>(1);
   const [rol, setRol] = useState<Rol | null>(null);
+
+  const [loginHref, setLoginHref] = useState("/login");
+
+  useEffect(() => {
+    const parametros = new URLSearchParams(
+      window.location.search,
+    );
+
+    const retorno = rutaSeguraAceptacion(
+      parametros.get("next"),
+    );
+
+    if (retorno) {
+      setLoginHref(
+        `/login?next=${encodeURIComponent(retorno)}`,
+      );
+    }
+  }, []);
 
   function continuar() {
     if (rol !== null) {
@@ -38,7 +57,7 @@ export default function RegistroPage() {
             <>
               {/* Volver a Login */}
               <Link
-                href="/login"
+                href={loginHref}
                 className="mb-7 inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-blue-600"
               >
                 <ArrowLeft size={15} />
@@ -54,7 +73,7 @@ export default function RegistroPage() {
               <p className="mt-7 text-center text-sm text-slate-500">
                 ¿Ya tienes una cuenta?{" "}
                 <Link
-                  href="/login"
+                  href={loginHref}
                   className="font-semibold text-blue-600 hover:underline"
                 >
                   Iniciar sesión
@@ -67,6 +86,7 @@ export default function RegistroPage() {
                 key={rol}
                 rol={rol}
                 onBack={volver}
+                loginHref={loginHref}
               />
             )
           )}
