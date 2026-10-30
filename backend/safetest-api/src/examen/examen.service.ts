@@ -14,10 +14,12 @@ import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
 import { ExamenTema } from '../examentema/entity/examentema.entity';
+import { ExamenEstudiante } from '../examenestudiante/entity/examenestudiante.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
 
 import { CreateExamenDto } from './dto/create-examen.dto';
+import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
 import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
@@ -219,14 +221,20 @@ export class ExamenService {
                     },
                 );
 
-                // Si no cambia el contexto ni el paralelo, no se tocan los
-                // paralelos (por ejemplo, los que se asignen en el paso 4).
+                // Si no cambia el contexto ni el paralelo, no se toca la
+                // asignación (paso 4). Si cambia, vuelve al paralelo elegido.
                 if (cambiaContexto || cambiaParalelo) {
                     await manager.delete(ParaleloExamen, { examen_id: examenId });
                     await manager.insert(ParaleloExamen, {
                         paralelo_id: paraleloId,
                         examen_id: examenId,
                     });
+                    await manager.delete(ExamenEstudiante, { examen_id: examenId });
+                    await manager.update(
+                        Examen,
+                        { examen_id: examenId },
+                        { modo_asignacion: 'paralelos' },
+                    );
                 }
 
                 // Los criterios por tema pertenecen a la materia anterior.
@@ -306,6 +314,241 @@ export class ExamenService {
         return this.findOne(examenId, docenteId);
     }
 
+    // PARALELOS Y ESTUDIANTES DISPONIBLES PARA ASIGNAR (paso 4)
+
+    async obtenerAsignacion(examenId: number, docenteId: number) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+            relations: {
+                materia: true,
+                semestre: true,
+                paralelos: true,
+                estudiantes: true,
+            },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        const materiaId = examen.materia_id;
+
+        if (materiaId === null) {
+            throw new BadRequestException(
+                'La evaluación no tiene una materia asociada.',
+            );
+        }
+
+        // Solo los paralelos del docente de la misma materia y periodo.
+        const paralelos = await this.paraleloRepository.find({
+            where: {
+                docente_id: docenteId,
+                materia_id: materiaId,
+                semestre_id: examen.semestre_id,
+            },
+            order: { nombre_paralelo: 'ASC' },
+        });
+
+        const inscripciones =
+            paralelos.length === 0
+                ? []
+                : await this.inscripcionRepository.find({
+                    where: {
+                        paralelo_id: In(paralelos.map((item) => item.paralelo_id)),
+                    },
+                    relations: { estudiante: true },
+                });
+
+        const paralelosAsignados = new Set(
+            (examen.paralelos ?? []).map((item) => item.paralelo_id),
+        );
+        const estudiantesAsignados = new Set(
+            (examen.estudiantes ?? []).map((item) => item.estudiante_id),
+        );
+
+        return {
+            examen_id: examen.examen_id,
+            estado: examen.estado,
+            modo_asignacion:
+                examen.modo_asignacion === 'estudiantes' ? 'estudiantes' : 'paralelos',
+            materia: examen.materia
+                ? {
+                    materia_id: examen.materia.materia_id,
+                    nombre: examen.materia.nombre,
+                }
+                : null,
+            semestre: {
+                semestre_id: examen.semestre.semestre_id,
+                gestion: examen.semestre.gestion,
+            },
+            paralelos: paralelos.map((paralelo) => {
+                const estudiantes = inscripciones
+                    .filter((item) => item.paralelo_id === paralelo.paralelo_id)
+                    .map((item) => ({
+                        estudiante_id: item.estudiante.estudiante_id,
+                        nombre_completo: item.estudiante.nombre_completo,
+                        correo_institucional: item.estudiante.correo_institucional,
+                        seleccionado: estudiantesAsignados.has(
+                            item.estudiante.estudiante_id,
+                        ),
+                    }))
+                    .sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo));
+
+                return {
+                    paralelo_id: paralelo.paralelo_id,
+                    nombre_paralelo: paralelo.nombre_paralelo,
+                    total_estudiantes: estudiantes.length,
+                    seleccionado: paralelosAsignados.has(paralelo.paralelo_id),
+                    estudiantes,
+                };
+            }),
+        };
+    }
+
+    // GUARDAR LA ASIGNACIÓN (paso 4)
+
+    async guardarAsignacion(
+        examenId: number,
+        dto: GuardarAsignacionDto,
+        docenteId: number,
+    ) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        if (examen.estado !== 'borrador') {
+            throw new BadRequestException(
+                'Solo se puede cambiar la asignación de una evaluación en borrador.',
+            );
+        }
+
+        const materiaId = examen.materia_id;
+
+        if (materiaId === null) {
+            throw new BadRequestException(
+                'La evaluación no tiene una materia asociada.',
+            );
+        }
+
+        // Paralelos del docente de la misma materia y periodo de la evaluación.
+        const validos = await this.paraleloRepository.find({
+            where: {
+                docente_id: docenteId,
+                materia_id: materiaId,
+                semestre_id: examen.semestre_id,
+            },
+        });
+        const idsValidos = validos.map((item) => item.paralelo_id);
+
+        if (dto.modo_asignacion === 'paralelos') {
+            const paraleloIds = dto.paralelo_ids ?? [];
+
+            if (!paraleloIds.every((id) => idsValidos.includes(id))) {
+                throw new BadRequestException(
+                    'Algún paralelo no existe o no corresponde a la materia y al periodo de la evaluación.',
+                );
+            }
+
+            const conteo = await this.inscripcionRepository
+                .createQueryBuilder('inscripcion')
+                .select('COUNT(DISTINCT inscripcion.estudiante_id)', 'total')
+                .where('inscripcion.paralelo_id IN (:...ids)', { ids: paraleloIds })
+                .getRawOne<{ total: string }>();
+
+            const totalEstudiantes = Number(conteo?.total ?? 0);
+
+            if (totalEstudiantes === 0) {
+                throw new BadRequestException(
+                    'Los paralelos seleccionados no tienen estudiantes inscritos.',
+                );
+            }
+
+            await this.dataSource.transaction(async (manager) => {
+                await manager.update(
+                    Examen,
+                    { examen_id: examenId },
+                    { modo_asignacion: 'paralelos' },
+                );
+
+                await manager.delete(ParaleloExamen, { examen_id: examenId });
+                await manager.insert(
+                    ParaleloExamen,
+                    paraleloIds.map((paralelo_id) => ({
+                        paralelo_id,
+                        examen_id: examenId,
+                    })),
+                );
+
+                await manager.delete(ExamenEstudiante, { examen_id: examenId });
+            });
+
+            return {
+                modo_asignacion: 'paralelos',
+                total_estudiantes: totalEstudiantes,
+            };
+        }
+
+        const estudianteIds = dto.estudiante_ids ?? [];
+
+        const inscripciones =
+            idsValidos.length === 0
+                ? []
+                : await this.inscripcionRepository.find({
+                    where: {
+                        paralelo_id: In(idsValidos),
+                        estudiante_id: In(estudianteIds),
+                    },
+                });
+
+        const encontrados = new Set(inscripciones.map((item) => item.estudiante_id));
+
+        if (!estudianteIds.every((id) => encontrados.has(id))) {
+            throw new BadRequestException(
+                'Algún estudiante no está inscrito en tus paralelos de esta materia y periodo.',
+            );
+        }
+
+        // La evaluación queda vinculada a los paralelos de esos estudiantes.
+        const paraleloIds = [
+            ...new Set(inscripciones.map((item) => item.paralelo_id)),
+        ];
+
+        await this.dataSource.transaction(async (manager) => {
+            await manager.update(
+                Examen,
+                { examen_id: examenId },
+                { modo_asignacion: 'estudiantes' },
+            );
+
+            await manager.delete(ParaleloExamen, { examen_id: examenId });
+            await manager.insert(
+                ParaleloExamen,
+                paraleloIds.map((paralelo_id) => ({
+                    paralelo_id,
+                    examen_id: examenId,
+                })),
+            );
+
+            await manager.delete(ExamenEstudiante, { examen_id: examenId });
+            await manager.insert(
+                ExamenEstudiante,
+                estudianteIds.map((estudiante_id) => ({
+                    examen_id: examenId,
+                    estudiante_id,
+                })),
+            );
+        });
+
+        return {
+            modo_asignacion: 'estudiantes',
+            total_estudiantes: estudianteIds.length,
+        };
+    }
+
     // CONSULTAR EVALUACIONES (una o todas las del docente)
 
     private async consultar(docenteId: number, examenId?: number) {
@@ -354,12 +597,26 @@ export class ExamenService {
             .groupBy('pe.examen_id')
             .getRawMany<{ examen_id: number; total: string }>();
 
+        // Estudiantes elegidos uno por uno (modo "estudiantes específicos").
+        const filasEspecificos = await this.dataSource
+            .getRepository(ExamenEstudiante)
+            .createQueryBuilder('ee')
+            .select('ee.examen_id', 'examen_id')
+            .addSelect('COUNT(*)', 'total')
+            .where('ee.examen_id IN (:...ids)', { ids })
+            .groupBy('ee.examen_id')
+            .getRawMany<{ examen_id: number; total: string }>();
+
         const preguntasPorExamen = new Map(
             filasPreguntas.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
         );
 
         const inscritosPorExamen = new Map(
             filasInscritos.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
+        );
+
+        const especificosPorExamen = new Map(
+            filasEspecificos.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
         );
 
         // En modo aleatorio las preguntas aún no están elegidas:
@@ -389,6 +646,7 @@ export class ExamenService {
             disponible_desde: examen.disponible_desde,
             disponible_hasta: examen.disponible_hasta,
             modo_entrega_nota: examen.modo_entrega_nota,
+            modo_asignacion: examen.modo_asignacion,
             materia: examen.materia
                 ? {
                     materia_id: examen.materia.materia_id,
@@ -407,7 +665,10 @@ export class ExamenService {
                 examen.modo_seleccion === 'aleatorio'
                     ? (criteriosPorExamen.get(examen.examen_id) ?? 0)
                     : (preguntasPorExamen.get(examen.examen_id) ?? 0),
-            total_inscritos: inscritosPorExamen.get(examen.examen_id) ?? 0,
+            total_inscritos:
+                examen.modo_asignacion === 'estudiantes'
+                    ? (especificosPorExamen.get(examen.examen_id) ?? 0)
+                    : (inscritosPorExamen.get(examen.examen_id) ?? 0),
         }));
     }
 

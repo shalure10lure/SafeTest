@@ -8,6 +8,9 @@ export type OrdenPreguntas = 'definido' | 'aleatorio';
 /** `al_publicar` = tras revisión docente; `inmediata` = automática cuando corresponda. */
 export type ModoEntregaNota = 'al_publicar' | 'inmediata';
 
+/** `paralelos` = paralelos completos; `estudiantes` = estudiantes específicos. */
+export type ModoAsignacion = 'paralelos' | 'estudiantes';
+
 export interface Evaluacion {
     examen_id: number;
     titulo: string | null;
@@ -23,6 +26,7 @@ export interface Evaluacion {
     disponible_desde: string | null;
     disponible_hasta: string | null;
     modo_entrega_nota: ModoEntregaNota;
+    modo_asignacion: ModoAsignacion;
 
     materia: {
         materia_id: number;
@@ -135,4 +139,50 @@ export interface GuardarConfiguracionDto {
     disponible_desde: string;
     disponible_hasta: string;
     modo_entrega_nota: ModoEntregaNota;
+}
+
+/* ------------------------------------------------------------------ */
+/* Paso 4: Asignación                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface AsignacionEstudiante {
+    estudiante_id: number;
+    nombre_completo: string;
+    correo_institucional: string;
+    /** `true` si ya está elegido en modo "estudiantes específicos". */
+    seleccionado: boolean;
+}
+
+export interface AsignacionParalelo {
+    paralelo_id: number;
+    nombre_paralelo: string;
+    total_estudiantes: number;
+    /** `true` si el paralelo ya está vinculado a la evaluación. */
+    seleccionado: boolean;
+    estudiantes: AsignacionEstudiante[];
+}
+
+/** Lo que devuelve `GET /examenes/:id/asignacion`. */
+export interface AsignacionDisponible {
+    examen_id: number;
+    estado: EstadoExamen;
+    modo_asignacion: ModoAsignacion;
+    materia: {
+        materia_id: number;
+        nombre: string;
+    } | null;
+    semestre: {
+        semestre_id: number;
+        gestion: string;
+    };
+    paralelos: AsignacionParalelo[];
+}
+
+export type GuardarAsignacionDto =
+    | { modo_asignacion: 'paralelos'; paralelo_ids: number[] }
+    | { modo_asignacion: 'estudiantes'; estudiante_ids: number[] };
+
+export interface AsignacionGuardada {
+    modo_asignacion: ModoAsignacion;
+    total_estudiantes: number;
 }

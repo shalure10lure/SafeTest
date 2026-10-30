@@ -14,6 +14,7 @@ import {
 
 import { ExamenService } from './examen.service';
 import { CreateExamenDto } from './dto/create-examen.dto';
+import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
 import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
@@ -65,6 +66,27 @@ export class ExamenController {
         @Req() request: any,
     ) {
         return this.examenService.guardarConfiguracion(id, body, request.user.id);
+    }
+
+    // PARALELOS Y ESTUDIANTES DISPONIBLES PARA ASIGNAR (paso 4)
+
+    @Get(':id/asignacion')
+    obtenerAsignacion(
+        @Param('id', ParseIntPipe) id: number,
+        @Req() request: any,
+    ) {
+        return this.examenService.obtenerAsignacion(id, request.user.id);
+    }
+
+    // GUARDAR LA ASIGNACIÓN (paso 4: paralelos completos o estudiantes específicos)
+
+    @Put(':id/asignacion')
+    guardarAsignacion(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: GuardarAsignacionDto,
+        @Req() request: any,
+    ) {
+        return this.examenService.guardarAsignacion(id, body, request.user.id);
     }
 
     // CONSULTAR UNA EVALUACIÓN

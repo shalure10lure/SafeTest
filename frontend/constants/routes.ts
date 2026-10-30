@@ -12,9 +12,6 @@ import {
     Sparkles,
     TrendingUp,
     User,
-    BookOpen,
-    Mail,
-    History,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -33,12 +30,8 @@ export const ROUTES = {
         estudiantes: '/docente/estudiantes',
         materiales: '/docente/materiales',
         preguntas: '/docente/preguntas',
-        preguntaNueva: '/docente/preguntas/nuevo',
-        preguntaEditar: (id: number | string) =>
-            `/docente/preguntas/${id}/editar`,
+        preguntaNueva: '/docente/preguntas/nueva',
         preguntaIA: '/docente/preguntas/generar-ia',
-        temas: '/docente/temas',
-        temaNuevo: '/docente/temas/nuevo',
         evaluaciones: '/docente/evaluaciones',
         evaluacionNueva: '/docente/evaluaciones/nueva',
         correccion: '/docente/correccion',
@@ -54,16 +47,9 @@ export const ROUTES = {
         evaluacionAsignacion: (id: number) =>
             `/docente/evaluaciones/${id}/asignacion`,
     },
-
     estudiante: {
         inicio: '/estudiante',
-        invitaciones: '/estudiante/invitaciones',
-        paralelos: '/estudiante/paralelos',
-        evaluaciones: '/estudiante/evaluaciones',
-        resultados: '/estudiante/resultados',
-        historial: '/estudiante/historial',
     },
-
 } as const;
 
 /* ------------------------------------------------------------------ */
@@ -201,20 +187,26 @@ export const NAV_DOCENTE: NavSection[] = [
     {
         titulo: 'Banco de preguntas',
         items: [
-            { label: 'Todas las preguntas', href: ROUTES.docente.preguntas, icono: AlignLeft, disponible: true },
-            { label: 'Crear pregunta', href: ROUTES.docente.preguntaNueva, icono: Plus, disponible: true },
-            { label: 'Generar con IA', href: ROUTES.docente.preguntaIA, icono: Sparkles, disponible: false },
+            {
+                label: 'Todas las preguntas',
+                href: ROUTES.docente.preguntas,
+                icono: AlignLeft,
+                disponible: false,
+            },
+            {
+                label: 'Crear pregunta',
+                href: ROUTES.docente.preguntaNueva,
+                icono: Plus,
+                disponible: false,
+            },
+            {
+                label: 'Generar con IA',
+                href: ROUTES.docente.preguntaIA,
+                icono: Sparkles,
+                disponible: false,
+            },
         ],
     },
-
-    {
-        titulo: 'Gestión de temas',
-        items: [
-            { label: 'Todos los temas', href: ROUTES.docente.temas, icono: BookOpen, disponible: true },
-            { label: 'Crear tema', href: ROUTES.docente.temaNuevo, icono: Plus, disponible: true },
-        ],
-    },
-
     {
         titulo: 'Evaluaciones',
         items: [
@@ -331,64 +323,6 @@ export const NAV_DOCENTE: NavSection[] = [
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
-
-/**
- * Navegación del estudiante.
- * Comparte Sidebar y Topbar con el módulo docente.
- */
-export const NAV_ESTUDIANTE: NavSection[] = [
-    {
-        titulo: 'Estudiante',
-        items: [
-            {
-                label: 'Inicio',
-                href: ROUTES.estudiante.inicio,
-                icono: House,
-                disponible: true,
-            },
-            {
-                label: 'Invitaciones',
-                href: ROUTES.estudiante.invitaciones,
-                icono: Mail,
-                disponible: true,
-                topbar: {
-                    seccion: 'Invitaciones',
-                    titulo: 'Mis invitaciones',
-                    subtitulo: 'Consulta tus invitaciones a paralelos',
-                },
-            },
-            {
-                label: 'Mis paralelos',
-                href: ROUTES.estudiante.paralelos,
-                icono: BookOpen,
-                disponible: false,
-                topbar: {
-                    seccion: 'Paralelos',
-                    titulo: 'Mis paralelos',
-                    subtitulo: 'Grupos académicos en los que participas',
-                },
-            },
-            {
-                label: 'Mis evaluaciones',
-                href: ROUTES.estudiante.evaluaciones,
-                icono: ClipboardList,
-                disponible: false,
-            },
-            {
-                label: 'Resultados',
-                href: ROUTES.estudiante.resultados,
-                icono: TrendingUp,
-                disponible: false,
-            },
-            {
-                label: 'Historial',
-                href: ROUTES.estudiante.historial,
-                icono: History,
-                disponible: false,
-            },
-        ],
-    },
-];
 
 /**
  * Devuelve el ítem de menú que corresponde a la URL actual.

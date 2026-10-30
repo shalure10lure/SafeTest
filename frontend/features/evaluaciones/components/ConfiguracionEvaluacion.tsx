@@ -152,8 +152,7 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
                 modo_entrega_nota: entrega,
             });
 
-            // TODO(paso 4): ir a /docente/evaluaciones/[id]/asignacion
-            router.push(ROUTES.docente.evaluaciones);
+            router.push(ROUTES.docente.evaluacionAsignacion(evaluacion.examen_id));
         } catch (e) {
             setErrorGuardar(
                 mensajeDeError(
