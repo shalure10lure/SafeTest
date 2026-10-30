@@ -3,6 +3,11 @@ export type EstadoExamen = 'borrador' | 'publicado';
 
 export type ModoSeleccion = 'manual' | 'aleatorio';
 
+export type OrdenPreguntas = 'definido' | 'aleatorio';
+
+/** `al_publicar` = tras revisión docente; `inmediata` = automática cuando corresponda. */
+export type ModoEntregaNota = 'al_publicar' | 'inmediata';
+
 export interface Evaluacion {
     examen_id: number;
     titulo: string | null;
@@ -11,6 +16,13 @@ export interface Evaluacion {
     /** Fecha de disponibilidad (ISO). `null` mientras sea borrador. */
     fecha: string | null;
     modo_seleccion: ModoSeleccion;
+
+    orden_preguntas: OrdenPreguntas;
+    duracion_min: number | null;
+    /** ISO (UTC). `null` mientras no se configure. */
+    disponible_desde: string | null;
+    disponible_hasta: string | null;
+    modo_entrega_nota: ModoEntregaNota;
 
     materia: {
         materia_id: number;
@@ -115,4 +127,12 @@ export interface UpdateEvaluacionDto {
 export interface EvaluacionActualizada extends EvaluacionDetalle {
     /** `true` si al cambiar de materia se borraron los criterios por tema. */
     criterios_reiniciados: boolean;
+}
+
+export interface GuardarConfiguracionDto {
+    orden_preguntas: OrdenPreguntas;
+    duracion_min: number;
+    disponible_desde: string;
+    disponible_hasta: string;
+    modo_entrega_nota: ModoEntregaNota;
 }

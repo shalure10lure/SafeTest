@@ -18,6 +18,7 @@ import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
 
 import { CreateExamenDto } from './dto/create-examen.dto';
+import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
 
@@ -246,6 +247,65 @@ export class ExamenService {
             criterios_reiniciados: criteriosReiniciados,
         };
     }
+
+    // GUARDAR LA CONFIGURACIÓN (paso 3)
+
+    async guardarConfiguracion(
+        examenId: number,
+        dto: GuardarConfiguracionDto,
+        docenteId: number,
+    ) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        if (examen.estado !== 'borrador') {
+            throw new BadRequestException(
+                'Solo se puede configurar una evaluación en borrador.',
+            );
+        }
+
+        const desde = new Date(dto.disponible_desde);
+        const hasta = new Date(dto.disponible_hasta);
+
+        if (hasta.getTime() <= desde.getTime()) {
+            throw new BadRequestException(
+                'La fecha de finalización debe ser posterior a la de inicio.',
+            );
+        }
+
+        if (hasta.getTime() <= Date.now()) {
+            throw new BadRequestException(
+                'La fecha de finalización debe ser futura.',
+            );
+        }
+
+        const ventanaMin = (hasta.getTime() - desde.getTime()) / 60000;
+
+        if (ventanaMin < dto.duracion_min) {
+            throw new BadRequestException(
+                'La ventana de disponibilidad no puede ser menor que la duración de la evaluación.',
+            );
+        }
+
+        await this.examenRepository.update(
+            { examen_id: examenId },
+            {
+                orden_preguntas: dto.orden_preguntas,
+                duracion_min: dto.duracion_min,
+                disponible_desde: desde,
+                disponible_hasta: hasta,
+                modo_entrega_nota: dto.modo_entrega_nota,
+            },
+        );
+
+        return this.findOne(examenId, docenteId);
+    }
+
     // CONSULTAR EVALUACIONES (una o todas las del docente)
 
     private async consultar(docenteId: number, examenId?: number) {
@@ -324,6 +384,11 @@ export class ExamenService {
             estado: examen.estado,
             fecha: examen.disponible_desde,
             modo_seleccion: examen.modo_seleccion,
+            orden_preguntas: examen.orden_preguntas,
+            duracion_min: examen.duracion_min,
+            disponible_desde: examen.disponible_desde,
+            disponible_hasta: examen.disponible_hasta,
+            modo_entrega_nota: examen.modo_entrega_nota,
             materia: examen.materia
                 ? {
                     materia_id: examen.materia.materia_id,

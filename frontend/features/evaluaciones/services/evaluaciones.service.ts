@@ -10,6 +10,7 @@ import type {
     SeleccionGuardada,
     EvaluacionActualizada,
     UpdateEvaluacionDto,
+    GuardarConfiguracionDto,
 } from '../types';
 
 class EvaluacionesService extends BaseService {
@@ -49,6 +50,13 @@ class EvaluacionesService extends BaseService {
             data,
         );
     }
+    guardarConfiguracion(id: number, data: GuardarConfiguracionDto) {
+        return this.put<EvaluacionDetalle, GuardarConfiguracionDto>(
+            `/${id}/configuracion`,
+            data,
+        );
+    }
 }
+
 
 export const evaluacionesService = new EvaluacionesService();

@@ -42,6 +42,8 @@ export const ROUTES = {
             `/docente/evaluaciones/${id}/preguntas`,
         evaluacionEditar: (id: number) =>
             `/docente/evaluaciones/${id}/editar`,
+        evaluacionConfiguracion: (id: number) =>
+            `/docente/evaluaciones/${id}/configuracion`,
     },
     estudiante: {
         inicio: '/estudiante',
@@ -240,12 +242,30 @@ export const NAV_DOCENTE: NavSection[] = [
                 },
                 rutasExtra: [
                     {
+                        patron: /^\/docente\/evaluaciones\/\d+\/editar\/?$/,
+                        topbar: {
+                            seccion: 'Evaluaciones',
+                            migaFinal: 'Información',
+                            titulo: 'Crear evaluación',
+                            subtitulo: 'Paso 1 de 5 — Información general',
+                        },
+                    },
+                    {
                         patron: /^\/docente\/evaluaciones\/\d+\/preguntas\/?$/,
                         topbar: {
                             seccion: 'Evaluaciones',
                             migaFinal: 'Preguntas',
                             titulo: 'Crear evaluación',
                             subtitulo: 'Paso 2 de 5 — Selección de preguntas',
+                        },
+                    },
+                    {
+                        patron: /^\/docente\/evaluaciones\/\d+\/configuracion\/?$/,
+                        topbar: {
+                            seccion: 'Evaluaciones',
+                            migaFinal: 'Configuración',
+                            titulo: 'Crear evaluación',
+                            subtitulo: 'Paso 3 de 5 — Configuración',
                         },
                     },
                 ],
