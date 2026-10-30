@@ -37,6 +37,8 @@ export const ROUTES = {
         preguntaEditar: (id: number | string) =>
             `/docente/preguntas/${id}/editar`,
         preguntaIA: '/docente/preguntas/generar-ia',
+        temas: '/docente/temas',
+        temaNuevo: '/docente/temas/nuevo',
         evaluaciones: '/docente/evaluaciones',
         evaluacionNueva: '/docente/evaluaciones/nueva',
         correccion: '/docente/correccion',
@@ -49,6 +51,8 @@ export const ROUTES = {
             `/docente/evaluaciones/${id}/editar`,
         evaluacionConfiguracion: (id: number) =>
             `/docente/evaluaciones/${id}/configuracion`,
+        evaluacionAsignacion: (id: number) =>
+            `/docente/evaluaciones/${id}/asignacion`,
     },
 
     estudiante: {
@@ -202,12 +206,12 @@ export const NAV_DOCENTE: NavSection[] = [
             { label: 'Generar con IA', href: ROUTES.docente.preguntaIA, icono: Sparkles, disponible: false },
         ],
     },
-    
+
     {
         titulo: 'Gestión de temas',
         items: [
-            {label: 'Todos los temas',href:  ROUTES.docente.temas,icono: BookOpen,disponible: true,},
-            {label: 'Crear tema',href: ROUTES.docente.temaNuevo,icono: Plus,disponible: true,},
+            { label: 'Todos los temas', href: ROUTES.docente.temas, icono: BookOpen, disponible: true },
+            { label: 'Crear tema', href: ROUTES.docente.temaNuevo, icono: Plus, disponible: true },
         ],
     },
 
@@ -274,6 +278,15 @@ export const NAV_DOCENTE: NavSection[] = [
                             subtitulo: 'Paso 3 de 5 — Configuración',
                         },
                     },
+                    {
+                        patron: /^\/docente\/evaluaciones\/\d+\/asignacion\/?$/,
+                        topbar: {
+                            seccion: 'Evaluaciones',
+                            migaFinal: 'Asignación',
+                            titulo: 'Crear evaluación',
+                            subtitulo: 'Paso 4 de 5 — Asignación',
+                        },
+                    },
                 ],
             },
         ],
@@ -324,57 +337,57 @@ export const NAV_DOCENTE: NavSection[] = [
  * Comparte Sidebar y Topbar con el módulo docente.
  */
 export const NAV_ESTUDIANTE: NavSection[] = [
-  {
-    titulo: 'Estudiante',
-    items: [
-      {
-        label: 'Inicio',
-        href: ROUTES.estudiante.inicio,
-        icono: House,
-        disponible: true,
-      },
-      {
-        label: 'Invitaciones',
-        href: ROUTES.estudiante.invitaciones,
-        icono: Mail,
-        disponible: true,
-        topbar: {
-          seccion: 'Invitaciones',
-          titulo: 'Mis invitaciones',
-          subtitulo: 'Consulta tus invitaciones a paralelos',
-        },
-      },
-      {
-        label: 'Mis paralelos',
-        href: ROUTES.estudiante.paralelos,
-        icono: BookOpen,
-        disponible: false,
-        topbar: {
-          seccion: 'Paralelos',
-          titulo: 'Mis paralelos',
-          subtitulo: 'Grupos académicos en los que participas',
-        },
-      },
-      {
-        label: 'Mis evaluaciones',
-        href: ROUTES.estudiante.evaluaciones,
-        icono: ClipboardList,
-        disponible: false,
-      },
-      {
-        label: 'Resultados',
-        href: ROUTES.estudiante.resultados,
-        icono: TrendingUp,
-        disponible: false,
-      },
-      {
-        label: 'Historial',
-        href: ROUTES.estudiante.historial,
-        icono: History,
-        disponible: false,
-      },
-    ],
-  },
+    {
+        titulo: 'Estudiante',
+        items: [
+            {
+                label: 'Inicio',
+                href: ROUTES.estudiante.inicio,
+                icono: House,
+                disponible: true,
+            },
+            {
+                label: 'Invitaciones',
+                href: ROUTES.estudiante.invitaciones,
+                icono: Mail,
+                disponible: true,
+                topbar: {
+                    seccion: 'Invitaciones',
+                    titulo: 'Mis invitaciones',
+                    subtitulo: 'Consulta tus invitaciones a paralelos',
+                },
+            },
+            {
+                label: 'Mis paralelos',
+                href: ROUTES.estudiante.paralelos,
+                icono: BookOpen,
+                disponible: false,
+                topbar: {
+                    seccion: 'Paralelos',
+                    titulo: 'Mis paralelos',
+                    subtitulo: 'Grupos académicos en los que participas',
+                },
+            },
+            {
+                label: 'Mis evaluaciones',
+                href: ROUTES.estudiante.evaluaciones,
+                icono: ClipboardList,
+                disponible: false,
+            },
+            {
+                label: 'Resultados',
+                href: ROUTES.estudiante.resultados,
+                icono: TrendingUp,
+                disponible: false,
+            },
+            {
+                label: 'Historial',
+                href: ROUTES.estudiante.historial,
+                icono: History,
+                disponible: false,
+            },
+        ],
+    },
 ];
 
 /**
