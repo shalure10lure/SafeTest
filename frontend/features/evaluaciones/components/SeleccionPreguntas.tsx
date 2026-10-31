@@ -167,8 +167,7 @@ function FormularioSeleccion({
         try {
             await evaluacionesService.guardarSeleccion(evaluacion.examen_id, datos);
 
-            // TODO(paso 3 del asistente): ir a la configuración de la evaluación.
-            router.push(ROUTES.docente.evaluaciones);
+            router.push(ROUTES.docente.evaluacionConfiguracion(evaluacion.examen_id));
         } catch (e) {
             setErrorGuardar(
                 mensajeDeError(
@@ -307,8 +306,8 @@ function FormularioSeleccion({
                         {guardando
                             ? 'Guardando...'
                             : modo === 'manual' && seleccionIds.length > 0
-                                ? `Guardar selección (${seleccionIds.length})`
-                                : 'Guardar selección'}
+                                ? `Siguiente (${seleccionIds.length}) →`
+                                : 'Siguiente →'}
                     </button>
                 </div>
             </div>

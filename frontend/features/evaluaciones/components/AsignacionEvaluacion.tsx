@@ -41,10 +41,14 @@ function FormularioAsignacion({ datos }: { datos: AsignacionDisponible }) {
     const gestion = datos.semestre.gestion;
 
     const [modo, setModo] = useState<ModoAsignacion>(datos.modo_asignacion);
+    // En modo "estudiantes" la evaluación también queda vinculada a paralelos,
+    // pero la selección guardada son los estudiantes, no los paralelos.
     const [paralelosSel, setParalelosSel] = useState<number[]>(
-        datos.paralelos
-            .filter((paralelo) => paralelo.seleccionado)
-            .map((paralelo) => paralelo.paralelo_id),
+        datos.modo_asignacion === 'paralelos'
+            ? datos.paralelos
+                .filter((paralelo) => paralelo.seleccionado)
+                .map((paralelo) => paralelo.paralelo_id)
+            : [],
     );
     const [estudiantesSel, setEstudiantesSel] = useState<number[]>(
         datos.paralelos
@@ -143,8 +147,7 @@ function FormularioAsignacion({ datos }: { datos: AsignacionDisponible }) {
                     : { modo_asignacion: 'estudiantes', estudiante_ids: estudiantesSel },
             );
 
-            // TODO(paso 5): ir a /docente/evaluaciones/[id]/resumen
-            router.push(ROUTES.docente.evaluaciones);
+            router.push(ROUTES.docente.evaluacionResumen(datos.examen_id));
         } catch (e) {
             setErrorGuardar(
                 mensajeDeError(

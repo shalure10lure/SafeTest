@@ -47,3 +47,20 @@ export function minutosEntre(desdeLocal: string, hastaLocal: string): number | n
 
     return Number.isFinite(minutos) ? Math.round(minutos) : null;
 }
+
+/** ISO (UTC) -> "20 oct 2026, 8:00 a. m." en la hora local del navegador. */
+export function formatearFechaHora(iso: string | null): string {
+    if (!iso) return '—';
+
+    const fecha = new Date(iso);
+
+    if (Number.isNaN(fecha.getTime())) return '—';
+
+    return new Intl.DateTimeFormat('es-BO', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    }).format(fecha);
+}

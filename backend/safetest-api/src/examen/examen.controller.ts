@@ -89,6 +89,21 @@ export class ExamenController {
         return this.examenService.guardarAsignacion(id, body, request.user.id);
     }
 
+    // RESUMEN Y PUBLICACIÓN (paso 5)
+
+    @Get(':id/resumen')
+    obtenerResumen(
+        @Param('id', ParseIntPipe) id: number,
+        @Req() request: any,
+    ) {
+        return this.examenService.obtenerResumen(id, request.user.id);
+    }
+
+    @Post(':id/publicar')
+    publicar(@Param('id', ParseIntPipe) id: number, @Req() request: any) {
+        return this.examenService.publicar(id, request.user.id);
+    }
+
     // CONSULTAR UNA EVALUACIÓN
 
     @Get(':id')

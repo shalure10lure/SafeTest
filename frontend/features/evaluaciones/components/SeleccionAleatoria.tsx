@@ -3,8 +3,9 @@
 import { Minus, Plus, Shuffle, X } from 'lucide-react';
 
 import { Card } from '@/components/ui/Card';
-import type { Tema } from '@/features/temas/types';
 import { cn } from '@/lib/utils';
+
+import type { TemaBanco } from '../types';
 
 export interface CriterioForm {
     clave: number;
@@ -19,13 +20,13 @@ export default function SeleccionAleatoria({
     mostrarErrores,
     onChange,
 }: {
-    temas: Tema[];
+    temas: TemaBanco[];
     criterios: CriterioForm[];
     materiaNombre: string;
     mostrarErrores: boolean;
     onChange: (criterios: CriterioForm[]) => void;
 }) {
-    const totalBanco = temas.reduce((suma, tema) => suma + tema.total_preguntas, 0);
+    const totalBanco = temas.reduce((suma, tema) => suma + tema.disponibles, 0);
     const totalSeleccion = criterios.reduce(
         (suma, criterio) => suma + (criterio.tema_id === null ? 0 : criterio.cantidad),
         0,
@@ -63,7 +64,7 @@ export default function SeleccionAleatoria({
             <ul className="mt-2 space-y-3">
                 {criterios.map((criterio, indice) => {
                     const tema = temas.find((t) => t.tema_id === criterio.tema_id);
-                    const disponibles = tema?.total_preguntas ?? 0;
+                    const disponibles = tema?.disponibles ?? 0;
                     const sinTema = mostrarErrores && criterio.tema_id === null;
                     const excede = tema !== undefined && criterio.cantidad > disponibles;
 
@@ -97,7 +98,7 @@ export default function SeleccionAleatoria({
                                                 (c) => c.clave !== criterio.clave && c.tema_id === t.tema_id,
                                             )}
                                         >
-                                            {t.nombre_tema} ({t.total_preguntas})
+                                            {t.nombre_tema} ({t.disponibles})
                                         </option>
                                     ))}
                                 </select>

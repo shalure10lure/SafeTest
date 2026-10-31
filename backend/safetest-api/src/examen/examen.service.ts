@@ -549,6 +549,224 @@ export class ExamenService {
         };
     }
 
+    // RESUMEN Y PUBLICACIÓN (paso 5)
+
+    async obtenerResumen(examenId: number, docenteId: number) {
+        const examen = await this.findOne(examenId, docenteId);
+
+        const [estudiantes, criterios] = await Promise.all([
+            this.estudiantesAsignados(examen),
+            this.dataSource
+                .getRepository(ExamenTema)
+                .createQueryBuilder('examenTema')
+                .innerJoinAndSelect('examenTema.tema', 'tema')
+                .where('examenTema.examen_id = :examenId', { examenId })
+                .orderBy('tema.nombre_tema', 'ASC')
+                .getMany(),
+        ]);
+
+        return {
+            ...examen,
+            criterios: criterios.map((fila) => ({
+                tema_id: fila.tema_id,
+                nombre_tema: fila.tema.nombre_tema,
+                cantidad: fila.cantidad,
+            })),
+            estudiantes_asignados: estudiantes,
+            total_estudiantes: estudiantes.length,
+        };
+    }
+
+    async publicar(examenId: number, docenteId: number) {
+        const examen = await this.examenRepository.findOne({
+            where: { examen_id: examenId, docente_id: docenteId },
+            relations: { paralelos: true },
+        });
+
+        if (!examen) {
+            throw new NotFoundException('La evaluación no existe.');
+        }
+
+        if (examen.estado !== 'borrador') {
+            throw new BadRequestException(
+                'Solo se puede publicar una evaluación en borrador.',
+            );
+        }
+
+        const problemas = await this.problemasParaPublicar(examen);
+
+        if (problemas.length > 0) {
+            throw new BadRequestException({
+                message: 'La evaluación aún no se puede publicar.',
+                problemas,
+            });
+        }
+
+        // Las preguntas por estudiante (asignacion_pregunta) aún no se generan
+        // aquí: todavía no existe el módulo de rendición que las consume.
+        await this.examenRepository.update(
+            { examen_id: examenId },
+            { estado: 'publicado' },
+        );
+
+        return { examen_id: examenId, estado: 'publicado' };
+    }
+
+    // Estudiantes que quedarían asignados según el modo de asignación.
+    private async estudiantesAsignados(examen: {
+        examen_id: number;
+        modo_asignacion: string;
+        paralelos: { paralelo_id: number }[];
+    }) {
+        if (examen.modo_asignacion === 'estudiantes') {
+            const filas = await this.dataSource
+                .getRepository(ExamenEstudiante)
+                .createQueryBuilder('examenEstudiante')
+                .innerJoinAndSelect('examenEstudiante.estudiante', 'estudiante')
+                .where('examenEstudiante.examen_id = :examenId', {
+                    examenId: examen.examen_id,
+                })
+                .orderBy('estudiante.nombre_completo', 'ASC')
+                .getMany();
+
+            return filas.map((fila) => ({
+                estudiante_id: fila.estudiante.estudiante_id,
+                nombre_completo: fila.estudiante.nombre_completo,
+            }));
+        }
+
+        const paraleloIds = (examen.paralelos ?? []).map(
+            (item) => item.paralelo_id,
+        );
+
+        if (paraleloIds.length === 0) return [];
+
+        const filas = await this.inscripcionRepository
+            .createQueryBuilder('inscripcion')
+            .innerJoinAndSelect('inscripcion.estudiante', 'estudiante')
+            .where('inscripcion.paralelo_id IN (:...paraleloIds)', {
+                paraleloIds,
+            })
+            .orderBy('estudiante.nombre_completo', 'ASC')
+            .getMany();
+
+        // Un estudiante puede estar en más de un paralelo de la evaluación.
+        const unicos = new Map<
+            number,
+            { estudiante_id: number; nombre_completo: string }
+        >();
+
+        for (const fila of filas) {
+            unicos.set(fila.estudiante.estudiante_id, {
+                estudiante_id: fila.estudiante.estudiante_id,
+                nombre_completo: fila.estudiante.nombre_completo,
+            });
+        }
+
+        return [...unicos.values()];
+    }
+
+    // Problemas que impiden publicar, con el paso del asistente que los corrige.
+    private async problemasParaPublicar(
+        examen: Examen & { paralelos: ParaleloExamen[] },
+    ): Promise<{ paso: number; mensaje: string }[]> {
+        const problemas: { paso: number; mensaje: string }[] = [];
+
+        // Paso 2: preguntas.
+        if (examen.modo_seleccion === 'manual') {
+            const total = await this.dataSource
+                .getRepository(ExamenPregunta)
+                .count({ where: { examen_id: examen.examen_id } });
+
+            if (total === 0) {
+                problemas.push({
+                    paso: 2,
+                    mensaje: 'Agrega al menos una pregunta a la evaluación.',
+                });
+            }
+        } else {
+            const criterios = await this.dataSource
+                .getRepository(ExamenTema)
+                .find({ where: { examen_id: examen.examen_id } });
+
+            if (criterios.length === 0) {
+                problemas.push({
+                    paso: 2,
+                    mensaje: 'Define al menos un criterio de preguntas aleatorias.',
+                });
+            } else {
+                try {
+                    await this.validarCriterios(criterios, examen);
+                } catch (error) {
+                    if (error instanceof BadRequestException) {
+                        problemas.push({ paso: 2, mensaje: error.message });
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+        }
+
+        // Paso 3: configuración y disponibilidad.
+        if (
+            examen.duracion_min === null ||
+            examen.duracion_min < 5 ||
+            examen.duracion_min > 720
+        ) {
+            problemas.push({
+                paso: 3,
+                mensaje: 'Define una duración entre 5 minutos y 12 horas.',
+            });
+        }
+
+        if (!examen.disponible_desde || !examen.disponible_hasta) {
+            problemas.push({
+                paso: 3,
+                mensaje: 'Define la fecha y hora de inicio y de finalización.',
+            });
+        } else {
+            const desde = new Date(examen.disponible_desde).getTime();
+            const hasta = new Date(examen.disponible_hasta).getTime();
+
+            if (hasta <= desde) {
+                problemas.push({
+                    paso: 3,
+                    mensaje:
+                        'La fecha de finalización debe ser posterior a la de inicio.',
+                });
+            } else if (hasta <= Date.now()) {
+                problemas.push({
+                    paso: 3,
+                    mensaje: 'La fecha de finalización debe ser futura.',
+                });
+            } else if (
+                examen.duracion_min !== null &&
+                (hasta - desde) / 60000 < examen.duracion_min
+            ) {
+                problemas.push({
+                    paso: 3,
+                    mensaje:
+                        'La ventana de disponibilidad no puede ser menor que la duración de la evaluación.',
+                });
+            }
+        }
+
+        // Paso 4: al menos un estudiante asignado.
+        const estudiantes = await this.estudiantesAsignados(examen);
+
+        if (estudiantes.length === 0) {
+            problemas.push({
+                paso: 4,
+                mensaje:
+                    examen.modo_asignacion === 'estudiantes'
+                        ? 'Selecciona al menos un estudiante.'
+                        : 'Selecciona al menos un paralelo con estudiantes inscritos.',
+            });
+        }
+
+        return problemas;
+    }
+
     // CONSULTAR EVALUACIONES (una o todas las del docente)
 
     private async consultar(docenteId: number, examenId?: number) {

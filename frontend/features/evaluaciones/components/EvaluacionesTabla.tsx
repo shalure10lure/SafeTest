@@ -111,6 +111,7 @@ export default function EvaluacionesTabla({
                                             )}
                                             variante="suave"
                                             disponible={evaluacion.estado === 'borrador'}
+                                            title="Las evaluaciones publicadas no se pueden editar"
                                             className="h-8 px-3 text-xs"
                                         >
                                             Editar
@@ -118,9 +119,10 @@ export default function EvaluacionesTabla({
 
                                         {evaluacion.estado === 'borrador' && (
                                             <LinkButton
-                                                href={ROUTES.docente.evaluaciones}
+                                                href={ROUTES.docente.evaluacionResumen(
+                                                    evaluacion.examen_id,
+                                                )}
                                                 variante="primaria"
-                                                disponible={false}
                                                 className="h-8 px-3 text-xs"
                                             >
                                                 Publicar

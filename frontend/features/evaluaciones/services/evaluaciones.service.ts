@@ -9,9 +9,11 @@ import type {
     EvaluacionActualizada,
     EvaluacionCreada,
     EvaluacionDetalle,
+    EvaluacionPublicada,
     GuardarAsignacionDto,
     GuardarConfiguracionDto,
     GuardarSeleccionDto,
+    ResumenEvaluacion,
     SeleccionGuardada,
     UpdateEvaluacionDto,
 } from '../types';
@@ -71,6 +73,18 @@ class EvaluacionesService extends BaseService {
         return this.put<AsignacionGuardada, GuardarAsignacionDto>(
             `/${id}/asignacion`,
             data,
+        );
+    }
+
+    /** Datos completos para revisar antes de publicar (paso 5). */
+    getResumen(id: number) {
+        return this.get<ResumenEvaluacion>(`/${id}/resumen`);
+    }
+
+    publicar(id: number) {
+        return this.post<EvaluacionPublicada, Record<string, never>>(
+            `/${id}/publicar`,
+            {},
         );
     }
 }

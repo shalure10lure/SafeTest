@@ -186,3 +186,37 @@ export interface AsignacionGuardada {
     modo_asignacion: ModoAsignacion;
     total_estudiantes: number;
 }
+
+/* ------------------------------------------------------------------ */
+/* Paso 5: Resumen y publicación                                       */
+/* ------------------------------------------------------------------ */
+
+export interface CriterioResumen {
+    tema_id: number;
+    nombre_tema: string;
+    cantidad: number;
+}
+
+export interface EstudianteAsignadoResumen {
+    estudiante_id: number;
+    nombre_completo: string;
+}
+
+/** Lo que devuelve `GET /examenes/:id/resumen`. */
+export interface ResumenEvaluacion extends Omit<EvaluacionDetalle, 'criterios'> {
+    /** Criterios aleatorios con el nombre del tema. */
+    criterios: CriterioResumen[];
+    estudiantes_asignados: EstudianteAsignadoResumen[];
+    total_estudiantes: number;
+}
+
+/** Motivo por el que no se puede publicar y paso del asistente que lo corrige. */
+export interface ProblemaPublicacion {
+    paso: number;
+    mensaje: string;
+}
+
+export interface EvaluacionPublicada {
+    examen_id: number;
+    estado: EstadoExamen;
+}

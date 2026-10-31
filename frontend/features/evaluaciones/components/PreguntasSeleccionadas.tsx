@@ -3,7 +3,7 @@
 import { X } from 'lucide-react';
 
 import { Card } from '@/components/ui/Card';
-import type { PreguntaBanco } from '@/features/preguntas/types';
+import type { PreguntaBanco } from '../types';
 
 export default function PreguntasSeleccionadas({
     preguntas,
@@ -12,7 +12,7 @@ export default function PreguntasSeleccionadas({
     preguntas: PreguntaBanco[];
     onQuitar: (preguntaId: number) => void;
 }) {
-    const puntos = preguntas.reduce((suma, p) => suma + p.puntaje_total, 0);
+    const puntos = preguntas.reduce((suma, p) => suma + p.puntos, 0);
 
     return (
         <Card className="h-fit p-4 lg:sticky lg:top-4">

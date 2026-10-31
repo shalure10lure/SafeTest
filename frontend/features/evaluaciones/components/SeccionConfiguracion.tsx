@@ -4,22 +4,31 @@ export default function SeccionConfiguracion({
     numero,
     titulo,
     descripcion,
+    accion,
     children,
 }: {
     numero: number;
     titulo: string;
     descripcion?: string;
+    /** Enlace o botón alineado a la derecha del encabezado (ej. "Editar"). */
+    accion?: ReactNode;
     children: ReactNode;
 }) {
     return (
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-900">
-                {numero} · {titulo}
-            </h3>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                        {numero} · {titulo}
+                    </h3>
 
-            {descripcion && (
-                <p className="mt-0.5 text-xs text-slate-500">{descripcion}</p>
-            )}
+                    {descripcion && (
+                        <p className="mt-0.5 text-xs text-slate-500">{descripcion}</p>
+                    )}
+                </div>
+
+                {accion}
+            </div>
 
             <div className="mt-4">{children}</div>
         </section>

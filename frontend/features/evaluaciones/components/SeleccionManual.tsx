@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react';
 import { Info, Search } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Card';
-import { etiquetaTipo, type PreguntaBanco } from '@/features/preguntas/types';
-import type { Tema } from '@/features/temas/types';
 import { cn } from '@/lib/utils';
+
+import { infoTipoPregunta } from '../tipos-pregunta';
+import type { PreguntaBanco, TemaBanco } from '../types';
 
 const ENTRADA =
     'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600';
@@ -18,7 +19,7 @@ export default function SeleccionManual({
     onAlternar,
 }: {
     preguntas: PreguntaBanco[];
-    temas: Tema[];
+    temas: TemaBanco[];
     seleccionadas: number[];
     onAlternar: (preguntaId: number) => void;
 }) {
@@ -110,10 +111,10 @@ export default function SeleccionManual({
 
                                     <span className="min-w-0 flex-1">
                                         <span className="flex flex-wrap items-center gap-2">
-                                            <Badge tono="blue">{etiquetaTipo(pregunta.tipo_respuesta)}</Badge>
+                                            <Badge tono="blue">{infoTipoPregunta(pregunta.tipo_respuesta).label}</Badge>
                                             <span className="text-xs text-slate-500">
                                                 {pregunta.materia.nombre} · {pregunta.tema.nombre_tema} ·{' '}
-                                                {pregunta.puntaje_total} pts
+                                                {pregunta.puntos} pts
                                             </span>
                                             {pregunta.usada_en > 0 && (
                                                 <span className="ml-auto rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">
