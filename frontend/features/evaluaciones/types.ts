@@ -3,6 +3,14 @@ export type EstadoExamen = 'borrador' | 'publicado';
 
 export type ModoSeleccion = 'manual' | 'aleatorio';
 
+export type OrdenPreguntas = 'definido' | 'aleatorio';
+
+/** `al_publicar` = tras revisión docente; `inmediata` = automática cuando corresponda. */
+export type ModoEntregaNota = 'al_publicar' | 'inmediata';
+
+/** `paralelos` = paralelos completos; `estudiantes` = estudiantes específicos. */
+export type ModoAsignacion = 'paralelos' | 'estudiantes';
+
 export interface Evaluacion {
     examen_id: number;
     titulo: string | null;
@@ -11,6 +19,14 @@ export interface Evaluacion {
     /** Fecha de disponibilidad (ISO). `null` mientras sea borrador. */
     fecha: string | null;
     modo_seleccion: ModoSeleccion;
+
+    orden_preguntas: OrdenPreguntas;
+    duracion_min: number | null;
+    /** ISO (UTC). `null` mientras no se configure. */
+    disponible_desde: string | null;
+    disponible_hasta: string | null;
+    modo_entrega_nota: ModoEntregaNota;
+    modo_asignacion: ModoAsignacion;
 
     materia: {
         materia_id: number;
@@ -115,4 +131,92 @@ export interface UpdateEvaluacionDto {
 export interface EvaluacionActualizada extends EvaluacionDetalle {
     /** `true` si al cambiar de materia se borraron los criterios por tema. */
     criterios_reiniciados: boolean;
+}
+
+export interface GuardarConfiguracionDto {
+    orden_preguntas: OrdenPreguntas;
+    duracion_min: number;
+    disponible_desde: string;
+    disponible_hasta: string;
+    modo_entrega_nota: ModoEntregaNota;
+}
+
+/* ------------------------------------------------------------------ */
+/* Paso 4: Asignación                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface AsignacionEstudiante {
+    estudiante_id: number;
+    nombre_completo: string;
+    correo_institucional: string;
+    /** `true` si ya está elegido en modo "estudiantes específicos". */
+    seleccionado: boolean;
+}
+
+export interface AsignacionParalelo {
+    paralelo_id: number;
+    nombre_paralelo: string;
+    total_estudiantes: number;
+    /** `true` si el paralelo ya está vinculado a la evaluación. */
+    seleccionado: boolean;
+    estudiantes: AsignacionEstudiante[];
+}
+
+/** Lo que devuelve `GET /examenes/:id/asignacion`. */
+export interface AsignacionDisponible {
+    examen_id: number;
+    estado: EstadoExamen;
+    modo_asignacion: ModoAsignacion;
+    materia: {
+        materia_id: number;
+        nombre: string;
+    } | null;
+    semestre: {
+        semestre_id: number;
+        gestion: string;
+    };
+    paralelos: AsignacionParalelo[];
+}
+
+export type GuardarAsignacionDto =
+    | { modo_asignacion: 'paralelos'; paralelo_ids: number[] }
+    | { modo_asignacion: 'estudiantes'; estudiante_ids: number[] };
+
+export interface AsignacionGuardada {
+    modo_asignacion: ModoAsignacion;
+    total_estudiantes: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Paso 5: Resumen y publicación                                       */
+/* ------------------------------------------------------------------ */
+
+export interface CriterioResumen {
+    tema_id: number;
+    nombre_tema: string;
+    cantidad: number;
+}
+
+export interface EstudianteAsignadoResumen {
+    estudiante_id: number;
+    nombre_completo: string;
+}
+
+/** Lo que devuelve `GET /examenes/:id/resumen`. */
+export interface ResumenEvaluacion extends Omit<EvaluacionDetalle, 'criterios'> {
+    /** Criterios aleatorios con el nombre del tema. */
+    criterios: CriterioResumen[];
+    estudiantes_asignados: EstudianteAsignadoResumen[];
+    total_estudiantes: number;
+}
+
+/** Motivo por el que no se puede publicar y paso del asistente que lo corrige. */
+export interface ProblemaPublicacion {
+    paso: number;
+    mensaje: string;
+}
+
+export interface EvaluacionPublicada {
+    examen_id: number;
+    estado: EstadoExamen;
 }

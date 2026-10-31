@@ -8,8 +8,7 @@ import { AppService } from './app.service';
 import { CategoriaModule } from './categoria/categoria.module';
 import { AuthModule } from './auth/auth.module';
 import { ParaleloModule } from './paralelo/paralelo.module';
-import { PreguntaModule } from './pregunta/pregunta.module';
-import { TemaModule } from './tema/tema.module';
+
 import { AsignacionPregunta } from './asignacionpregunta/entity/asignacionpregunta.entity';
 import { Categoria } from './categoria/entity/categoria.entity';
 import { Docente } from './docente/entity/docente.entity';
@@ -18,6 +17,7 @@ import { Estudiante } from './estudiante/entity/estudiante.entity';
 import { EventoSeguridad } from './eventoseguridad/entity/eventoseguridad.entity';
 import { Examen } from './examen/entity/examen.entity';
 import { ExamenModule } from './examen/examen.module';
+import { ExamenEstudiante } from './examenestudiante/entity/examenestudiante.entity';
 import { ExamenPregunta } from './examenpregunta/entity/examenpregunta.entity';
 import { ExamenTema } from './examentema/entity/examentema.entity';
 import { Formula } from './formula/entity/formula.entity';
@@ -83,6 +83,7 @@ import { PreguntaModule } from './pregunta/pregunta.module';
           Estudiante,
           EventoSeguridad,
           Examen,
+          ExamenEstudiante,
           ExamenPregunta,
           ExamenTema,
           Formula,
@@ -128,8 +129,6 @@ import { PreguntaModule } from './pregunta/pregunta.module';
     InvitacionModule,
     ConexionCorreoModule,
     ExamenModule,
-    PreguntaModule,
-    TemaModule,
   ],
 
   controllers: [AppController],

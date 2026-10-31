@@ -11,6 +11,8 @@ interface LinkButtonProps {
     icono?: LucideIcon;
     /** `false` = la pantalla destino aún no existe (se muestra deshabilitado). */
     disponible?: boolean;
+    /** Texto del tooltip cuando está deshabilitado. */
+    title?: string;
     className?: string;
 }
 
@@ -29,6 +31,7 @@ export default function LinkButton({
     variante = 'secundaria',
     icono: Icono,
     disponible = true,
+    title = 'Próximamente',
     className,
 }: LinkButtonProps) {
     const contenido = (
@@ -42,7 +45,7 @@ export default function LinkButton({
         return (
             <span
                 aria-disabled="true"
-                title="Próximamente"
+                title={title}
                 className={cn(
                     BASE,
                     VARIANTES[variante],

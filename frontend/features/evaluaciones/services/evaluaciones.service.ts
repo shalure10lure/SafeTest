@@ -1,14 +1,20 @@
 import { BaseService } from '@/services/api/base.service';
 
 import type {
+    AsignacionDisponible,
+    AsignacionGuardada,
     BancoEvaluacion,
     CreateEvaluacionDto,
     Evaluacion,
+    EvaluacionActualizada,
     EvaluacionCreada,
     EvaluacionDetalle,
+    EvaluacionPublicada,
+    GuardarAsignacionDto,
+    GuardarConfiguracionDto,
     GuardarSeleccionDto,
+    ResumenEvaluacion,
     SeleccionGuardada,
-    EvaluacionActualizada,
     UpdateEvaluacionDto,
 } from '../types';
 
@@ -29,6 +35,13 @@ class EvaluacionesService extends BaseService {
         return this.post<EvaluacionCreada, CreateEvaluacionDto>('', data);
     }
 
+    update(id: number, data: UpdateEvaluacionDto) {
+        return this.patch<EvaluacionActualizada, UpdateEvaluacionDto>(
+            `/${id}`,
+            data,
+        );
+    }
+
     /** Banco de preguntas del docente; por defecto, el de la materia de la evaluación. */
     getBanco(id: number, materiaId?: number | null) {
         return this.get<BancoEvaluacion>(
@@ -43,10 +56,35 @@ class EvaluacionesService extends BaseService {
             data,
         );
     }
-    update(id: number, data: UpdateEvaluacionDto) {
-        return this.patch<EvaluacionActualizada, UpdateEvaluacionDto>(
-            `/${id}`,
+
+    guardarConfiguracion(id: number, data: GuardarConfiguracionDto) {
+        return this.put<EvaluacionDetalle, GuardarConfiguracionDto>(
+            `/${id}/configuracion`,
             data,
+        );
+    }
+
+    /** Paralelos (con sus estudiantes) que se pueden asignar a la evaluación. */
+    getAsignacion(id: number) {
+        return this.get<AsignacionDisponible>(`/${id}/asignacion`);
+    }
+
+    guardarAsignacion(id: number, data: GuardarAsignacionDto) {
+        return this.put<AsignacionGuardada, GuardarAsignacionDto>(
+            `/${id}/asignacion`,
+            data,
+        );
+    }
+
+    /** Datos completos para revisar antes de publicar (paso 5). */
+    getResumen(id: number) {
+        return this.get<ResumenEvaluacion>(`/${id}/resumen`);
+    }
+
+    publicar(id: number) {
+        return this.post<EvaluacionPublicada, Record<string, never>>(
+            `/${id}/publicar`,
+            {},
         );
     }
 }

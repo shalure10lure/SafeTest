@@ -12,6 +12,7 @@ import { Docente } from '../../docente/entity/docente.entity';
 import { Materia } from '../../materia/entity/materia.entity';
 import { ExamenTema } from '../../examentema/entity/examentema.entity';
 import { ExamenPregunta } from '../../examenpregunta/entity/examenpregunta.entity';
+import { ExamenEstudiante } from '../../examenestudiante/entity/examenestudiante.entity';
 import { ParaleloExamen } from '../../paraleloexamen/entity/paraleloexamen.entity';
 import { Rendicion } from '../../rendicion/entity/rendicion.entity';
 
@@ -80,6 +81,10 @@ export class Examen {
   @Column({ name: 'enviar_resultados_correo', type: 'boolean', default: false })
   enviar_resultados_correo: boolean;
 
+  // 'paralelos' (paralelos completos) | 'estudiantes' (estudiantes específicos)
+  @Column({ name: 'modo_asignacion', type: 'varchar', length: 20, default: 'paralelos' })
+  modo_asignacion: string;
+
   @ManyToOne(() => Docente, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'docente_id' })
   docente: Docente | null;
@@ -109,6 +114,12 @@ export class Examen {
     (paraleloExamen) => paraleloExamen.examen,
   )
   paralelos: ParaleloExamen[];
+
+  @OneToMany(
+    () => ExamenEstudiante,
+    (examenEstudiante) => examenEstudiante.examen,
+  )
+  estudiantes: ExamenEstudiante[];
 
   @OneToMany(() => Rendicion, (rendicion) => rendicion.examen)
   rendiciones: Rendicion[];

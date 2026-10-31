@@ -14,6 +14,8 @@ import {
 
 import { ExamenService } from './examen.service';
 import { CreateExamenDto } from './dto/create-examen.dto';
+import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
+import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
 
@@ -44,7 +46,7 @@ export class ExamenController {
         return this.examenService.getBanco(id, request.user.id, materiaId);
     }
 
-    // GUARDAR LA SELECCIÓN DE PREGUNTAS (manual o aleatoria)
+    // GUARDAR LA SELECCIÓN DE PREGUNTAS (paso 2: manual o aleatoria)
 
     @Put(':id/preguntas')
     guardarSeleccion(
@@ -55,12 +57,60 @@ export class ExamenController {
         return this.examenService.guardarSeleccion(id, body, request.user.id);
     }
 
+    // GUARDAR LA CONFIGURACIÓN (paso 3)
+
+    @Put(':id/configuracion')
+    guardarConfiguracion(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: GuardarConfiguracionDto,
+        @Req() request: any,
+    ) {
+        return this.examenService.guardarConfiguracion(id, body, request.user.id);
+    }
+
+    // PARALELOS Y ESTUDIANTES DISPONIBLES PARA ASIGNAR (paso 4)
+
+    @Get(':id/asignacion')
+    obtenerAsignacion(
+        @Param('id', ParseIntPipe) id: number,
+        @Req() request: any,
+    ) {
+        return this.examenService.obtenerAsignacion(id, request.user.id);
+    }
+
+    // GUARDAR LA ASIGNACIÓN (paso 4: paralelos completos o estudiantes específicos)
+
+    @Put(':id/asignacion')
+    guardarAsignacion(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: GuardarAsignacionDto,
+        @Req() request: any,
+    ) {
+        return this.examenService.guardarAsignacion(id, body, request.user.id);
+    }
+
+    // RESUMEN Y PUBLICACIÓN (paso 5)
+
+    @Get(':id/resumen')
+    obtenerResumen(
+        @Param('id', ParseIntPipe) id: number,
+        @Req() request: any,
+    ) {
+        return this.examenService.obtenerResumen(id, request.user.id);
+    }
+
+    @Post(':id/publicar')
+    publicar(@Param('id', ParseIntPipe) id: number, @Req() request: any) {
+        return this.examenService.publicar(id, request.user.id);
+    }
+
     // CONSULTAR UNA EVALUACIÓN
 
     @Get(':id')
     findOne(@Param('id', ParseIntPipe) id: number, @Req() request: any) {
         return this.examenService.findOne(id, request.user.id);
     }
+
     // EDITAR LA INFORMACIÓN GENERAL (paso 1)
 
     @Patch(':id')
