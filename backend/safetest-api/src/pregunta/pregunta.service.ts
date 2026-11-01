@@ -196,6 +196,57 @@ export class PreguntaService {
     return pregunta;
   }
 
+    // Consultar una pregunta con su configuración de respuesta (para editarla).
+  async findOneDetalle(id: number, docenteId: number) {
+    const pregunta = await this.findOne(id, docenteId);
+
+    const [inciso, opciones, correctas, solucion] = await Promise.all([
+      this.dataSource.getRepository(Inciso).findOneBy({
+        pregunta_id: id,
+        letra: LETRA_INCISO,
+      }),
+      this.dataSource.getRepository(Opcion).find({
+        where: { pregunta_id: id, letra: LETRA_INCISO },
+        order: { nro_opcion: 'ASC' },
+      }),
+      this.dataSource.getRepository(SolucionOpcion).find({
+        where: { pregunta_id: id, letra: LETRA_INCISO },
+      }),
+      this.dataSource.getRepository(SolucionInciso).findOneBy({
+        pregunta_id: id,
+        letra: LETRA_INCISO,
+      }),
+    ]);
+
+    const nrosCorrectos = new Set(
+      correctas.map((correcta) => correcta.nro_opcion),
+    );
+    const tipo = inciso?.tipo_respuesta ?? null;
+
+    return {
+      ...pregunta,
+      tipo_respuesta: tipo,
+      puntaje_max: inciso ? Number(inciso.puntaje_max) : null,
+      opciones: opciones.map((opcion) => ({
+        nro_opcion: opcion.nro_opcion,
+        texto_opcion: opcion.texto_opcion,
+        es_correcta: nrosCorrectos.has(opcion.nro_opcion),
+      })),
+      valor_correcto:
+        tipo === 'numerica' && solucion
+          ? Number(solucion.valor_correcto)
+          : null,
+      tolerancia:
+        tipo === 'numerica' && solucion
+          ? Number(solucion.tolerancia)
+          : null,
+      solucion_referencia:
+        tipo === 'desarrollo' && solucion
+          ? solucion.rubrica || null
+          : null,
+    };
+  }
+  
   // Verificar que el tema pertenezca a una materia activa del docente.
   private async validarTemaDelDocente(
     temaId: number,
