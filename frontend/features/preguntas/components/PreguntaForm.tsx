@@ -12,7 +12,7 @@ import type { Materia } from '@/features/materias/types';
 import { temasService } from '@/features/temas/services/temas.service';
 import type { Tema } from '@/features/temas/types';
 import { cn } from '@/lib/utils';
-
+import VistaPreviaRespuesta from './VistaPreviaRespuesta';
 import { preguntasService } from '../services/preguntas.service';
 import { TIPOS_PREGUNTA_FORMULARIO } from '../tipos';
 import type {
@@ -488,6 +488,15 @@ export default function PreguntaForm() {
                         marcarTocado('configuracion');
                     }}
                     onCambiarSolucionReferencia={setSolucionReferencia}
+                />
+                
+                <VistaPreviaRespuesta
+                    key={tipo}
+                    tipo={tipo}
+                    enunciado={enunciado}
+                    opciones={opciones
+                        .filter((opcion) => opcion.texto.trim())
+                        .map((opcion) => opcion.texto.trim())}
                 />
 
                 {errorEnvio && (
