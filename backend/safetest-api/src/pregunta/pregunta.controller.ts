@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocenteGuard } from '../auth/guards/docente.guard';
 import { PreguntaService } from './pregunta.service';
 import { CreatePreguntaDto } from './entity/dtos/create-pregunta.dto';
+import { FiltrarPreguntasDto } from './entity/dtos/filtrar-preguntas.dto';
 import { UpdatePreguntaDto } from './entity/dtos/update-pregunta.dto';
 
 @Controller('preguntas')
@@ -31,8 +33,14 @@ export class PreguntaController {
   }
 
   @Get()
-  findAll(@Req() req: Request) {
-    return this.preguntaService.findAll(this.docenteId(req));
+  findAll(
+    @Req() req: Request,
+    @Query() filtros: FiltrarPreguntasDto,
+  ) {
+    return this.preguntaService.findAll(
+      this.docenteId(req),
+      filtros,
+    );
   }
 
   @Get(':id')

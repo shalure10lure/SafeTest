@@ -911,14 +911,113 @@ export class ExamenService {
                 .find({ where: { examen_id: examenId } }),
         ]);
 
+        const ids = preguntas.map((fila) => fila.pregunta_id);
+
         return {
             ...examen,
-            pregunta_ids: preguntas.map((fila) => fila.pregunta_id),
+            pregunta_ids: ids,
+            // Detalle de lo ya guardado. Incluye preguntas inactivas o de otra
+            // materia para que el panel pueda mostrarlas al volver a la evaluación.
+            preguntas: await this.obtenerPreguntasPorIds(ids, examenId),
             criterios: temas.map((fila) => ({
                 tema_id: fila.tema_id,
                 cantidad: fila.cantidad,
             })),
         };
+    }
+
+    /**
+     * Detalle de preguntas concretas sin filtrar por estado ni por materia.
+     * Se usa para reconstruir la selección guardada de una evaluación.
+     */
+    private async obtenerPreguntasPorIds(ids: number[], examenId: number) {
+        if (ids.length === 0) {
+            return [];
+        }
+
+        const filas = await this.preguntaRepository
+            .createQueryBuilder('pregunta')
+            .innerJoin('pregunta.tema', 'tema')
+            .innerJoin('tema.materia', 'materia')
+            .leftJoin('pregunta.incisos', 'inciso')
+            .select('pregunta.pregunta_id', 'pregunta_id')
+            .addSelect('pregunta.enunciado', 'enunciado')
+            .addSelect('pregunta.dificultad', 'dificultad')
+            .addSelect('pregunta.activo', 'activo')
+            .addSelect('tema.tema_id', 'tema_id')
+            .addSelect('tema.nombre_tema', 'nombre_tema')
+            .addSelect('materia.materia_id', 'materia_id')
+            .addSelect('materia.nombre', 'materia_nombre')
+            .addSelect('COALESCE(SUM(inciso.puntaje_max), 0)', 'puntos')
+            .addSelect(
+                `CASE
+           WHEN COUNT(DISTINCT inciso.tipo_respuesta) = 1 THEN MIN(inciso.tipo_respuesta)
+           WHEN COUNT(DISTINCT inciso.tipo_respuesta) > 1 THEN 'mixto'
+           ELSE NULL
+         END`,
+                'tipo_respuesta',
+            )
+            .where('pregunta.pregunta_id IN (:...ids)', { ids })
+            .groupBy('pregunta.pregunta_id')
+            .addGroupBy('pregunta.activo')
+            .addGroupBy('tema.tema_id')
+            .addGroupBy('materia.materia_id')
+            .getRawMany<{
+                pregunta_id: number;
+                enunciado: string;
+                dificultad: string | null;
+                activo: boolean;
+                tema_id: number;
+                nombre_tema: string;
+                materia_id: number;
+                materia_nombre: string;
+                puntos: string;
+                tipo_respuesta: string | null;
+            }>();
+
+        // "Usada en N evaluaciones" (sin contar esta evaluación).
+        const filasUsos = await this.dataSource
+            .getRepository(ExamenPregunta)
+            .createQueryBuilder('ep')
+            .select('ep.pregunta_id', 'pregunta_id')
+            .addSelect('COUNT(*)', 'total')
+            .where('ep.pregunta_id IN (:...ids)', { ids })
+            .andWhere('ep.examen_id <> :examenId', { examenId })
+            .groupBy('ep.pregunta_id')
+            .getRawMany<{ pregunta_id: number; total: string }>();
+
+        const usosPorPregunta = new Map(
+            filasUsos.map((fila) => [Number(fila.pregunta_id), Number(fila.total)]),
+        );
+
+        const porId = new Map(
+            filas.map((fila) => [
+                Number(fila.pregunta_id),
+                {
+                    pregunta_id: Number(fila.pregunta_id),
+                    enunciado: fila.enunciado,
+                    dificultad: fila.dificultad,
+                    tipo_respuesta: fila.tipo_respuesta,
+                    puntos: Number(fila.puntos),
+                    usada_en: usosPorPregunta.get(Number(fila.pregunta_id)) ?? 0,
+                    activo: fila.activo,
+                    tema: {
+                        tema_id: Number(fila.tema_id),
+                        nombre_tema: fila.nombre_tema,
+                    },
+                    materia: {
+                        materia_id: Number(fila.materia_id),
+                        nombre: fila.materia_nombre,
+                    },
+                },
+            ]),
+        );
+
+        // Se conserva el orden de la selección guardada.
+        return ids.flatMap((id) => {
+            const pregunta = porId.get(id);
+            return pregunta ? [pregunta] : [];
+        });
     }
 
     // BANCO DE PREGUNTAS PARA ARMAR LA EVALUACIÓN

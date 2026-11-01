@@ -38,7 +38,7 @@ export const ROUTES = {
             `/docente/preguntas/${id}/editar`,
         preguntaIA: '/docente/preguntas/generar-ia',
         temas: '/docente/temas',
-        temaNuevo: '/docente/temas/nuevo',
+        temaNuevo: '/docente/temas/nueva',
         temaEditar: (id: number | string) => `/docente/temas/${id}/editar`,
         evaluaciones: '/docente/evaluaciones',
         evaluacionNueva: '/docente/evaluaciones/nueva',
@@ -149,7 +149,7 @@ export const NAV_DOCENTE: NavSection[] = [
                             href: ROUTES.docente.preguntaNueva,
                             variante: 'primaria',
                             icono: Plus,
-                            disponible: false,
+                            disponible: true,
                         },
                     ],
                 },
@@ -204,8 +204,57 @@ export const NAV_DOCENTE: NavSection[] = [
     {
         titulo: 'Banco de preguntas',
         items: [
-            { label: 'Todas las preguntas', href: ROUTES.docente.preguntas, icono: AlignLeft, disponible: true },
-            { label: 'Crear pregunta', href: ROUTES.docente.preguntaNueva, icono: Plus, disponible: true },
+            {
+                label: 'Todas las preguntas',
+                href: ROUTES.docente.preguntas,
+                icono: AlignLeft,
+                disponible: true,
+                topbar: {
+                    migaFinal: 'Banco de preguntas',
+                    titulo: 'Banco de preguntas',
+                    subtitulo:
+                        'Consulta y clasifica las preguntas de tus materias',
+                    acciones: [
+                        {
+                            label: 'Generar con IA',
+                            href: ROUTES.docente.preguntaIA,
+                            variante: 'secundaria',
+                            icono: Sparkles,
+                            disponible: false,
+                        },
+                        {
+                            label: 'Crear pregunta',
+                            href: ROUTES.docente.preguntaNueva,
+                            variante: 'primaria',
+                            icono: Plus,
+                            disponible: true,
+                        },
+                    ],
+                },
+            },
+            {
+                label: 'Crear pregunta',
+                href: ROUTES.docente.preguntaNueva,
+                icono: Plus,
+                disponible: true,
+                topbar: {
+                    seccion: 'Banco de preguntas',
+                    titulo: 'Crear pregunta',
+                    subtitulo: 'Agrega una nueva pregunta al banco',
+                },
+                rutasExtra: [
+                    {
+                        patron: /^\/docente\/preguntas\/\d+\/editar\/?$/,
+                        topbar: {
+                            seccion: 'Banco de preguntas',
+                            migaFinal: 'Editar pregunta',
+                            titulo: 'Editar pregunta',
+                            subtitulo:
+                                'Actualiza el enunciado y su clasificación',
+                        },
+                    },
+                ],
+            },
             { label: 'Generar con IA', href: ROUTES.docente.preguntaIA, icono: Sparkles, disponible: false },
         ],
     },

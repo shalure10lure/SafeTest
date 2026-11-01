@@ -71,6 +71,11 @@ export interface CriterioTema {
 export interface EvaluacionDetalle extends Evaluacion {
     /** Preguntas elegidas en modo manual, en orden. */
     pregunta_ids: number[];
+    /**
+     * Detalle de las preguntas guardadas, en el mismo orden. Incluye las que
+     * ya fueron dadas de baja para poder mostrarlas en el panel.
+     */
+    preguntas: PreguntaSeleccionada[];
     /** Criterios guardados en modo aleatorio. */
     criterios: CriterioTema[];
 }
@@ -92,6 +97,12 @@ export interface PreguntaBanco {
         materia_id: number;
         nombre: string;
     };
+}
+
+/** Pregunta del banco ya guardada en una evaluación (puede estar inactiva). */
+export interface PreguntaSeleccionada extends PreguntaBanco {
+    /** `false` si la pregunta se dio de baja después de guardarse. */
+    activo: boolean;
 }
 
 export interface TemaBanco {

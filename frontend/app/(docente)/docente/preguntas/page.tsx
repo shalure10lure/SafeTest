@@ -1,61 +1,146 @@
 
 'use client';
 
-import Link from 'next/link';
+import { useMemo, useState } from 'react';
 
+import { useMaterias } from '@/features/materias/hooks/useMaterias';
+import { useTemas } from '@/features/temas/hooks/useTemas';
+
+import FiltrosPreguntas from '@/features/preguntas/components/FiltrosPreguntas';
 import PreguntaList from '@/features/preguntas/components/PreguntaList';
+import { useDebouncedValor } from '@/features/preguntas/hooks/useDebouncedValor';
 import { usePreguntas } from '@/features/preguntas/hooks/usePreguntas';
+import type {
+    FiltrosPreguntas as Filtros,
+    TipoFiltroPregunta,
+} from '@/features/preguntas/types';
 
 export default function PreguntasPage() {
+    const [buscar, setBuscar] = useState('');
+    const [materiaId, setMateriaId] = useState('');
+    const [temaId, setTemaId] = useState('');
+    const [tipo, setTipo] = useState('');
+
+    const buscarDiferido = useDebouncedValor(buscar, 350);
+
+    const {
+        materias,
+        isLoading: cargandoMaterias,
+        error: errorMaterias,
+    } = useMaterias();
+    const {
+        temas,
+        isLoading: cargandoTemas,
+        error: errorTemas,
+    } = useTemas();
+
+    const materiasActivas = useMemo(
+        () => materias.filter((materia) => materia.activo),
+        [materias],
+    );
+
+    const filtros = useMemo<Filtros>(
+        () => ({
+            materia_id: materiaId ? Number(materiaId) : undefined,
+            tema_id: temaId ? Number(temaId) : undefined,
+            tipo: (tipo as TipoFiltroPregunta) || undefined,
+            buscar: buscarDiferido.trim() || undefined,
+        }),
+        [materiaId, temaId, tipo, buscarDiferido],
+    );
+
     const {
         preguntas,
         isLoading,
         isDeleting,
         error,
         eliminarPregunta,
-    } = usePreguntas();
+    } = usePreguntas(filtros);
+
+    const hayFiltros = Boolean(
+        materiaId || temaId || tipo || buscar.trim(),
+    );
+
+    function cambiarMateria(valor: string) {
+        setMateriaId(valor);
+
+        if (!valor) {
+            setTemaId('');
+            return;
+        }
+
+        const temaPertenece = temas.some(
+            (tema) =>
+                String(tema.tema_id) === temaId &&
+                String(tema.materia_id) === valor,
+        );
+
+        if (!temaPertenece) setTemaId('');
+    }
+
+    function limpiarFiltros() {
+        setBuscar('');
+        setMateriaId('');
+        setTemaId('');
+        setTipo('');
+    }
+
+    const errorDatos = errorMaterias ?? errorTemas;
 
     return (
-        <main className="space-y-6 p-6">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">
-                        Banco de preguntas
-                    </h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                        Administra las preguntas de tus materias.
-                    </p>
-                </div>
-
-                <Link
-                    href="/docente/preguntas/nuevo"
-                    className="rounded-lg bg-blue-700 px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-blue-800"
+        <main className="mx-auto w-full max-w-7xl space-y-4 p-4 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p
+                    className="text-sm text-slate-600"
+                    aria-live="polite"
                 >
-                    Crear pregunta
-                </Link>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-gray-200 bg-white p-5">
-                    <p className="text-sm text-gray-500">
-                        Preguntas registradas
-                    </p>
-                    <p className="mt-2 text-3xl font-bold text-gray-900">
+                    <span className="font-semibold text-slate-900">
                         {preguntas.length}
-                    </p>
-                </div>
+                    </span>{' '}
+                    {preguntas.length === 1
+                        ? 'pregunta encontrada'
+                        : 'preguntas encontradas'}
+                </p>
+
+                {isLoading && preguntas.length > 0 && (
+                    <span className="text-xs text-slate-400">
+                        Actualizando...
+                    </span>
+                )}
             </div>
 
-            {isDeleting && (
-                <p className="text-sm text-gray-500">
-                    Eliminando pregunta...
+            {errorDatos && (
+                <p
+                    role="alert"
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                >
+                    {errorDatos}
                 </p>
             )}
+
+            <FiltrosPreguntas
+                buscar={buscar}
+                onBuscar={setBuscar}
+                materiaId={materiaId}
+                onMateria={cambiarMateria}
+                materias={materiasActivas}
+                temaId={temaId}
+                onTema={setTemaId}
+                temas={temas}
+                tipo={tipo}
+                onTipo={setTipo}
+                hayFiltros={hayFiltros}
+                onLimpiar={limpiarFiltros}
+                cargandoDatos={cargandoMaterias || cargandoTemas}
+            />
 
             <PreguntaList
                 preguntas={preguntas}
                 isLoading={isLoading}
+                isDeleting={isDeleting}
                 error={error}
+                hayFiltros={hayFiltros}
+                onLimpiarFiltros={limpiarFiltros}
                 onEliminar={eliminarPregunta}
             />
         </main>

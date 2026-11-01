@@ -50,6 +50,7 @@ function FormularioSeleccion({
         evaluacion.pregunta_ids,
     );
     const [materiaId, setMateriaId] = useState<number | null>(materiaEvaluacionId);
+    const [temaId, setTemaId] = useState<number | null>(null);
     const [busqueda, setBusqueda] = useState('');
 
     // Modo aleatorio
@@ -71,6 +72,8 @@ function FormularioSeleccion({
     const { banco, conocidas, cargando, error } = useBancoPreguntas(
         evaluacion.examen_id,
         modo === 'aleatorio' ? materiaEvaluacionId : materiaId,
+        // La selección guardada se muestra aunque la pregunta ya no esté en el banco.
+        evaluacion.preguntas,
     );
 
     const bancoActualizado =

@@ -1,30 +1,42 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { preguntasService } from '../services/preguntas.service';
-import type { Pregunta } from '../types';
+import type { FiltrosPreguntas, Pregunta } from '../types';
 
-export function usePreguntas() {
+export function usePreguntas(filtros: FiltrosPreguntas = {}) {
     const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Solo la última petición puede actualizar el estado.
+    const ultimaPeticion = useRef(0);
+    const filtrosKey = JSON.stringify(filtros);
+
     const cargarPreguntas = useCallback(async () => {
+        const peticion = ++ultimaPeticion.current;
+        const vigente = () => peticion === ultimaPeticion.current;
+
         try {
             setIsLoading(true);
             setError(null);
 
-            const datos = await preguntasService.getAll();
-            setPreguntas(datos);
+            const datos = await preguntasService.getAll(
+                JSON.parse(filtrosKey) as FiltrosPreguntas,
+            );
+
+            if (vigente()) setPreguntas(datos);
         } catch {
-            setError('No se pudieron cargar las preguntas.');
+            if (vigente()) {
+                setError('No se pudieron cargar las preguntas.');
+            }
         } finally {
-            setIsLoading(false);
+            if (vigente()) setIsLoading(false);
         }
-    }, []);
+    }, [filtrosKey]);
 
     const eliminarPregunta = useCallback(
         async (id: number) => {
