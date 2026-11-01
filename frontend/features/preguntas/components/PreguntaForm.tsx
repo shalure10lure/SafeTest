@@ -16,7 +16,9 @@ import { cn } from '@/lib/utils';
 import { preguntasService } from '../services/preguntas.service';
 import { TIPOS_PREGUNTA_FORMULARIO } from '../tipos';
 import type {
+    DificultadPregunta,
     OpcionFormulario,
+    PreguntaDetalle,
     TipoRespuestaPregunta,
 } from '../types';
 import { construirDto, validarFormulario } from '../validacion';
@@ -32,28 +34,111 @@ const OPCIONES_INICIALES: OpcionFormulario[] = ['A', 'B', 'C', 'D'].map(
     (id) => ({ id, texto: '', correcta: false }),
 );
 
-export default function PreguntaForm() {
+interface PreguntaFormProps {
+    /** Si se envía, el formulario edita esa pregunta en lugar de crear una. */
+    pregunta?: PreguntaDetalle;
+}
+
+const TIPOS_VALIDOS = TIPOS_PREGUNTA_FORMULARIO.map((info) => info.valor);
+
+function tipoInicial(pregunta?: PreguntaDetalle): TipoRespuestaPregunta {
+    return (
+        TIPOS_VALIDOS.find((valor) => valor === pregunta?.tipo_respuesta) ??
+        'opcion_unica'
+    );
+}
+
+function opcionesIniciales(pregunta?: PreguntaDetalle): OpcionFormulario[] {
+    const tipo = tipoInicial(pregunta);
+
+    if (
+        !pregunta ||
+        (tipo !== 'opcion_unica' && tipo !== 'opcion_multiple')
+    ) {
+        return OPCIONES_INICIALES;
+    }
+
+    const guardadas: OpcionFormulario[] = pregunta.opciones.map(
+        (opcion, indice) => ({
+            id: String.fromCharCode(65 + indice),
+            texto: opcion.texto_opcion,
+            correcta: opcion.es_correcta,
+        }),
+    );
+
+    // El formulario siempre ofrece al menos 4 opciones.
+    while (guardadas.length < 4) {
+        guardadas.push({
+            id: String.fromCharCode(65 + guardadas.length),
+            texto: '',
+            correcta: false,
+        });
+    }
+
+    return guardadas;
+}
+
+function respuestaBooleanaInicial(
+    pregunta?: PreguntaDetalle,
+): 'verdadero' | 'falso' | '' {
+    if (!pregunta || tipoInicial(pregunta) !== 'verdadero_falso') return '';
+
+    const correcta = pregunta.opciones
+        .find((opcion) => opcion.es_correcta)
+        ?.texto_opcion.trim()
+        .toLowerCase();
+
+    return correcta === 'verdadero' || correcta === 'falso' ? correcta : '';
+}
+
+export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
     const router = useRouter();
+    const esEdicion = Boolean(pregunta);
 
     const [materias, setMaterias] = useState<Materia[]>([]);
     const [temas, setTemas] = useState<Tema[]>([]);
     const [cargando, setCargando] = useState(true);
     const [errorDatos, setErrorDatos] = useState('');
 
-    const [materiaId, setMateriaId] = useState('');
-    const [temaId, setTemaId] = useState('');
-    const [tipo, setTipo] = useState<TipoRespuestaPregunta>('opcion_unica');
-    const [puntaje, setPuntaje] = useState('2');
-    const [enunciado, setEnunciado] = useState('');
+    const [materiaId, setMateriaId] = useState(
+        String(
+            pregunta?.materia?.materia_id ??
+                pregunta?.tema?.materia?.materia_id ??
+                '',
+        ),
+    );
+    const [temaId, setTemaId] = useState(
+        pregunta ? String(pregunta.tema_id) : '',
+    );
+    const [tipo, setTipo] = useState<TipoRespuestaPregunta>(
+        tipoInicial(pregunta),
+    );
+    const [puntaje, setPuntaje] = useState(
+        String(pregunta?.puntaje_max ?? 2),
+    );
+    const [enunciado, setEnunciado] = useState(pregunta?.enunciado ?? '');
+    const [dificultad, setDificultad] = useState<DificultadPregunta | ''>(
+        pregunta?.dificultad ?? '',
+    );
 
-    const [opciones, setOpciones] =
-        useState<OpcionFormulario[]>(OPCIONES_INICIALES);
+    const [opciones, setOpciones] = useState<OpcionFormulario[]>(
+        opcionesIniciales(pregunta),
+    );
     const [respuestaBooleana, setRespuestaBooleana] = useState<
         'verdadero' | 'falso' | ''
-    >('');
-    const [valorCorrecto, setValorCorrecto] = useState('');
-    const [tolerancia, setTolerancia] = useState('0');
-    const [solucionReferencia, setSolucionReferencia] = useState('');
+    >(respuestaBooleanaInicial(pregunta));
+    const [valorCorrecto, setValorCorrecto] = useState(
+        pregunta?.valor_correcto !== null &&
+            pregunta?.valor_correcto !== undefined
+            ? String(pregunta.valor_correcto)
+            : '',
+    );
+    const [tolerancia, setTolerancia] = useState(
+        String(pregunta?.tolerancia ?? 0),
+    );
+    const [solucionReferencia, setSolucionReferencia] = useState(
+        pregunta?.solucion_referencia ?? '',
+    );
 
     const [tocados, setTocados] = useState<Record<string, boolean>>({});
     const [enviando, setEnviando] = useState(false);
@@ -75,6 +160,21 @@ export default function PreguntaForm() {
                     datosMaterias.filter((materia) => materia.activo),
                 );
                 setTemas(datosTemas);
+
+                // Si la pregunta no trae su materia, se deduce del tema.
+                if (pregunta) {
+                    const temaGuardado = pregunta.tema_id;
+
+                    setMateriaId(
+                        (actual) =>
+                            actual ||
+                            String(
+                                datosTemas.find(
+                                    (tema) => tema.tema_id === temaGuardado,
+                                )?.materia_id ?? '',
+                            ),
+                    );
+                }
             } catch {
                 if (vigente) {
                     setErrorDatos(
@@ -91,7 +191,7 @@ export default function PreguntaForm() {
         return () => {
             vigente = false;
         };
-    }, []);
+    }, [pregunta]);
 
     const temasDeMateria = useMemo(() => {
         if (!materiaId) return [];
@@ -192,10 +292,17 @@ export default function PreguntaForm() {
 
         setEnviando(true);
 
-        const datos = construirDto(datosFormulario, puntajeNumero);
+        const datos = {
+            ...construirDto(datosFormulario, puntajeNumero),
+            ...(dificultad ? { dificultad } : {}),
+        };
 
         try {
-            await preguntasService.create(datos);
+            if (pregunta) {
+                await preguntasService.update(pregunta.pregunta_id, datos);
+            } else {
+                await preguntasService.create(datos);
+            }
 
             router.push(ROUTES.docente.preguntas);
             router.refresh();
@@ -219,6 +326,20 @@ export default function PreguntaForm() {
                         {errorDatos}
                     </p>
                 )}
+
+                {pregunta &&
+                    !TIPOS_VALIDOS.some(
+                        (valor) => valor === pregunta.tipo_respuesta,
+                    ) && (
+                        <p
+                            role="status"
+                            className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                        >
+                            Esta pregunta no tiene un tipo compatible con este
+                            formulario. Elige un tipo y configura su respuesta
+                            para actualizarla.
+                        </p>
+                    )}
 
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <Campo
@@ -462,6 +583,26 @@ export default function PreguntaForm() {
                     />
                 </Campo>
 
+                <Campo id="dificultad" etiqueta="Dificultad" opcional>
+                    <select
+                        id="dificultad"
+                        value={dificultad}
+                        onChange={(evento) =>
+                            setDificultad(
+                                evento.target.value as DificultadPregunta | '',
+                            )
+                        }
+                        className={cn(ENTRADA, 'max-w-xs border-slate-200')}
+                    >
+                        {!pregunta?.dificultad && (
+                            <option value="">Sin definir</option>
+                        )}
+                        <option value="facil">Fácil</option>
+                        <option value="media">Media</option>
+                        <option value="dificil">Difícil</option>
+                    </select>
+                </Campo>
+
                 <RecursosOpcionales />
 
                 <ConfiguracionRespuesta
@@ -510,7 +651,11 @@ export default function PreguntaForm() {
                     disabled={!formularioValido || enviando}
                     className="inline-flex h-9 items-center justify-center rounded-lg bg-violet-600 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                    {enviando ? 'Guardando...' : 'Guardar pregunta'}
+                    {enviando
+                        ? 'Guardando...'
+                        : esEdicion
+                          ? 'Guardar cambios'
+                          : 'Guardar pregunta'}
                 </button>
             </div>
         </form>

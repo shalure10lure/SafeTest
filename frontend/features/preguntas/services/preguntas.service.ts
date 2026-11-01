@@ -7,6 +7,7 @@ import type {
     FiltrosPreguntas,
     Pregunta,
     PreguntaCreada,
+    PreguntaDetalle,
 } from '../types';
 
 class PreguntasService extends BaseService {
@@ -28,7 +29,7 @@ class PreguntasService extends BaseService {
     }
 
     getById(id: number) {
-        return this.get<Pregunta>(`/${id}`);
+        return this.get<PreguntaDetalle>(`/${id}`);
     }
 
     create(data: CrearPreguntaDto) {
@@ -36,7 +37,7 @@ class PreguntasService extends BaseService {
     }
 
     update(id: number, data: ActualizarPreguntaDto) {
-        return this.put<Pregunta, ActualizarPreguntaDto>(
+        return this.put<PreguntaDetalle, ActualizarPreguntaDto>(
             `/${id}`,
             data,
         );
