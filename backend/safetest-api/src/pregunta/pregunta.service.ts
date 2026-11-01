@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
 import { Inciso } from '../inciso/entity/inciso.entity';
@@ -14,6 +14,7 @@ import { Materia } from '../materia/entity/materia.entity';
 import { Opcion } from '../opcion/entity/opcion.entity';
 import { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
 import { SolucionOpcion } from '../solucionopcion/entity/solucionopcion.entity';
+import { SolucionTexto } from '../soluciontexto/entity/soluciontexto.entity';
 import { Tema } from '../tema/entity/tema.entity';
 import {
   CreatePreguntaDto,
@@ -26,6 +27,14 @@ import { Pregunta } from './entity/pregunta.entity';
 
 /** Letra del único inciso que genera este formulario. */
 const LETRA_INCISO = 'a';
+
+/** Configuración de respuesta ya validada, lista para guardarse. */
+interface ConfiguracionRespuesta {
+  opciones: OpcionPreguntaDto[];
+  valorCorrecto: number | null;
+  tolerancia: number | null;
+  solucionReferencia: string | null;
+}
 
 @Injectable()
 export class PreguntaService {
@@ -246,7 +255,7 @@ export class PreguntaService {
           : null,
     };
   }
-  
+
   // Verificar que el tema pertenezca a una materia activa del docente.
   private async validarTemaDelDocente(
     temaId: number,
@@ -345,12 +354,16 @@ export class PreguntaService {
    * Valida la configuración de respuesta según el tipo y devuelve los datos
    * normalizados que se guardarán en las tablas de solución.
    */
-  private validarConfiguracionRespuesta(dto: CreatePreguntaDto): {
-    opciones: OpcionPreguntaDto[];
-    valorCorrecto: number | null;
-    tolerancia: number | null;
-    solucionReferencia: string | null;
-  } {
+  private validarConfiguracionRespuesta(
+    dto: Pick<
+      CreatePreguntaDto,
+      | 'tipo_respuesta'
+      | 'opciones'
+      | 'valor_correcto'
+      | 'tolerancia'
+      | 'solucion_referencia'
+    >,
+  ): ConfiguracionRespuesta {
     const tipo: TipoRespuesta = dto.tipo_respuesta;
     const opciones = (dto.opciones ?? []).map((opcion) => ({
       ...opcion,
@@ -588,7 +601,51 @@ export class PreguntaService {
     });
   }
 
-  // Actualizar una pregunta existente.
+    /** Guarda opciones y soluciones de un inciso según el tipo de pregunta. */
+  private async guardarRespuesta(
+    manager: EntityManager,
+    preguntaId: number,
+    tipo: TipoRespuesta,
+    configuracion: ConfiguracionRespuesta,
+  ): Promise<void> {
+    for (let indice = 0; indice < configuracion.opciones.length; indice++) {
+      const opcionDto = configuracion.opciones[indice];
+      const nroOpcion = indice + 1;
+
+      await manager.save(
+        manager.create(Opcion, {
+          pregunta_id: preguntaId,
+          letra: LETRA_INCISO,
+          nro_opcion: nroOpcion,
+          texto_opcion: opcionDto.texto_opcion,
+        }),
+      );
+
+      if (opcionDto.es_correcta) {
+        await manager.save(
+          manager.create(SolucionOpcion, {
+            pregunta_id: preguntaId,
+            letra: LETRA_INCISO,
+            nro_opcion: nroOpcion,
+          }),
+        );
+      }
+    }
+
+    if (tipo === 'numerica' || configuracion.solucionReferencia !== null) {
+      await manager.save(
+        manager.create(SolucionInciso, {
+          pregunta_id: preguntaId,
+          letra: LETRA_INCISO,
+          valor_correcto: (configuracion.valorCorrecto ?? 0).toString(),
+          tolerancia: (configuracion.tolerancia ?? 0).toString(),
+          rubrica: configuracion.solucionReferencia ?? '',
+        }),
+      );
+    }
+  }
+
+  // Actualizar una pregunta existente (datos básicos y configuración).
   async update(
     id: number,
     dto: UpdatePreguntaDto,
@@ -597,6 +654,9 @@ export class PreguntaService {
     const pregunta = await this.findOne(id, docenteId);
 
     await this.validarNoVinculadaAExamen(id);
+
+    // --- Clasificación ---
+    let temaId = pregunta.tema_id;
 
     if (dto.tema_id !== undefined) {
       const tema =
@@ -613,9 +673,7 @@ export class PreguntaService {
               docenteId,
             );
 
-      // Actualizar la relación y no solamente el ID.
-      pregunta.tema = tema;
-      pregunta.tema_id = tema.tema_id;
+      temaId = tema.tema_id;
     } else if (dto.materia_id !== undefined) {
       // Solo cambia la materia: el tema actual debe pertenecer a ella.
       await this.validarMateriaYTema(
@@ -625,18 +683,105 @@ export class PreguntaService {
       );
     }
 
-    if (dto.enunciado !== undefined) {
-      pregunta.enunciado = dto.enunciado.trim();
+    // --- Datos básicos ---
+    const enunciado =
+      dto.enunciado !== undefined ? dto.enunciado.trim() : undefined;
+
+    if (enunciado === '') {
+      throw new BadRequestException('El enunciado es obligatorio');
     }
 
-    if (dto.dificultad !== undefined) {
-      pregunta.dificultad = dto.dificultad;
+    // --- Configuración de respuesta ---
+    const tocaConfiguracion =
+      dto.puntaje_max !== undefined ||
+      dto.opciones !== undefined ||
+      dto.valor_correcto !== undefined ||
+      dto.tolerancia !== undefined ||
+      dto.solucion_referencia !== undefined;
+
+    if (tocaConfiguracion && dto.tipo_respuesta === undefined) {
+      throw new BadRequestException(
+        'Indica el tipo de pregunta para modificar su configuración',
+      );
     }
 
-    await this.preguntaRepository.save(pregunta);
+    const tipo = dto.tipo_respuesta;
+    const configuracion =
+      tipo !== undefined
+        ? this.validarConfiguracionRespuesta({
+            tipo_respuesta: tipo,
+            opciones: dto.opciones,
+            valor_correcto: dto.valor_correcto,
+            tolerancia: dto.tolerancia,
+            solucion_referencia: dto.solucion_referencia,
+          })
+        : null;
 
-    // Devolver la pregunta actualizada con su tema.
-    return this.findOne(id, docenteId);
+    await this.dataSource.transaction(async (manager) => {
+      const cambios: {
+        tema_id: number;
+        enunciado?: string;
+        dificultad?: string;
+      } = { tema_id: temaId };
+
+      if (enunciado !== undefined) cambios.enunciado = enunciado;
+      if (dto.dificultad !== undefined) cambios.dificultad = dto.dificultad;
+
+      await manager.update(Pregunta, { pregunta_id: id }, cambios);
+
+      if (tipo === undefined || configuracion === null) return;
+
+      const otrosIncisos = await manager.countBy(Inciso, {
+        pregunta_id: id,
+        letra: Not(LETRA_INCISO),
+      });
+
+      if (otrosIncisos > 0) {
+        throw new BadRequestException(
+          'Esta pregunta tiene varios incisos y su configuración no se puede editar desde este formulario',
+        );
+      }
+
+      const clave = { pregunta_id: id, letra: LETRA_INCISO };
+      const enunciadoInciso = enunciado ?? pregunta.enunciado;
+      const inciso = await manager.findOneBy(Inciso, clave);
+
+      if (inciso) {
+        await manager.update(Inciso, clave, {
+          enunciado_inciso: enunciadoInciso,
+          tipo_respuesta: tipo,
+          ...(dto.puntaje_max !== undefined && {
+            puntaje_max: dto.puntaje_max.toString(),
+          }),
+        });
+      } else {
+        if (dto.puntaje_max === undefined) {
+          throw new BadRequestException(
+            'Indica el puntaje de la pregunta',
+          );
+        }
+
+        await manager.save(
+          manager.create(Inciso, {
+            ...clave,
+            enunciado_inciso: enunciadoInciso,
+            tipo_respuesta: tipo,
+            puntaje_max: dto.puntaje_max.toString(),
+          }),
+        );
+      }
+
+      // Reemplazo completo de la configuración anterior.
+      await manager.delete(SolucionOpcion, clave);
+      await manager.delete(SolucionInciso, clave);
+      await manager.delete(SolucionTexto, clave);
+      await manager.delete(Opcion, clave);
+
+      await this.guardarRespuesta(manager, id, tipo, configuracion);
+    });
+
+    // Devolver la pregunta actualizada con su configuración.
+    return this.findOneDetalle(id, docenteId);
   }
 
   // Baja lógica: no borrar físicamente la pregunta.
