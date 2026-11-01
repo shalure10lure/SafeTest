@@ -279,17 +279,29 @@ export class PreguntaService {
   }
 
   // Comprobar si la pregunta está vinculada a algún examen.
+  // soloPublicados = true: solo cuentan los exámenes ya publicados (edición).
   private async validarNoVinculadaAExamen(
     preguntaId: number,
+    soloPublicados = false,
   ): Promise<void> {
-    const vinculada =
-      await this.examenPreguntaRepository.existsBy({
-        pregunta_id: preguntaId,
-      });
+    const consulta = this.examenPreguntaRepository
+      .createQueryBuilder('examenPregunta')
+      .innerJoin('examenPregunta.examen', 'examen')
+      .where('examenPregunta.pregunta_id = :preguntaId', { preguntaId });
 
-    if (vinculada) {
+    if (soloPublicados) {
+      consulta.andWhere('examen.estado = :estado', {
+        estado: 'publicado',
+      });
+    }
+
+    const vinculadas = await consulta.getCount();
+
+    if (vinculadas > 0) {
       throw new ConflictException(
-        'No puedes modificar ni desactivar una pregunta vinculada a un examen',
+        soloPublicados
+          ? 'No puedes modificar una pregunta que pertenece a una evaluación publicada'
+          : 'No puedes modificar ni desactivar una pregunta vinculada a un examen',
       );
     }
   }
@@ -653,7 +665,7 @@ export class PreguntaService {
   ) {
     const pregunta = await this.findOne(id, docenteId);
 
-    await this.validarNoVinculadaAExamen(id);
+    await this.validarNoVinculadaAExamen(id,true);
 
     // --- Clasificación ---
     let temaId = pregunta.tema_id;
