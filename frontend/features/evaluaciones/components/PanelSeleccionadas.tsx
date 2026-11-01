@@ -7,7 +7,7 @@ import type { PreguntaBanco } from '../types';
 export interface ItemSeleccionado {
     id: number;
     /** `undefined` si la pregunta aún no se ha cargado en esta sesión. */
-    pregunta?: PreguntaBanco;
+    pregunta?: PreguntaBanco & { activo?: boolean };
 }
 
 interface PanelSeleccionadasProps {
@@ -63,11 +63,19 @@ export default function PanelSeleccionadas({
                                         <p className="line-clamp-2 text-xs text-slate-900">
                                             {item.pregunta?.enunciado ?? `Pregunta #${item.id}`}
                                         </p>
-                                        {tipo && (
-                                            <p className="mt-0.5 text-[10px] text-slate-400">
-                                                {tipo.label}
-                                            </p>
-                                        )}
+                                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-slate-400">
+                                            {tipo && <span>{tipo.label}</span>}
+                                            {item.pregunta && (
+                                                <span>
+                                                    {formatearPuntos(item.pregunta.puntos)} pts
+                                                </span>
+                                            )}
+                                            {item.pregunta?.activo === false && (
+                                                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">
+                                                    Inactiva
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <button

@@ -4,7 +4,9 @@ import { BaseService } from '@/services/api/base.service';
 import type {
     ActualizarPreguntaDto,
     CrearPreguntaDto,
+    FiltrosPreguntas,
     Pregunta,
+    PreguntaCreada,
 } from '../types';
 
 class PreguntasService extends BaseService {
@@ -12,8 +14,17 @@ class PreguntasService extends BaseService {
         super('/preguntas');
     }
 
-    getAll() {
-        return this.get<Pregunta[]>('');
+    getAll(filtros: FiltrosPreguntas = {}) {
+        const params = Object.fromEntries(
+            Object.entries(filtros).filter(
+                ([, valor]) => valor !== undefined && valor !== '',
+            ),
+        );
+
+        return this.get<Pregunta[]>(
+            '',
+            Object.keys(params).length > 0 ? { params } : undefined,
+        );
     }
 
     getById(id: number) {
@@ -21,7 +32,7 @@ class PreguntasService extends BaseService {
     }
 
     create(data: CrearPreguntaDto) {
-        return this.post<Pregunta, CrearPreguntaDto>('', data);
+        return this.post<PreguntaCreada, CrearPreguntaDto>('', data);
     }
 
     update(id: number, data: ActualizarPreguntaDto) {

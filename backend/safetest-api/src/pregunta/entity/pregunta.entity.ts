@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -38,6 +39,10 @@ export class Pregunta {
   // Baja lógica: no borrar físicamente preguntas usadas en exámenes.
   @Column({ type: 'boolean', default: true })
   activo: boolean;
+
+  // Fecha de creación; se usa para ordenar y mostrar el banco.
+  @CreateDateColumn({ name: 'creado_en', type: 'timestamptz' })
+  creado_en: Date;
   // ---------- FIN NUEVO ----------
 
   @ManyToOne(() => Tema, (tema) => tema.preguntas, {

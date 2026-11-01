@@ -15,6 +15,11 @@ export class UpdatePreguntaDto {
   enunciado?: string;
 
   @IsOptional()
+  @IsInt({ message: 'La materia debe ser un número entero' })
+  @Min(1, { message: 'La materia debe ser válida' })
+  materia_id?: number;
+
+  @IsOptional()
   @IsInt({ message: 'El tema debe ser un número entero' })
   @Min(1, { message: 'El tema debe ser válido' })
   tema_id?: number;
