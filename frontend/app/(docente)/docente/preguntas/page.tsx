@@ -54,7 +54,9 @@ export default function PreguntasPage() {
         isLoading,
         isDeleting,
         error,
+        errorEliminacion,
         eliminarPregunta,
+        limpiarErrorEliminacion,
     } = usePreguntas(filtros);
 
     const hayFiltros = Boolean(
@@ -116,6 +118,22 @@ export default function PreguntasPage() {
                 >
                     {errorDatos}
                 </p>
+            )}
+            {errorEliminacion && (
+                <div
+                    role="alert"
+                    className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                >
+                    <p>{errorEliminacion}</p>
+
+                    <button
+                        type="button"
+                        onClick={limpiarErrorEliminacion}
+                        className="shrink-0 font-medium underline hover:text-red-900"
+                    >
+                        Cerrar
+                    </button>
+                </div>
             )}
 
             <FiltrosPreguntas

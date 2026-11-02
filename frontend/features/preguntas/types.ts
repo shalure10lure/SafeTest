@@ -91,6 +91,13 @@ export interface ActualizarPreguntaDto {
     materia_id?: number;
     tema_id?: number;
     dificultad?: DificultadPregunta;
+    // Configuración de respuesta: si se envía el tipo, se reemplaza completa.
+    tipo_respuesta?: TipoRespuestaPregunta;
+    puntaje_max?: number;
+    opciones?: OpcionPreguntaDto[];
+    valor_correcto?: number;
+    tolerancia?: number;
+    solucion_referencia?: string;
 }
 
 /** Respuesta de `POST /preguntas`. */
@@ -109,4 +116,29 @@ export interface PreguntaCreada {
     valor_correcto: number | null;
     tolerancia: number | null;
     solucion_referencia: string | null;
+}
+
+/** Respuesta de `GET /preguntas/:id`: la pregunta con su configuración. */
+export interface PreguntaDetalle {
+    pregunta_id: number;
+    enunciado: string;
+    tema_id: number;
+    dificultad: DificultadPregunta | null;
+    origen: string;
+    activo: boolean;
+    /** ISO 8601. */
+    creado_en: string;
+    /** Puede ser null o un tipo heredado en preguntas antiguas. */
+    tipo_respuesta: TipoFiltroPregunta | null;
+    puntaje_max: number | null;
+    opciones: {
+        nro_opcion: number;
+        texto_opcion: string;
+        es_correcta: boolean;
+    }[];
+    valor_correcto: number | null;
+    tolerancia: number | null;
+    solucion_referencia: string | null;
+    tema?: TemaPregunta;
+    materia?: MateriaPregunta;
 }

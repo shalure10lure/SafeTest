@@ -48,7 +48,7 @@ export class PreguntaController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: Request,
   ) {
-    return this.preguntaService.findOne(
+    return this.preguntaService.findOneDetalle(
       id,
       this.docenteId(req),
     );
