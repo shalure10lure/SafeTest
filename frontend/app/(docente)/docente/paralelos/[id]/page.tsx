@@ -9,6 +9,8 @@ import { ArrowLeft, Mail, Users } from "lucide-react";
 import { useParalelos } from "@/features/paralelos/hooks/useParalelos";
 import InvitacionesParalelo from "@/features/invitacion/components/InvitacionesParalelo";
 
+import EstudiantesParalelo from "@/features/paralelos/components/EstudiantesParalelo";
+
 type Pestana = "estudiantes" | "invitaciones";
 
 export default function DetalleParaleloPage() {
@@ -174,11 +176,10 @@ export default function DetalleParaleloPage() {
             role="tab"
             aria-selected={pestana === "estudiantes"}
             onClick={() => setPestana("estudiantes")}
-            className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
-              pestana === "estudiantes"
-                ? "border-violet-700 text-violet-700"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
+            className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${pestana === "estudiantes"
+              ? "border-violet-700 text-violet-700"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
           >
             <Users size={18} />
             Estudiantes
@@ -189,11 +190,10 @@ export default function DetalleParaleloPage() {
             role="tab"
             aria-selected={pestana === "invitaciones"}
             onClick={() => setPestana("invitaciones")}
-            className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
-              pestana === "invitaciones"
-                ? "border-violet-700 text-violet-700"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
+            className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${pestana === "invitaciones"
+              ? "border-violet-700 text-violet-700"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
           >
             <Mail size={18} />
             Invitaciones
@@ -216,15 +216,14 @@ export default function DetalleParaleloPage() {
           </div>
 
           <p className="mt-4 text-sm text-slate-600">
-            {cantidadEstudiantes === undefined
-              ? "El listado de estudiantes todavía no está disponible en esta vista."
-              : `El paralelo tiene ${cantidadEstudiantes} inscripción(es) registradas.`}
+            {cantidadEstudiantes !== undefined
+              ? `El paralelo tiene ${cantidadEstudiantes} inscripción(es) registradas.`
+              : "No se pudo obtener la cantidad de estudiantes."}
           </p>
 
-          <p className="mt-2 text-sm text-slate-500">
-            Aquí integraremos el listado detallado
-            de estudiantes cuando conectemos sus datos.
-          </p>
+          <div className="mt-4">
+            <EstudiantesParalelo paraleloId={paraleloId} />
+          </div>
         </section>
       ) : (
         <InvitacionesParalelo
