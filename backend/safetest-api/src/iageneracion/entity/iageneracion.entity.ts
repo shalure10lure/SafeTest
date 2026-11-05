@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -16,6 +17,8 @@ import { IaPropuestaPregunta } from '../../iapropuestapregunta/entity/iapropuest
 
 // HU-44: registro de cada solicitud de generación de preguntas.
 @Entity('ia_generacion')
+// La migración crea este índice con "fecha" DESC.
+@Index('IDX_ia_generacion_docente_fecha', ['docente_id', 'fecha'])
 export class IaGeneracion {
   @PrimaryGeneratedColumn({ name: 'generacion_id' })
   generacion_id: number;
@@ -43,8 +46,36 @@ export class IaGeneracion {
   @Column({ type: 'varchar', length: 100, nullable: true })
   modelo: string | null;
 
-  // 'completada' | 'error'
-  @Column({ type: 'varchar', length: 15, default: 'completada' })
+  // Proveedor de IA usado (por ejemplo 'gemini').
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  proveedor: string | null;
+
+  // Propuestas válidas que realmente se guardaron.
+  @Column({ name: 'cantidad_generada', type: 'int', nullable: true })
+  cantidad_generada: number | null;
+
+  // Consumo reportado por el proveedor, cuando está disponible.
+  @Column({ name: 'tokens_entrada', type: 'int', nullable: true })
+  tokens_entrada: number | null;
+
+  @Column({ name: 'tokens_salida', type: 'int', nullable: true })
+  tokens_salida: number | null;
+
+  @Column({ name: 'tokens_total', type: 'int', nullable: true })
+  tokens_total: number | null;
+
+  // Mensaje sanitizado para el docente; el detalle técnico solo va a logs.
+  @Column({ name: 'error_mensaje', type: 'varchar', length: 500, nullable: true })
+  error_mensaje: string | null;
+
+  @Column({ name: 'iniciada_en', type: 'timestamptz', nullable: true })
+  iniciada_en: Date | null;
+
+  @Column({ name: 'finalizada_en', type: 'timestamptz', nullable: true })
+  finalizada_en: Date | null;
+
+  // 'pendiente' | 'procesando' | 'completada' | 'error'
+  @Column({ type: 'varchar', length: 15, default: 'pendiente' })
   estado: string;
 
   @CreateDateColumn({ type: 'timestamptz' })

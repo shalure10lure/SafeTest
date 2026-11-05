@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -14,6 +15,7 @@ import { Tema } from '../../tema/entity/tema.entity';
 // RF-19: material académico del docente. El archivo está en MinIO;
 // aquí solo se guarda la referencia y el texto extraído para la IA.
 @Entity('material_academico')
+@Index('IDX_material_docente_materia', ['docente_id', 'materia_id'])
 export class MaterialAcademico {
   @PrimaryGeneratedColumn({ name: 'material_id' })
   material_id: number;
@@ -49,6 +51,15 @@ export class MaterialAcademico {
 
   @Column({ type: 'boolean', default: true })
   activo: boolean;
+
+  // Consentimiento explícito para enviar el texto extraído a un proveedor
+  // de IA. 'activo' indica disponibilidad en la biblioteca, no autorización.
+  @Column({ name: 'autorizado_ia', type: 'boolean', default: false })
+  autorizado_ia: boolean;
+
+  // Momento de la última autorización; null si nunca se autorizó o se revocó.
+  @Column({ name: 'autorizado_en', type: 'timestamptz', nullable: true })
+  autorizado_en: Date | null;
 
   @CreateDateColumn({ name: 'fecha_subida', type: 'timestamptz' })
   fecha_subida: Date;

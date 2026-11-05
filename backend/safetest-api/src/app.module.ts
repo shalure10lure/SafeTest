@@ -53,6 +53,9 @@ import { IaPropuestaPregunta } from './iapropuestapregunta/entity/iapropuestapre
 import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionreferencia.entity';
 import { TemaModule } from './tema/tema.module';
 import { PreguntaModule } from './pregunta/pregunta.module';
+import { IaModule } from './ia/ia.module';
+import { IaGeneracionModule } from './iageneracion/iageneracion.module';
+import { MaterialAcademicoModule } from './materialacademico/materialacademico.module';
 
 @Module({
   imports: [
@@ -129,6 +132,9 @@ import { PreguntaModule } from './pregunta/pregunta.module';
     InvitacionModule,
     ConexionCorreoModule,
     ExamenModule,
+    IaModule,
+    IaGeneracionModule,
+    MaterialAcademicoModule,
   ],
 
   controllers: [AppController],

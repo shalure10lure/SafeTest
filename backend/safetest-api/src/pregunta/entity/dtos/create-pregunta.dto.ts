@@ -40,6 +40,9 @@ export class OpcionPreguntaDto {
 export class CreatePreguntaDto {
   @IsString({ message: 'El enunciado debe ser texto' })
   @IsNotEmpty({ message: 'El enunciado es obligatorio' })
+  @MaxLength(4_000, {
+    message: 'El enunciado no puede superar los 4000 caracteres',
+  })
   enunciado: string;
 
   @IsInt({ message: 'La materia debe ser un número entero' })
@@ -98,4 +101,11 @@ export class CreatePreguntaDto {
   @IsOptional()
   @IsString({ message: 'La solución de referencia debe ser texto' })
   solucion_referencia?: string;
+
+  @IsOptional()
+  @IsString({ message: 'La explicación debe ser texto' })
+  @MaxLength(2_000, {
+    message: 'La explicación no puede superar los 2000 caracteres',
+  })
+  explicacion?: string;
 }

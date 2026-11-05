@@ -18,23 +18,24 @@ import { SolucionTexto } from '../soluciontexto/entity/soluciontexto.entity';
 import { Tema } from '../tema/entity/tema.entity';
 import {
   CreatePreguntaDto,
-  OpcionPreguntaDto,
   TipoRespuesta,
 } from './entity/dtos/create-pregunta.dto';
 import { FiltrarPreguntasDto } from './entity/dtos/filtrar-preguntas.dto';
 import { UpdatePreguntaDto } from './entity/dtos/update-pregunta.dto';
 import { Pregunta } from './entity/pregunta.entity';
+import {
+  validarConfiguracionRespuesta,
+  type ConfiguracionRespuesta,
+} from './validators/configuracion-respuesta.validator';
 
 /** Letra del único inciso que genera este formulario. */
 const LETRA_INCISO = 'a';
 
-/** Configuración de respuesta ya validada, lista para guardarse. */
-interface ConfiguracionRespuesta {
-  opciones: OpcionPreguntaDto[];
-  valorCorrecto: number | null;
-  tolerancia: number | null;
-  solucionReferencia: string | null;
-}
+/**
+ * Origen interno de la pregunta. El cliente nunca lo envía: el controlador
+ * usa 'manual' y la aceptación de propuestas generadas por IA usa 'ia'.
+ */
+export type OrigenPregunta = 'manual' | 'ia';
 
 @Injectable()
 export class PreguntaService {
@@ -186,6 +187,7 @@ export class PreguntaService {
       .select([
         'pregunta.pregunta_id',
         'pregunta.enunciado',
+        'pregunta.explicacion',
         'pregunta.tema_id',
         'pregunta.dificultad',
         'pregunta.origen',
@@ -315,12 +317,17 @@ export class PreguntaService {
   private async validarMateriaDelDocente(
     materiaId: number,
     docenteId: number,
+    manager?: EntityManager,
   ): Promise<Materia> {
-    const materia = await this.materiaRepository.findOneBy({
+    const filtros = {
       materia_id: materiaId,
       docente_id: docenteId,
       activo: true,
-    });
+    };
+
+    const materia = manager
+      ? await manager.findOne(Materia, { where: filtros })
+      : await this.materiaRepository.findOneBy(filtros);
 
     if (!materia) {
       throw new NotFoundException(
@@ -336,13 +343,17 @@ export class PreguntaService {
     materiaId: number,
     temaId: number,
     docenteId: number,
+    manager?: EntityManager,
   ): Promise<{ materia: Materia; tema: Tema }> {
     const materia = await this.validarMateriaDelDocente(
       materiaId,
       docenteId,
+      manager,
     );
 
-    const tema = await this.temaRepository.findOneBy({ tema_id: temaId });
+    const tema = manager
+      ? await manager.findOneBy(Tema, { tema_id: temaId })
+      : await this.temaRepository.findOneBy({ tema_id: temaId });
 
     if (!tema) {
       throw new NotFoundException('Tema no encontrado');
@@ -357,162 +368,33 @@ export class PreguntaService {
     return { materia, tema };
   }
 
-  /** Normaliza el texto para detectar opciones repetidas. */
-  private normalizarTextoOpcion(texto: string): string {
-    return texto.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es');
+  // Crear una pregunta nueva con su inciso, opciones y solución.
+  async create(
+    dto: CreatePreguntaDto,
+    docenteId: number,
+    origen: OrigenPregunta = 'manual',
+  ) {
+    return this.dataSource.transaction((manager) =>
+      this.crearEnTransaccion(manager, dto, docenteId, origen),
+    );
   }
 
   /**
-   * Valida la configuración de respuesta según el tipo y devuelve los datos
-   * normalizados que se guardarán en las tablas de solución.
+   * Crea la pregunta dentro de una transacción existente. Lo usan la creación
+   * manual y la aceptación de propuestas de IA para compartir validaciones,
+   * persistencia y forma de respuesta.
    */
-  private validarConfiguracionRespuesta(
-    dto: Pick<
-      CreatePreguntaDto,
-      | 'tipo_respuesta'
-      | 'opciones'
-      | 'valor_correcto'
-      | 'tolerancia'
-      | 'solucion_referencia'
-    >,
-  ): ConfiguracionRespuesta {
-    const tipo: TipoRespuesta = dto.tipo_respuesta;
-    const opciones = (dto.opciones ?? []).map((opcion) => ({
-      ...opcion,
-      texto_opcion: opcion.texto_opcion?.trim() ?? '',
-    }));
-
-    if (tipo === 'opcion_unica' || tipo === 'opcion_multiple') {
-      if (opciones.length < 2) {
-        throw new BadRequestException(
-          'Agrega al menos 2 opciones con texto',
-        );
-      }
-
-      if (opciones.some((opcion) => !opcion.texto_opcion)) {
-        throw new BadRequestException(
-          'Completa el texto de todas las opciones o elimina las que no uses',
-        );
-      }
-
-      const textos = opciones.map((opcion) =>
-        this.normalizarTextoOpcion(opcion.texto_opcion),
-      );
-
-      if (new Set(textos).size !== textos.length) {
-        throw new BadRequestException(
-          'Las opciones no pueden repetirse',
-        );
-      }
-
-      const correctas = opciones.filter(
-        (opcion) => opcion.es_correcta,
-      ).length;
-
-      if (tipo === 'opcion_unica' && correctas !== 1) {
-        throw new BadRequestException(
-          'Marca exactamente una respuesta correcta',
-        );
-      }
-
-      if (tipo === 'opcion_multiple' && correctas < 1) {
-        throw new BadRequestException(
-          'Marca al menos una respuesta correcta',
-        );
-      }
-
-      return {
-        opciones,
-        valorCorrecto: null,
-        tolerancia: null,
-        solucionReferencia: null,
-      };
-    }
-
-    if (tipo === 'verdadero_falso') {
-      if (opciones.length !== 2) {
-        throw new BadRequestException(
-          'Verdadero/Falso debe tener dos opciones',
-        );
-      }
-
-      const textos = opciones.map((opcion) =>
-        this.normalizarTextoOpcion(opcion.texto_opcion),
-      );
-
-      if (
-        new Set(textos).size !== 2 ||
-        !textos.includes('verdadero') ||
-        !textos.includes('falso')
-      ) {
-        throw new BadRequestException(
-          'Las opciones de Verdadero/Falso deben ser Verdadero y Falso',
-        );
-      }
-
-      const correctas = opciones.filter(
-        (opcion) => opcion.es_correcta,
-      ).length;
-
-      if (correctas !== 1) {
-        throw new BadRequestException(
-          'Selecciona una única respuesta correcta',
-        );
-      }
-
-      return {
-        opciones,
-        valorCorrecto: null,
-        tolerancia: null,
-        solucionReferencia: null,
-      };
-    }
-
-    if (tipo === 'numerica') {
-      if (
-        dto.valor_correcto === undefined ||
-        dto.valor_correcto === null ||
-        !Number.isFinite(dto.valor_correcto)
-      ) {
-        throw new BadRequestException(
-          'Ingresa un valor numérico válido',
-        );
-      }
-
-      const tolerancia = dto.tolerancia ?? 0;
-
-      if (!Number.isFinite(tolerancia) || tolerancia < 0) {
-        throw new BadRequestException(
-          'La tolerancia debe ser un número mayor o igual que 0',
-        );
-      }
-
-      return {
-        opciones: [],
-        valorCorrecto: dto.valor_correcto,
-        tolerancia,
-        solucionReferencia: null,
-      };
-    }
-
-    if (tipo === 'desarrollo') {
-      return {
-        opciones: [],
-        valorCorrecto: null,
-        tolerancia: null,
-        solucionReferencia: dto.solucion_referencia?.trim() || null,
-      };
-    }
-
-    throw new BadRequestException('El tipo de pregunta no es válido');
-  }
-
-  // Crear una pregunta nueva con su inciso, opciones y solución.
-  async create(dto: CreatePreguntaDto, docenteId: number) {
+  async crearEnTransaccion(
+    manager: EntityManager,
+    dto: CreatePreguntaDto,
+    docenteId: number,
+    origen: OrigenPregunta,
+  ) {
     const { materia, tema } = await this.validarMateriaYTema(
       dto.materia_id,
       dto.tema_id,
       docenteId,
+      manager,
     );
 
     const enunciado = dto.enunciado.trim();
@@ -521,96 +403,53 @@ export class PreguntaService {
       throw new BadRequestException('El enunciado es obligatorio');
     }
 
-    const configuracion = this.validarConfiguracionRespuesta(dto);
+    const configuracion = validarConfiguracionRespuesta(dto);
 
-    return this.dataSource.transaction(async (manager) => {
-      const pregunta = manager.create(Pregunta, {
-        enunciado,
-        tema_id: tema.tema_id,
-        dificultad: dto.dificultad ?? null,
-        origen: 'manual',
-        activo: true,
-      });
-
-      const preguntaGuardada = await manager.save(pregunta);
-
-      const inciso = manager.create(Inciso, {
-        pregunta_id: preguntaGuardada.pregunta_id,
-        letra: LETRA_INCISO,
-        enunciado_inciso: enunciado,
-        tipo_respuesta: dto.tipo_respuesta,
-        puntaje_max: dto.puntaje_max.toString(),
-      });
-
-      await manager.save(inciso);
-
-      const opcionesGuardadas: {
-        nro_opcion: number;
-        texto_opcion: string;
-        es_correcta: boolean;
-      }[] = [];
-
-      for (let indice = 0; indice < configuracion.opciones.length; indice++) {
-        const opcionDto = configuracion.opciones[indice];
-        const nroOpcion = indice + 1;
-
-        const opcion = manager.create(Opcion, {
-          pregunta_id: preguntaGuardada.pregunta_id,
-          letra: LETRA_INCISO,
-          nro_opcion: nroOpcion,
-          texto_opcion: opcionDto.texto_opcion,
-        });
-
-        await manager.save(opcion);
-
-        if (opcionDto.es_correcta) {
-          await manager.save(
-            manager.create(SolucionOpcion, {
-              pregunta_id: preguntaGuardada.pregunta_id,
-              letra: LETRA_INCISO,
-              nro_opcion: nroOpcion,
-            }),
-          );
-        }
-
-        opcionesGuardadas.push({
-          nro_opcion: nroOpcion,
-          texto_opcion: opcionDto.texto_opcion,
-          es_correcta: opcionDto.es_correcta,
-        });
-      }
-
-      // La tabla solucion_inciso se usa para respuestas numéricas y para la
-      // solución de referencia de las preguntas abiertas.
-      const requiereSolucionInciso =
-        dto.tipo_respuesta === 'numerica' ||
-        configuracion.solucionReferencia !== null;
-
-      if (requiereSolucionInciso) {
-        await manager.save(
-          manager.create(SolucionInciso, {
-            pregunta_id: preguntaGuardada.pregunta_id,
-            letra: LETRA_INCISO,
-            valor_correcto: (configuracion.valorCorrecto ?? 0).toString(),
-            tolerancia: (configuracion.tolerancia ?? 0).toString(),
-            rubrica: configuracion.solucionReferencia ?? '',
-          }),
-        );
-      }
-
-      return {
-        pregunta_id: preguntaGuardada.pregunta_id,
-        enunciado: preguntaGuardada.enunciado,
-        materia_id: materia.materia_id,
-        tema_id: tema.tema_id,
-        tipo_respuesta: dto.tipo_respuesta,
-        puntaje_max: dto.puntaje_max,
-        opciones: opcionesGuardadas,
-        valor_correcto: configuracion.valorCorrecto,
-        tolerancia: configuracion.tolerancia,
-        solucion_referencia: configuracion.solucionReferencia,
-      };
+    const pregunta = manager.create(Pregunta, {
+      enunciado,
+      explicacion: dto.explicacion?.trim() || null,
+      tema_id: tema.tema_id,
+      dificultad: dto.dificultad ?? null,
+      origen,
+      activo: true,
     });
+
+    const preguntaGuardada = await manager.save(pregunta);
+
+    const inciso = manager.create(Inciso, {
+      pregunta_id: preguntaGuardada.pregunta_id,
+      letra: LETRA_INCISO,
+      enunciado_inciso: enunciado,
+      tipo_respuesta: dto.tipo_respuesta,
+      puntaje_max: dto.puntaje_max.toString(),
+    });
+
+    await manager.save(inciso);
+
+    await this.guardarRespuesta(
+      manager,
+      preguntaGuardada.pregunta_id,
+      dto.tipo_respuesta,
+      configuracion,
+    );
+
+    return {
+      pregunta_id: preguntaGuardada.pregunta_id,
+      enunciado: preguntaGuardada.enunciado,
+      explicacion: preguntaGuardada.explicacion,
+      materia_id: materia.materia_id,
+      tema_id: tema.tema_id,
+      tipo_respuesta: dto.tipo_respuesta,
+      puntaje_max: dto.puntaje_max,
+      opciones: configuracion.opciones.map((opcion, indice) => ({
+        nro_opcion: indice + 1,
+        texto_opcion: opcion.texto_opcion,
+        es_correcta: opcion.es_correcta,
+      })),
+      valor_correcto: configuracion.valorCorrecto,
+      tolerancia: configuracion.tolerancia,
+      solucion_referencia: configuracion.solucionReferencia,
+    };
   }
 
     /** Guarda opciones y soluciones de un inciso según el tipo de pregunta. */
@@ -720,7 +559,7 @@ export class PreguntaService {
     const tipo = dto.tipo_respuesta;
     const configuracion =
       tipo !== undefined
-        ? this.validarConfiguracionRespuesta({
+        ? validarConfiguracionRespuesta({
             tipo_respuesta: tipo,
             opciones: dto.opciones,
             valor_correcto: dto.valor_correcto,
