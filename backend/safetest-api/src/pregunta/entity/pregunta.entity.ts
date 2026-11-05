@@ -24,6 +24,9 @@ export class Pregunta {
   @Column({ type: 'text' })
   enunciado: string;
 
+  @Column({ type: 'text', nullable: true })
+  explicacion: string | null;
+
   @Column({ name: 'tema_id', type: 'int' })
   tema_id: number;
 

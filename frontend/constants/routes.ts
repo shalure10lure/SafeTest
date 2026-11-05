@@ -15,6 +15,7 @@ import {
     BookOpen,
     Mail,
     History,
+    Upload,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -32,11 +33,16 @@ export const ROUTES = {
         paralelos: '/docente/paralelos',
         estudiantes: '/docente/estudiantes',
         materiales: '/docente/materiales',
+        materialNuevo: '/docente/materiales/nuevo',
+        materialDetalle: (id: number | string) =>
+            `/docente/materiales/${id}`,
         preguntas: '/docente/preguntas',
         preguntaNueva: '/docente/preguntas/nuevo',
         preguntaEditar: (id: number | string) =>
             `/docente/preguntas/${id}/editar`,
         preguntaIA: '/docente/preguntas/generar-ia',
+        preguntaIAGeneracion: (id: number | string) =>
+            `/docente/preguntas/generar-ia/${id}`,
         temas: '/docente/temas',
         temaNuevo: '/docente/temas/nueva',
         temaEditar: (id: number | string) => `/docente/temas/${id}/editar`,
@@ -197,7 +203,44 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Materiales académicos',
                 href: ROUTES.docente.materiales,
                 icono: FileText,
-                disponible: false,
+                disponible: true,
+                topbar: {
+                    seccion: 'Materiales',
+                    titulo: 'Materiales académicos',
+                    subtitulo:
+                        'Carga documentos y decide cuáles se usan en la generación con IA',
+                    acciones: [
+                        {
+                            label: 'Subir material',
+                            href: ROUTES.docente.materialNuevo,
+                            variante: 'primaria',
+                            icono: Upload,
+                            disponible: true,
+                        },
+                    ],
+                },
+                rutasExtra: [
+                    {
+                        patron: /^\/docente\/materiales\/nuevo\/?$/,
+                        topbar: {
+                            seccion: 'Materiales',
+                            migaFinal: 'Subir material',
+                            titulo: 'Subir material',
+                            subtitulo:
+                                'Formatos PDF, TXT y DOCX de hasta 10 MB',
+                        },
+                    },
+                    {
+                        patron: /^\/docente\/materiales\/\d+\/?$/,
+                        topbar: {
+                            seccion: 'Materiales',
+                            migaFinal: 'Detalle del material',
+                            titulo: 'Detalle del material',
+                            subtitulo:
+                                'Información, autorización para IA y eliminación',
+                        },
+                    },
+                ],
             },
         ],
     },
@@ -220,7 +263,7 @@ export const NAV_DOCENTE: NavSection[] = [
                             href: ROUTES.docente.preguntaIA,
                             variante: 'secundaria',
                             icono: Sparkles,
-                            disponible: false,
+                            disponible: true,
                         },
                         {
                             label: 'Crear pregunta',
@@ -255,7 +298,33 @@ export const NAV_DOCENTE: NavSection[] = [
                     },
                 ],
             },
-            { label: 'Generar con IA', href: ROUTES.docente.preguntaIA, icono: Sparkles, disponible: false },
+            {
+                label: 'Generar con IA',
+                href: ROUTES.docente.preguntaIA,
+                icono: Sparkles,
+                disponible: true,
+                topbar: {
+                    seccion: 'Banco de preguntas',
+                    titulo: 'Generar preguntas con IA',
+                    subtitulo:
+                        'Configura una generación asíncrona con tus materiales autorizados',
+                    acciones: [
+                        {
+                            label: 'Todas las preguntas',
+                            href: ROUTES.docente.preguntas,
+                            variante: 'secundaria',
+                            disponible: true,
+                        },
+                        {
+                            label: 'Crear pregunta',
+                            href: ROUTES.docente.preguntaNueva,
+                            variante: 'primaria',
+                            icono: Plus,
+                            disponible: true,
+                        },
+                    ],
+                },
+            },
         ],
     },
 

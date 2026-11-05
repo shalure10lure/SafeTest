@@ -26,6 +26,9 @@ interface ConfiguracionRespuestaProps {
     onCambiarValorCorrecto: (valor: string) => void;
     onCambiarTolerancia: (valor: string) => void;
     onCambiarSolucionReferencia: (valor: string) => void;
+    onAgregarOpcion?: () => void;
+    onEliminarOpcion?: (id: string) => void;
+    maxLengthSolucion?: number;
 }
 
 const ENTRADA =
@@ -46,6 +49,9 @@ export default function ConfiguracionRespuesta({
     onCambiarValorCorrecto,
     onCambiarTolerancia,
     onCambiarSolucionReferencia,
+    onAgregarOpcion,
+    onEliminarOpcion,
+    maxLengthSolucion = 5_000,
 }: ConfiguracionRespuestaProps) {
     const info = infoTipoPreguntaFormulario(tipo);
     const errorOpciones = mostrarErrores ? errores.opciones : '';
@@ -133,10 +139,33 @@ export default function ConfiguracionRespuesta({
                                         />
                                         Correcta
                                     </label>
+                                    {onEliminarOpcion && (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                onEliminarOpcion(opcion.id)
+                                            }
+                                            disabled={opciones.length <= 2}
+                                            aria-label={`Eliminar opción ${letra}`}
+                                            className="shrink-0 text-xs text-red-600 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    )}
                                 </div>
                             );
                         })}
                     </div>
+
+                    {onAgregarOpcion && (
+                        <button
+                            type="button"
+                            onClick={onAgregarOpcion}
+                            className="mt-3 text-xs font-medium text-violet-700 hover:underline"
+                        >
+                            Agregar opción
+                        </button>
+                    )}
 
                     <p className="mt-3 text-xs text-slate-500">{info.ayuda}</p>
 
@@ -211,7 +240,7 @@ export default function ConfiguracionRespuesta({
                                 )
                             }
                             rows={3}
-                            maxLength={5000}
+                            maxLength={maxLengthSolucion}
                             placeholder="Describe la respuesta esperada o los criterios de corrección..."
                             aria-describedby="solucion-referencia-descripcion"
                             className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600"
