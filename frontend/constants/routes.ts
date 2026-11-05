@@ -187,7 +187,12 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Mis estudiantes',
                 href: ROUTES.docente.estudiantes,
                 icono: User,
-                disponible: false,
+                disponible: true,
+                topbar: {
+                    seccion: 'Gestión académica',
+                    titulo: 'Mis estudiantes',
+                    subtitulo: 'Estudiantes incorporados a tus paralelos',
+                }
             },
         ],
     },
