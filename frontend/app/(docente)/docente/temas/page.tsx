@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -7,6 +6,7 @@ import Link from 'next/link';
 
 import { temasService } from '@/features/temas/services/temas.service';
 import { materiasService } from '@/features/materias/services/materias.service';
+import { mensajeDeError } from '@/features/evaluaciones/mensaje-error';
 import type { Tema } from '@/features/temas/types';
 import type { Materia } from '@/features/materias/types';
 
@@ -15,6 +15,8 @@ export default function TemasPage() {
     const [materias, setMaterias] = useState<Materia[]>([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [eliminandoId, setEliminandoId] = useState<number | null>(null);
+    const [errorEliminacion, setErrorEliminacion] = useState<string | null>(null);
 
     const cargarDatos = useCallback(async () => {
         try {
@@ -39,6 +41,33 @@ export default function TemasPage() {
     useEffect(() => {
         void cargarDatos();
     }, [cargarDatos]);
+
+    async function eliminarTema(tema: Tema) {
+        const confirmado = window.confirm(
+            `¿Eliminar el tema "${tema.nombre_tema}"? Esta acción no se puede deshacer.`,
+        );
+
+        if (!confirmado) {
+            return;
+        }
+
+        try {
+            setEliminandoId(tema.tema_id);
+            setErrorEliminacion(null);
+
+            await temasService.remove(tema.tema_id);
+
+            setTemas((actuales) =>
+                actuales.filter((item) => item.tema_id !== tema.tema_id),
+            );
+        } catch (err) {
+            setErrorEliminacion(
+                mensajeDeError(err, 'No se pudo eliminar el tema.'),
+            );
+        } finally {
+            setEliminandoId(null);
+        }
+    }
 
     return (
         <main className="mx-auto max-w-6xl space-y-6 p-6">
@@ -92,6 +121,22 @@ export default function TemasPage() {
                 </div>
             )}
 
+            {errorEliminacion && (
+                <div
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                >
+                    {errorEliminacion}
+                    <button
+                        type="button"
+                        onClick={() => setErrorEliminacion(null)}
+                        className="ml-2 font-semibold underline"
+                    >
+                        Cerrar
+                    </button>
+                </div>
+            )}
+
             <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
                 <div className="border-b border-gray-200 px-5 py-4">
                     <h2 className="font-semibold text-gray-900">
@@ -138,12 +183,25 @@ export default function TemasPage() {
                                                 {materia?.nombre ?? `Materia ${tema.materia_id}`}
                                             </td>
                                             <td className="px-5 py-4 text-right">
-                                                <Link
-                                                    href={ROUTES.docente.temaEditar(tema.tema_id)}
-                                                    className="font-medium text-blue-700 hover:underline"
-                                                >
-                                                    Editar
-                                                </Link>
+                                                <div className="flex justify-end gap-4">
+                                                    <Link
+                                                        href={ROUTES.docente.temaEditar(tema.tema_id)}
+                                                        className="font-medium text-blue-700 hover:underline"
+                                                    >
+                                                        Editar
+                                                    </Link>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void eliminarTema(tema)}
+                                                        disabled={eliminandoId === tema.tema_id}
+                                                        className="font-medium text-red-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                                                    >
+                                                        {eliminandoId === tema.tema_id
+                                                            ? 'Eliminando...'
+                                                            : 'Eliminar'}
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );

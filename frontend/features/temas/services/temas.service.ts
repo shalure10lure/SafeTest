@@ -30,6 +30,9 @@ class TemasService extends BaseService {
             data,
         );
     }
+    remove(id: number) {
+        return this.delete<void>(`/${id}`);
+    }
 }
 
 export const temasService = new TemasService();
