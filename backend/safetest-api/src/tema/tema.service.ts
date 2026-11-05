@@ -11,7 +11,8 @@ import { Tema } from './entity/tema.entity';
 import { Materia } from '../materia/entity/materia.entity';
 import { CreateTemaDto } from './entity/dtos/create-tema.dto';
 import { UpdateTemaDto } from './entity/dtos/update-tema.dto';
-
+import { Pregunta } from '../pregunta/entity/pregunta.entity';
+import { Formula } from '../formula/entity/formula.entity';
 @Injectable()
 export class TemaService {
   constructor(
@@ -93,6 +94,7 @@ export class TemaService {
 
     return this.temaRepository.save(tema);
   }
+  
 
   // Verificar que la materia pertenezca al docente y esté activa.
   private async validarMateriaDelDocente(
@@ -138,5 +140,27 @@ export class TemaService {
         'Ya existe un tema con ese nombre en esta materia',
       );
     }
+  }
+    // Eliminar un tema propio solo si no tiene dependencias que conservar.
+  async remove(id: number, docenteId: number): Promise<void> {
+    const tema = await this.findOne(id, docenteId);
+
+    const [preguntas, formulas] = await Promise.all([
+      this.temaRepository.manager.count(Pregunta, {
+        where: { tema: { tema_id: id } },
+      }),
+      this.temaRepository.manager.count(Formula, {
+        where: { tema: { tema_id: id } },
+      }),
+    ]);
+
+    if (preguntas > 0 || formulas > 0) {
+      throw new ConflictException(
+        'No puedes eliminar un tema que tiene preguntas o fórmulas asociadas. ' +
+          'Mueve o elimina esas preguntas primero.',
+      );
+    }
+
+    await this.temaRepository.remove(tema);
   }
 }

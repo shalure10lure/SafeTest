@@ -1,8 +1,9 @@
-
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -52,5 +53,13 @@ export class TemaController {
     @Req() req: Request,
   ) {
     return this.temaService.update(id, dto, this.docenteId(req));
+  }
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.temaService.remove(id, this.docenteId(req));
   }
 }
