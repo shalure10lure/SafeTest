@@ -24,12 +24,17 @@ export interface OpcionIa {
 }
 
 /**
- * Propuesta cruda del proveedor. El servidor completa dificultad y puntaje,
- * y valida la estructura antes de persistirla.
+ * Propuesta cruda del proveedor. El servidor completa el puntaje y valida la
+ * estructura antes de persistirla.
+ *
+ * `dificultad` es autoritativa de la solicitud: el proveedor puede declararla,
+ * pero si lo hace debe coincidir con el nivel pedido. Nunca se acepta una
+ * dificultad distinta solo porque el modelo la escriba en su respuesta.
  */
 export interface PreguntaIa {
   enunciado: string;
   tipo_respuesta: TipoRespuesta;
+  dificultad?: DificultadIa;
   opciones?: OpcionIa[];
   valor_correcto?: number;
   tolerancia?: number;

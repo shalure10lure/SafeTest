@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 
 import { esMaterialSeleccionableParaIa } from '../elegibilidad';
 import {
+    DESCRIPCIONES_DIFICULTAD,
     ETIQUETAS_DIFICULTAD,
     etiquetaTipo,
 } from '../etiquetas';
@@ -495,6 +496,11 @@ export default function GeneracionIaForm() {
                                 id="dificultad-ia"
                                 etiqueta="Dificultad"
                                 error={errorDificultad}
+                                ayuda={
+                                    dificultad
+                                        ? DESCRIPCIONES_DIFICULTAD[dificultad]
+                                        : 'La dificultad define el razonamiento exigido, no la longitud del enunciado.'
+                                }
                             >
                                 <select
                                     id="dificultad-ia"
@@ -509,11 +515,7 @@ export default function GeneracionIaForm() {
                                     }}
                                     disabled={bloqueado}
                                     aria-invalid={Boolean(errorDificultad)}
-                                    aria-describedby={
-                                        errorDificultad
-                                            ? 'dificultad-ia-descripcion'
-                                            : undefined
-                                    }
+                                    aria-describedby="dificultad-ia-descripcion"
                                     className={cn(
                                         ENTRADA,
                                         errorDificultad

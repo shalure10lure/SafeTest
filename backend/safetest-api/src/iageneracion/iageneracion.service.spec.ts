@@ -182,6 +182,68 @@ describe('IaGeneracionService', () => {
       ]);
     });
 
+    it.each(['facil', 'media', 'dificil'] as const)(
+      'persiste la dificultad %s elegida por el docente',
+      async (dificultad) => {
+        const { servicio, generacion, materia, tema, material, dataSource } =
+          montarServicio();
+
+        materia.findOneBy.mockResolvedValue({
+          materia_id: 1,
+          docente_id: 7,
+          activo: true,
+        });
+        tema.findOneBy.mockResolvedValue({
+          tema_id: 2,
+          materia_id: 1,
+          nombre_tema: 'Derivadas',
+        });
+        material.find.mockResolvedValue([
+          {
+            material_id: 5,
+            activo: true,
+            autorizado_ia: true,
+            texto_extraido: 'Contenido del material',
+          },
+        ]);
+
+        const manager = {
+          save: jest.fn(async (_entidad: unknown, datos: object) => ({
+            ...datos,
+            generacion_id: 9,
+          })),
+          insert: jest.fn().mockResolvedValue(undefined),
+        };
+        dataSource.transaction.mockImplementation(
+          async (callback: (manager: unknown) => unknown) => callback(manager),
+        );
+
+        await servicio.crear(7, {
+          ...ENTRADA_BASE,
+          dificultad,
+          material_ids: [5],
+        });
+
+        expect(generacion.create).toHaveBeenCalledWith(
+          expect.objectContaining({ dificultad }),
+        );
+      },
+    );
+
+    it('rechaza una dificultad desconocida antes de consultar la base', async () => {
+      const { servicio, materia } = montarServicio();
+
+      await expect(
+        servicio.crear(7, {
+          ...ENTRADA_BASE,
+          dificultad: 'extrema' as never,
+          material_ids: [5],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(materia.findOneBy).not.toHaveBeenCalled();
+    });
+
     it('rechaza una cantidad fuera de rango antes de consultar la base', async () => {
       const { servicio, materia } = montarServicio();
 

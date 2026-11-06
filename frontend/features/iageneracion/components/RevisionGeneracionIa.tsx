@@ -14,7 +14,10 @@ import { Badge, Card, type Tono } from '@/components/ui/Card';
 import LinkButton from '@/components/ui/LinkButton';
 import { ROUTES } from '@/constants/routes';
 import { mensajeErrorGeneracionIa } from '@/features/iageneracion/errores';
-import { ETIQUETAS_DIFICULTAD } from '@/features/iageneracion/etiquetas';
+import {
+    ETIQUETAS_DIFICULTAD,
+    DESCRIPCIONES_DIFICULTAD,
+} from '@/features/iageneracion/etiquetas';
 import VistaPreviaRespuesta from '@/features/preguntas/components/VistaPreviaRespuesta';
 import { infoTipoPreguntaFormulario } from '@/features/preguntas/tipos';
 import type { TipoRespuestaPregunta } from '@/features/preguntas/types';
@@ -144,7 +147,12 @@ function PropuestaCard({
                     </p>
                     <h3 className="mt-1 text-sm font-semibold text-slate-900">
                         {infoTipoPreguntaFormulario(tipo).label}
-                        <span className="ml-2 font-normal text-slate-500">
+                        <span
+                            className="ml-2 font-normal text-slate-500"
+                            title={
+                                DESCRIPCIONES_DIFICULTAD[contenido.dificultad]
+                            }
+                        >
                             · {ETIQUETAS_DIFICULTAD[contenido.dificultad]} ·{' '}
                             {contenido.puntaje_max} puntos
                         </span>
@@ -269,6 +277,7 @@ export default function RevisionGeneracionIa({
     const [cargando, setCargando] = useState(true);
     const [actualizando, setActualizando] = useState(false);
     const [error, setError] = useState('');
+    const [aviso, setAviso] = useState('');
     const [accion, setAccion] = useState<{
         propuestaId: number;
         tipo: 'editar' | 'aceptar' | 'descartar' | 'insertar';
@@ -337,6 +346,7 @@ export default function RevisionGeneracionIa({
     ) {
         setAccion({ propuestaId, tipo: 'editar' });
         setError('');
+        setAviso('');
 
         try {
             await iageneracionService.actualizarPropuesta(
@@ -345,6 +355,7 @@ export default function RevisionGeneracionIa({
                 dto,
             );
             setPropuestaEditando(null);
+            setAviso('Cambios guardados en la propuesta.');
             await cargar();
         } catch (errorAccion) {
             setError(
@@ -365,13 +376,14 @@ export default function RevisionGeneracionIa({
     ) {
         const esAceptacion = nuevoEstado === 'aceptar';
         const confirmacion = esAceptacion
-            ? '¿Aceptar esta propuesta? La acción no inserta la pregunta en el banco; esa operación se realizará en T12.'
+            ? '¿Aceptar esta propuesta? Todavía no se guardará en el banco de preguntas; para eso deberás usar «Insertar en el banco».'
             : '¿Descartar esta propuesta? No se creará ni modificará ninguna pregunta del banco.';
 
         if (!window.confirm(confirmacion)) return;
 
         setAccion({ propuestaId: propuesta.propuesta_id, tipo: nuevoEstado });
         setError('');
+        setAviso('');
 
         try {
             if (esAceptacion) {
@@ -379,11 +391,15 @@ export default function RevisionGeneracionIa({
                     generacionId,
                     propuesta.propuesta_id,
                 );
+                setAviso(
+                    'Propuesta aceptada. Aún no está en el banco: usa «Insertar en el banco» para guardarla definitivamente.',
+                );
             } else {
                 await iageneracionService.descartarPropuesta(
                     generacionId,
                     propuesta.propuesta_id,
                 );
+                setAviso('Propuesta descartada sin modificar el banco.');
             }
 
             await cargar();
@@ -419,11 +435,15 @@ export default function RevisionGeneracionIa({
         propuestaInsertandoRef.current = propuesta.propuesta_id;
         setAccion({ propuestaId: propuesta.propuesta_id, tipo: 'insertar' });
         setError('');
+        setAviso('');
 
         try {
             const resultado = await iageneracionService.insertarPropuesta(
                 generacionId,
                 propuesta.propuesta_id,
+            );
+            setAviso(
+                `Pregunta insertada en el banco con ID ${resultado.pregunta_id}.`,
             );
             setGeneracion((actual) =>
                 actual
@@ -588,6 +608,15 @@ export default function RevisionGeneracionIa({
                     className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
                 >
                     {error}
+                </p>
+            )}
+
+            {aviso && (
+                <p
+                    role="status"
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+                >
+                    {aviso}
                 </p>
             )}
 

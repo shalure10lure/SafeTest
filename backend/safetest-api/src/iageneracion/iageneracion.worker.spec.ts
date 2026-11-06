@@ -199,6 +199,60 @@ describe('IaGeneracionWorker', () => {
     expect(almacen.errores).toHaveLength(0);
   });
 
+  it.each(['facil', 'media', 'dificil'] as const)(
+    'propaga la dificultad %s al proveedor y la conserva en las propuestas',
+    async (dificultad) => {
+      const almacen = prepararAlmacen([1]);
+      const proveedor = new ProveedorContador(fake());
+      almacen.contextos.set(
+        1,
+        contexto(1, { dificultad, cantidad: 2 }),
+      );
+      const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
+
+      await worker.procesarCiclo();
+      await worker.esperarInactividad();
+
+      expect(proveedor.llamadas).toHaveLength(1);
+      expect(proveedor.llamadas[0].dificultad).toBe(dificultad);
+
+      const propuestas = almacen.completadas[0].resultado.propuestas;
+      expect(propuestas).toHaveLength(2);
+      expect(propuestas.every((p) => p.dificultad === dificultad)).toBe(true);
+    },
+  );
+
+  it('descarta propuestas que declaran otra dificultad', async () => {
+    const almacen = prepararAlmacen([1], 1);
+    const proveedor: AiProvider = {
+      async generarPreguntas() {
+        return {
+          preguntas: [
+            {
+              enunciado: 'Pregunta declarada como fácil',
+              tipo_respuesta: 'opcion_unica',
+              dificultad: 'facil',
+              opciones: [
+                { texto_opcion: 'A', es_correcta: true },
+                { texto_opcion: 'B', es_correcta: false },
+              ],
+            },
+          ],
+          proveedor: 'fake',
+          modelo: null,
+          tokens: TOKENS,
+        };
+      },
+    };
+    const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
+
+    await worker.procesarCiclo();
+    await worker.esperarInactividad();
+
+    expect(almacen.estados.get(1)).toBe('error');
+    expect(almacen.completadas).toHaveLength(0);
+  });
+
   it('registra éxito parcial cuando solo algunas propuestas son válidas', async () => {
     const almacen = prepararAlmacen([1]);
     const interno = fake();

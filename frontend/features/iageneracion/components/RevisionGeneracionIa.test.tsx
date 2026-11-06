@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RevisionGeneracionIa from './RevisionGeneracionIa';
 import { iageneracionService } from '../services/iageneracion.service';
+import { DESCRIPCIONES_DIFICULTAD } from '../etiquetas';
 import type {
     GeneracionIaDetalle,
     PropuestaGeneracionIa,
@@ -165,6 +166,58 @@ describe('RevisionGeneracionIa', () => {
         },
     );
 
+    it('muestra correctamente acentos, eñes y signos de interrogación ya normalizados', async () => {
+        vi.mocked(iageneracionService.obtener).mockResolvedValue(
+            detalle([
+                {
+                    propuesta_id: 15,
+                    tipo_respuesta: 'opcion_unica',
+                    estado: 'pendiente',
+                    pregunta_id: null,
+                    contenido: {
+                        enunciado:
+                            '¿Cuál es la función de la mitocondria en la célula?',
+                        dificultad: 'media',
+                        puntaje_max: 2,
+                        opciones: [
+                            {
+                                texto_opcion: 'Producir energía para la célula',
+                                es_correcta: true,
+                            },
+                            {
+                                texto_opcion: 'Almacenar agua y desechos',
+                                es_correcta: false,
+                            },
+                        ],
+                        explicacion:
+                            'La mitocondria genera energía; ¡es el motor de la célula!',
+                    },
+                },
+            ]),
+        );
+
+        render(<RevisionGeneracionIa generacionId={12} />);
+
+        expect(
+            await screen.findByText(
+                '¿Cuál es la función de la mitocondria en la célula?',
+            ),
+        ).toBeTruthy();
+        expect(
+            screen.getAllByText('Producir energía para la célula').length,
+        ).toBeGreaterThan(0);
+        expect(
+            screen.getAllByText('Almacenar agua y desechos').length,
+        ).toBeGreaterThan(0);
+        expect(
+            screen.getByText(
+                /La mitocondria genera energía; ¡es el motor de la célula!/,
+            ),
+        ).toBeTruthy();
+        // No debe quedar ninguna entidad HTML visible en pantalla.
+        expect(screen.queryByText(/&(?:uacute|iquest|ntilde);/)).toBeNull();
+    });
+
     it('valida la edición y envía el contenido válido actualizado', async () => {
         const inicial = detalle([propuesta('opcion_unica')]);
         const propuestaUnica = propuesta('opcion_unica');
@@ -282,6 +335,132 @@ describe('RevisionGeneracionIa', () => {
             }
         },
     );
+
+    it('muestra la dificultad de la generación y la de cada propuesta', async () => {
+        const propuestaDificil = propuesta('desarrollo');
+        vi.mocked(iageneracionService.obtener).mockResolvedValue({
+            ...detalle([propuestaDificil]),
+            dificultad: 'dificil',
+        });
+
+        render(<RevisionGeneracionIa generacionId={12} />);
+
+        await screen.findByText('Explica el procedimiento.');
+        expect(screen.getByText('Difícil')).toBeTruthy();
+        expect(
+            screen.getByTitle(DESCRIPCIONES_DIFICULTAD.dificil),
+        ).toBeTruthy();
+    });
+
+    it('permite cambiar la dificultad al editar y la envía al guardar', async () => {
+        const original = propuesta('opcion_unica');
+
+        if (original.tipo_respuesta !== 'opcion_unica') {
+            throw new Error('El helper debe producir una pregunta de opción única');
+        }
+
+        const editada: PropuestaGeneracionIa = {
+            ...original,
+            contenido: {
+                ...original.contenido,
+                dificultad: 'dificil',
+            },
+        };
+        vi.mocked(iageneracionService.obtener)
+            .mockResolvedValueOnce(detalle([original]))
+            .mockResolvedValueOnce({ ...detalle([editada]), dificultad: 'dificil' });
+        vi.mocked(iageneracionService.actualizarPropuesta).mockResolvedValue({
+            propuesta_id: 15,
+            contenido: editada.contenido,
+            estado: 'pendiente',
+            pregunta_id: null,
+        });
+
+        render(<RevisionGeneracionIa generacionId={12} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+
+        fireEvent.change(screen.getByLabelText('Dificultad'), {
+            target: { value: 'dificil' },
+        });
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar cambios' }),
+        );
+
+        await waitFor(() =>
+            expect(
+                iageneracionService.actualizarPropuesta,
+            ).toHaveBeenCalledWith(
+                12,
+                15,
+                expect.objectContaining({
+                    dificultad: 'dificil',
+                    enunciado: '¿Cuál es correcta?',
+                }),
+            ),
+        );
+        expect(
+            await screen.findByTitle(DESCRIPCIONES_DIFICULTAD.dificil),
+        ).toBeTruthy();
+    });
+
+    it('explica la diferencia entre aceptar e insertar en el banco', async () => {
+        const pendiente = detalle([propuesta('opcion_unica')]);
+        const aceptada = detalle([
+            { ...propuesta('opcion_unica'), estado: 'aceptada' },
+        ]);
+        const insertada = detalle([
+            {
+                ...propuesta('opcion_unica'),
+                estado: 'aceptada',
+                pregunta_id: 44,
+            },
+        ]);
+        vi.mocked(iageneracionService.obtener)
+            .mockResolvedValueOnce(pendiente)
+            .mockResolvedValueOnce(aceptada)
+            .mockResolvedValue(insertada);
+        vi.mocked(iageneracionService.aceptarPropuesta).mockResolvedValue({
+            propuesta_id: 15,
+            contenido: propuesta('opcion_unica').contenido,
+            estado: 'aceptada',
+            pregunta_id: null,
+        });
+        vi.mocked(iageneracionService.insertarPropuesta).mockResolvedValue({
+            propuesta_id: 15,
+            pregunta_id: 44,
+            estado: 'aceptada',
+            insertada: true,
+            ya_estaba_insertada: false,
+        });
+
+        render(<RevisionGeneracionIa generacionId={12} />);
+
+        expect(
+            await screen.findByText(
+                /Aceptar no inserta automáticamente la propuesta/,
+            ),
+        ).toBeTruthy();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Aceptar propuesta' }),
+        );
+
+        expect(
+            await screen.findByText(
+                /Propuesta aceptada\. Aún no está en el banco/,
+            ),
+        ).toBeTruthy();
+        fireEvent.click(
+            await screen.findByRole('button', {
+                name: 'Insertar en el banco',
+            }),
+        );
+
+        expect(
+            await screen.findByText(
+                'Pregunta insertada en el banco con ID 44.',
+            ),
+        ).toBeTruthy();
+    });
 
     it('solo permite insertar propuestas aceptadas sin pregunta asociada', async () => {
         const aceptada = propuesta('opcion_unica');

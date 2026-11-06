@@ -56,6 +56,42 @@ describe('validarPropuesta', () => {
     ).toBeNull();
   });
 
+  it('rechaza una propuesta que declara otra dificultad', () => {
+    expect(
+      validarPropuesta(
+        {
+          enunciado: '¿Cuánto es 2 + 2?',
+          tipo_respuesta: 'opcion_unica',
+          dificultad: 'dificil',
+          opciones: [
+            { texto_opcion: '4', es_correcta: true },
+            { texto_opcion: '5', es_correcta: false },
+          ],
+        },
+        'opcion_unica',
+        'facil',
+      ),
+    ).toBeNull();
+  });
+
+  it.each(['facil', 'media', 'dificil'] as const)(
+    'conserva la dificultad solicitada %s cuando coincide',
+    (dificultad) => {
+      const propuesta = validarPropuesta(
+        {
+          enunciado: 'Pregunta',
+          tipo_respuesta: 'desarrollo',
+          dificultad,
+          solucion_referencia: 'Respuesta',
+        },
+        'desarrollo',
+        dificultad,
+      );
+
+      expect(propuesta?.dificultad).toBe(dificultad);
+    },
+  );
+
   it('rechaza una numérica sin valor correcto', () => {
     expect(
       validarPropuesta(
