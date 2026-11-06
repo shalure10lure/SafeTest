@@ -24,6 +24,10 @@ type OpcionLeida = { texto_opcion: string; es_correcta: boolean };
  * El proveedor puede devolver datos mal formados o intentar cambiar el tipo de
  * pregunta; en ambos casos la propuesta se descarta. Se reutiliza el mismo
  * validador del banco para que una propuesta inválida nunca llegue a la base.
+ *
+ * La dificultad es autoritativa de la generación: si la propuesta declara otra,
+ * se descarta; si no la declara, se completa con la solicitada. Esta capa no
+ * intenta medir la complejidad semántica del enunciado (ver `gemini-respuesta`).
  */
 export function validarPropuesta(
   cruda: unknown,
@@ -31,6 +35,10 @@ export function validarPropuesta(
   dificultad: DificultadIa,
 ): ContenidoPropuesta | null {
   if (!esObjeto(cruda) || cruda.tipo_respuesta !== tipo) {
+    return null;
+  }
+
+  if (cruda.dificultad !== undefined && cruda.dificultad !== dificultad) {
     return null;
   }
 

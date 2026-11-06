@@ -3,7 +3,8 @@ import {
   validarConfiguracionRespuesta,
   type ConfiguracionRespuesta,
 } from '../../pregunta/validators/configuracion-respuesta.validator';
-import type { PreguntaIa } from '../ai.types';
+import type { PreguntaIa, DificultadIa } from '../ai.types';
+import { decodificarEntidadesHtml } from '../html-entities';
 import { ErrorGeneracionIa } from '../ia.errors';
 
 /** Límites defensivos para descartar propuestas anómalas del modelo. */
@@ -22,6 +23,7 @@ export interface EntradaValidacion {
   texto: string;
   tipoRespuesta: TipoRespuesta;
   cantidad: number;
+  dificultad: DificultadIa;
 }
 
 /**
@@ -30,6 +32,16 @@ export interface EntradaValidacion {
  * La estructura la garantiza `responseJsonSchema`, pero las reglas de negocio
  * (una sola opción correcta, etiquetas de verdadero/falso, tolerancia, etc.)
  * se validan aquí reutilizando el mismo validador del banco de preguntas.
+ *
+ * También se comprueba la dificultad declarada: si el proveedor incluye una
+ * distinta a la solicitada, la propuesta se descarta. La dificultad efectiva
+ * siempre la fija el servidor desde la solicitud; nunca se copia del modelo.
+ *
+ * Limitación conocida: esta validación es estructural y de metadatos, no
+ * semántica. Determinar automáticamente si un enunciado exige realmente varios
+ * pasos de razonamiento requeriría una segunda evaluación del modelo (coste y
+ * latencia adicionales) o una rúbrica humana; por eso no se usan heurísticas
+ * de palabras como "analizar" o "aplicar", que producirían falsos rechazos.
  *
  * @throws ErrorGeneracionIa cuando la respuesta no es JSON o no trae la lista.
  */
@@ -45,7 +57,11 @@ export function validarRespuestaGemini(
   let descartadas = 0;
 
   for (const cruda of lista) {
-    const pregunta = normalizarPregunta(cruda, entrada.tipoRespuesta);
+    const pregunta = normalizarPregunta(
+      cruda,
+      entrada.tipoRespuesta,
+      entrada.dificultad,
+    );
 
     if (!pregunta) {
       descartadas += 1;
@@ -101,8 +117,15 @@ function leerListaPreguntas(datos: unknown): unknown[] {
 function normalizarPregunta(
   cruda: unknown,
   tipo: TipoRespuesta,
+  dificultad: DificultadIa,
 ): PreguntaIa | null {
   if (!esObjeto(cruda)) {
+    return null;
+  }
+
+  // El modelo no debe alterar la dificultad pedida. Si la declara, debe
+  // coincidir; si no la declara, el servidor la completa igualmente.
+  if (cruda.dificultad !== undefined && cruda.dificultad !== dificultad) {
     return null;
   }
 
@@ -139,7 +162,11 @@ function normalizarPregunta(
     return null;
   }
 
-  const pregunta: PreguntaIa = { enunciado, tipo_respuesta: tipo };
+  const pregunta: PreguntaIa = {
+    enunciado,
+    tipo_respuesta: tipo,
+    dificultad,
+  };
 
   if (explicacion) {
     pregunta.explicacion = explicacion;
@@ -184,13 +211,16 @@ function leerOpciones(valor: unknown): OpcionLeida[] | undefined {
       return null;
     }
 
-    const texto = opcion.texto_opcion.trim();
+    const texto = decodificarEntidadesHtml(opcion.texto_opcion).trim();
 
     if (!texto || texto.length > MAX_OPCION) {
       return null;
     }
 
-    return { texto_opcion: texto, es_correcta: opcion.es_correcta };
+    return {
+      texto_opcion: texto,
+      es_correcta: opcion.es_correcta,
+    };
   });
 
   return opciones.every((opcion) => opcion !== null)
@@ -203,7 +233,7 @@ function leerTexto(valor: unknown, maximo: number): string | null {
     return null;
   }
 
-  const texto = valor.trim();
+  const texto = decodificarEntidadesHtml(valor).trim();
 
   return texto && texto.length <= maximo ? texto : null;
 }

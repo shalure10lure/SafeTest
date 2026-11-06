@@ -70,4 +70,27 @@ describe('validación del formulario de generación IA', () => {
         expect(dto.material_ids).toEqual([8]);
         expect(dto.tipo_respuesta).toBe('opcion_unica');
     });
+
+    it.each(['facil', 'media', 'dificil'] as const)(
+        'acepta y conserva la dificultad %s en el DTO',
+        (dificultad) => {
+            const datos = crearDatos({ dificultad });
+            const resultado = validarFormularioIa(datos);
+
+            expect(resultado.errores.dificultad).toBeUndefined();
+            expect(resultado.hayErrores).toBe(false);
+            expect(construirDtoIa(datos).dificultad).toBe(dificultad);
+        },
+    );
+
+    it('exige seleccionar una dificultad antes de generar', () => {
+        const resultado = validarFormularioIa(
+            crearDatos({ dificultad: '' }),
+        );
+
+        expect(resultado.errores.dificultad).toBe(
+            'Selecciona una dificultad.',
+        );
+        expect(resultado.hayErrores).toBe(true);
+    });
 });

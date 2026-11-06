@@ -112,6 +112,7 @@ describe('GeminiAiProvider', () => {
     expect(resultado.preguntas[0]).toEqual({
       enunciado: '¿Cuál es la derivada de x²?',
       tipo_respuesta: 'opcion_unica',
+      dificultad: 'media',
       explicacion: 'Se aplica la regla de la potencia.',
       opciones: [
         { texto_opcion: '2x', es_correcta: true },
@@ -133,6 +134,9 @@ describe('GeminiAiProvider', () => {
     expect(peticion.contenido).toContain('Materia: Matemática');
     expect(peticion.contenido).toContain('Tema: Derivadas');
     expect(peticion.contenido).toContain(MATERIAL_SENSIBLE);
+    expect(peticion.contenido).toContain(
+      'Objetivo cognitivo: comprensión y aplicación de los conocimientos.',
+    );
     expect(peticion.instruccionSistema).toContain('docente experto');
     expect(peticion.instruccionSistema).toContain('fuente principal');
     expect(peticion.instruccionSistema).toContain('preguntas": []');
@@ -235,6 +239,7 @@ describe('GeminiAiProvider', () => {
     expect(resultado.preguntas[0]).toEqual({
       enunciado: '¿Cuánto es 2 + 2?',
       tipo_respuesta: 'numerica',
+      dificultad: 'media',
       valor_correcto: 4,
       tolerancia: 0,
     });

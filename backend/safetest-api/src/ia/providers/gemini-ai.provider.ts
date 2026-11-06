@@ -84,6 +84,7 @@ export class GeminiAiProvider implements AiProvider {
       texto: respuesta.texto,
       tipoRespuesta: solicitud.tipo_respuesta,
       cantidad: solicitud.cantidad,
+      dificultad: solicitud.dificultad,
     });
 
     if (descartadas > 0) {
