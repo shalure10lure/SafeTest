@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -56,6 +57,7 @@ import { PreguntaModule } from './pregunta/pregunta.module';
 import { IaModule } from './ia/ia.module';
 import { IaGeneracionModule } from './iageneracion/iageneracion.module';
 import { MaterialAcademicoModule } from './materialacademico/materialacademico.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -138,6 +140,12 @@ import { MaterialAcademicoModule } from './materialacademico/materialacademico.m
   ],
 
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
 })
 export class AppModule { }

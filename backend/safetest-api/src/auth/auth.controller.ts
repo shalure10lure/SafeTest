@@ -18,6 +18,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GoogleAuthService } from './google-auth.service';
 import { timingSafeEqual } from 'crypto';
 import { ConflictException } from '@nestjs/common';
+import { Public } from './public.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -29,6 +30,7 @@ export class AuthController {
   // REGISTRAR DOCENTE
   
   @Post('register/docente')
+  @Public()
   async registerDocente(
     @Body()
     body: {
@@ -47,6 +49,7 @@ export class AuthController {
   // REGISTRAR ESTUDIANTE
   
   @Post('register/estudiante')
+  @Public()
   async registerEstudiante(
     @Body()
     body: {
@@ -67,6 +70,7 @@ export class AuthController {
   // LOGIN
   
   @Post('login')
+  @Public()
   async login(
     @Body()
     body: {
@@ -124,6 +128,7 @@ export class AuthController {
   // REFRESH TOKEN
   
   @Post('refresh')
+  @Public()
   async refresh(
     @Req() request: Request,
     @Res({ passthrough: true })
@@ -188,6 +193,7 @@ export class AuthController {
   // INICIAR AUTENTICACIÓN CON GOOGLE
 
   @Get('google')
+  @Public()
   async iniciarGoogle(
     @Res() response: Response,
   ) {
@@ -221,6 +227,7 @@ export class AuthController {
   // RECIBIR LA RESPUESTA DE GOOGLE
 
   @Get('google/callback')
+  @Public()
   async googleCallback(
     @Req() request: Request,
     @Res() response: Response,

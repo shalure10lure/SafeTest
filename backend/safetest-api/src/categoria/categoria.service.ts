@@ -13,12 +13,17 @@ export class CategoriaService {
     private categoriaRepository: Repository<Categoria>,
   ) {}
 
-  async findAll() {
-    return this.categoriaRepository.find();
+  async findAll(docenteId: number) {
+    return this.categoriaRepository.find({
+      where: { docente_id: docenteId },
+    });
   }
 
-  async findOne(id: number) {
-    const categoria = await this.categoriaRepository.findOneBy({ id });
+  async findOne(id: number, docenteId: number) {
+    const categoria = await this.categoriaRepository.findOneBy({
+      id,
+      docente_id: docenteId,
+    });
 
     if (!categoria) {
       throw new NotFoundException('Categoría no encontrada');
@@ -27,22 +32,29 @@ export class CategoriaService {
     return categoria;
   }
 
-  async create(body: CreateCategoriaDto) {
-    const categoria = this.categoriaRepository.create(body);
+  async create(body: CreateCategoriaDto, docenteId: number) {
+    const categoria = this.categoriaRepository.create({
+      ...body,
+      docente_id: docenteId,
+    });
 
     return this.categoriaRepository.save(categoria);
   }
 
-  async update(id: number, body: UpdateCategoriaDto) {
-    const categoria = await this.findOne(id);
+  async update(
+    id: number,
+    body: UpdateCategoriaDto,
+    docenteId: number,
+  ) {
+    const categoria = await this.findOne(id, docenteId);
 
     Object.assign(categoria, body);
 
     return this.categoriaRepository.save(categoria);
   }
 
-  async delete(id: number) {
-    const categoria = await this.findOne(id);
+  async delete(id: number, docenteId: number) {
+    const categoria = await this.findOne(id, docenteId);
 
     return this.categoriaRepository.remove(categoria);
   }

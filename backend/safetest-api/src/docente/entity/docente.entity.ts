@@ -18,6 +18,9 @@ export class Docente {
   @Column({ length: 150, unique: true })
   correo: string;
 
+  @Column({ type: 'boolean', default: true })
+  activo: boolean;
+
     @Column({
       name: 'password_hash',
       type: 'varchar',

@@ -62,9 +62,15 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
     const [publicando, setPublicando] = useState(false);
     const [error, setError] = useState('');
     const [problemas, setProblemas] = useState<ProblemaPublicacion[]>([]);
+    const [publicandoRespuestas, setPublicandoRespuestas] = useState(false);
+    const [errorRespuestas, setErrorRespuestas] = useState('');
+    const [respuestasPublicadasEn, setRespuestasPublicadasEn] = useState(
+        datos.resultados_publicados_en,
+    );
 
     const examenId = datos.examen_id;
     const publicada = datos.estado === 'publicado';
+    const respuestasPublicadas = respuestasPublicadasEn !== null;
     const totalCriterios = datos.criterios.reduce(
         (suma, criterio) => suma + criterio.cantidad,
         0,
@@ -87,6 +93,26 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                 ),
             );
             setPublicando(false);
+        }
+    }
+
+    async function publicarRespuestas() {
+        setErrorRespuestas('');
+        setPublicandoRespuestas(true);
+
+        try {
+            const resultado =
+                await evaluacionesService.publicarRespuestas(examenId);
+            setRespuestasPublicadasEn(resultado.resultados_publicados_en);
+        } catch (e) {
+            setErrorRespuestas(
+                mensajeDeError(
+                    e,
+                    'No se pudieron publicar las respuestas. Inténtalo de nuevo.',
+                ),
+            );
+        } finally {
+            setPublicandoRespuestas(false);
         }
     }
 
@@ -256,6 +282,18 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                         : 'Automática cuando corresponda'
                                 }
                             />
+                            {publicada && (
+                                <FilaResumen
+                                    etiqueta="Respuestas correctas"
+                                    valor={
+                                        respuestasPublicadas
+                                            ? `Publicadas el ${formatearFechaHora(
+                                                  respuestasPublicadasEn,
+                                              )}`
+                                            : 'Aún no publicadas'
+                                    }
+                                />
+                            )}
                         </dl>
                     </SeccionConfiguracion>
 
@@ -360,6 +398,50 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                             </ul>
                         )}
                     </section>
+
+                    {publicada && (
+                        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <h3 className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+                                Respuestas correctas
+                            </h3>
+
+                            {respuestasPublicadas ? (
+                                <p className="mt-3 text-xs text-slate-600">
+                                    Los estudiantes ya pueden consultar las
+                                    respuestas y explicaciones. Publicadas el{' '}
+                                    {formatearFechaHora(respuestasPublicadasEn)}.
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="mt-3 text-xs text-slate-600">
+                                        Los estudiantes no verán las respuestas
+                                        ni las explicaciones hasta que las
+                                        publiques.
+                                    </p>
+
+                                    <button
+                                        type="button"
+                                        onClick={publicarRespuestas}
+                                        disabled={publicandoRespuestas}
+                                        className={`${BOTON_PRIMARIO} mt-3 w-full`}
+                                    >
+                                        {publicandoRespuestas
+                                            ? 'Publicando...'
+                                            : 'Publicar respuestas'}
+                                    </button>
+                                </>
+                            )}
+
+                            {errorRespuestas && (
+                                <p
+                                    className="mt-2 text-xs text-red-600"
+                                    role="alert"
+                                >
+                                    {errorRespuestas}
+                                </p>
+                            )}
+                        </section>
+                    )}
                 </aside>
             </div>
 

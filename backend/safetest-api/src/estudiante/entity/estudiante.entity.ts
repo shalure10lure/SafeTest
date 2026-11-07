@@ -19,6 +19,9 @@ correoVerificado: boolean;
   @PrimaryGeneratedColumn()
   estudiante_id: number;
 
+  @Column({ type: 'boolean', default: true })
+  activo: boolean;
+
   @Column({ length: 150 })
   nombre_completo: string;
 

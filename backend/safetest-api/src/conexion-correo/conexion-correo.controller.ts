@@ -11,6 +11,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/public.decorator';
 import { ConexionCorreoService } from './conexion-correo.service';
 
 @Controller('correo/google')
@@ -62,6 +63,7 @@ export class ConexionCorreoController {
 
   // RECIBIR RESPUESTA DE GOOGLE
   @Get('callback')
+  @Public()
   async callback(
     @Req() request: Request,
     @Res() response: Response,
