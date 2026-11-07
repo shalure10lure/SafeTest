@@ -122,6 +122,12 @@ export class AuthService {
 
     
     if (docente) {
+      if (!docente.activo) {
+        throw new UnauthorizedException(
+          'Correo o contraseña incorrectos',
+        );
+      }
+
       // Las cuentas creadas solo con Google
       // no tienen contraseña de SafeTest.
       if (!docente.passwordHash) {
@@ -163,6 +169,12 @@ export class AuthService {
         .getOne();
 
     if (!estudiante) {
+      throw new UnauthorizedException(
+        'Correo o contraseña incorrectos',
+      );
+    }
+
+    if (!estudiante.activo) {
       throw new UnauthorizedException(
         'Correo o contraseña incorrectos',
       );
@@ -240,6 +252,10 @@ export class AuthService {
 
       docente =
         await this.docenteRepository.save(nuevoDocente);
+    }
+
+    if (!docente.activo) {
+      throw new UnauthorizedException('Cuenta no disponible');
     }
 
     // Reutilizamos nuestro sistema JWT existente.
@@ -377,7 +393,7 @@ async verifyRefreshToken(refreshToken: string) {
           .getOne();
     }
 
-    if (!usuario || !usuario.refreshToken) {
+    if (!usuario || !usuario.activo || !usuario.refreshToken) {
       throw new UnauthorizedException(
         'No existe una sesión válida',
       );
@@ -424,6 +440,7 @@ async verifyRefreshToken(refreshToken: string) {
         await this.docenteRepository.findOne({
           where: {
             docente_id: id,
+            activo: true,
           },
         });
 
@@ -445,6 +462,7 @@ async verifyRefreshToken(refreshToken: string) {
       await this.estudianteRepository.findOne({
         where: {
           estudiante_id: id,
+          activo: true,
         },
       });
 

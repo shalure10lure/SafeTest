@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 
 import { ExamenService } from './examen.service';
+import { ExamenAccesoService } from './examen-acceso.service';
 import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
 import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
@@ -25,7 +26,10 @@ import { DocenteGuard } from '../auth/guards/docente.guard';
 @Controller('examenes')
 @UseGuards(JwtAuthGuard, DocenteGuard)
 export class ExamenController {
-    constructor(private readonly examenService: ExamenService) { }
+    constructor(
+        private readonly examenService: ExamenService,
+        private readonly examenAccesoService: ExamenAccesoService,
+    ) { }
 
     // LISTAR EVALUACIONES DEL DOCENTE
 
@@ -102,6 +106,32 @@ export class ExamenController {
     @Post(':id/publicar')
     publicar(@Param('id', ParseIntPipe) id: number, @Req() request: any) {
         return this.examenService.publicar(id, request.user.id);
+    }
+
+    // RESPUESTAS CORRECTAS (SOLO DOCENTE PROPIETARIO)
+
+    @Get(':id/respuestas')
+    obtenerRespuestas(
+        @Param('id', ParseIntPipe) id: number,
+        @Req() request: any,
+    ) {
+        return this.examenAccesoService.obtenerRespuestasDocente(
+            id,
+            request.user.id,
+        );
+    }
+
+    // PUBLICAR RESPUESTAS CORRECTAS (SOLO DOCENTE PROPIETARIO)
+
+    @Post(':id/respuestas/publicar')
+    publicarRespuestas(
+        @Param('id', ParseIntPipe) id: number,
+        @Req() request: any,
+    ) {
+        return this.examenAccesoService.publicarRespuestas(
+            id,
+            request.user.id,
+        );
     }
 
     // CONSULTAR UNA EVALUACIÓN

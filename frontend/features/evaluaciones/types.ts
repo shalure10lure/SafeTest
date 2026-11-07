@@ -45,6 +45,12 @@ export interface Evaluacion {
 
     total_preguntas: number;
     total_inscritos: number;
+
+    /**
+     * ISO de la publicación autorizada de respuestas correctas.
+     * `null` mientras el docente no las publique.
+     */
+    resultados_publicados_en: string | null;
 }
 
 export interface CreateEvaluacionDto {
@@ -230,4 +236,13 @@ export interface ProblemaPublicacion {
 export interface EvaluacionPublicada {
     examen_id: number;
     estado: EstadoExamen;
+}
+
+/** Lo que devuelve `POST /examenes/:id/respuestas/publicar`. */
+export interface PublicacionRespuestas {
+    examen_id: number;
+    /** ISO del momento en que se publicaron las respuestas. */
+    resultados_publicados_en: string;
+    /** `true` si ya estaban publicadas y la operación fue idempotente. */
+    ya_publicadas: boolean;
 }

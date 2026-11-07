@@ -10,8 +10,11 @@ import type { DataSource, Repository } from 'typeorm';
 
 import { cargarConfiguracionIa, type IaConfig } from '../config/ia.config';
 import type { IaGeneracionMaterial } from '../iageneracionmaterial/entity/iageneracionmaterial.entity';
+import type { IaPropuestaPregunta } from '../iapropuestapregunta/entity/iapropuestapregunta.entity';
 import type { MaterialAcademico } from '../materialacademico/entity/materialacademico.entity';
 import type { Materia } from '../materia/entity/materia.entity';
+import type { CreatePreguntaDto } from '../pregunta/entity/dtos/create-pregunta.dto';
+import type { OrigenPregunta } from '../pregunta/pregunta.service';
 import type { Tema } from '../tema/entity/tema.entity';
 import type { IaGeneracion } from './entity/iageneracion.entity';
 import { MAX_LONGITUD_MENSAJE_ERROR } from './iageneracion.errores';
@@ -23,6 +26,15 @@ import { MAX_LONGITUD_MENSAJE_ERROR } from './iageneracion.errores';
  */
 let IaGeneracionService: typeof import('./iageneracion.service').IaGeneracionService;
 let PreguntaService: typeof import('../pregunta/pregunta.service').PreguntaService;
+
+/**
+ * `tsc` con `module: nodenext` exige extensión explícita en los `import()`
+ * dinámicos, pero Jest resuelve las rutas de TypeScript sin extensión. Se
+ * declaran como `string` para que el compilador no aplique la resolución ESM y
+ * se conserva el tipo real del módulo con `typeof import(...)`.
+ */
+const RUTA_IA_GENERACION_SERVICE: string = './iageneracion.service';
+const RUTA_PREGUNTA_SERVICE: string = '../pregunta/pregunta.service';
 
 beforeAll(async () => {
   jest.unstable_mockModule('./entity/iageneracion.entity', () => ({
@@ -50,54 +62,143 @@ beforeAll(async () => {
     PreguntaService: class PreguntaService {},
   }));
 
-  ({ PreguntaService } = await import('../pregunta/pregunta.service'));
-  ({ IaGeneracionService } = await import('./iageneracion.service'));
+  ({ PreguntaService } = (await import(
+    RUTA_PREGUNTA_SERVICE
+  )) as typeof import('../pregunta/pregunta.service'));
+  ({ IaGeneracionService } = (await import(
+    RUTA_IA_GENERACION_SERVICE
+  )) as typeof import('./iageneracion.service'));
 });
 
-interface RepoMock {
-  find: jest.Mock;
-  findOne: jest.Mock;
-  findOneBy: jest.Mock;
-  create: jest.Mock;
-  update: jest.Mock;
-  createQueryBuilder: jest.Mock;
+type RespuestaActualizacion = { affected: number | null };
+
+interface QueryBuilderMock {
+  update: jest.Mock<(...args: unknown[]) => QueryBuilderMock>;
+  set: jest.Mock<(...args: unknown[]) => QueryBuilderMock>;
+  where: jest.Mock<(...args: unknown[]) => QueryBuilderMock>;
+  andWhere: jest.Mock<(...args: unknown[]) => QueryBuilderMock>;
+  execute: jest.Mock<
+    (...args: unknown[]) => Promise<RespuestaActualizacion>
+  >;
 }
 
-function repoMock(): RepoMock {
+/**
+ * Vistas parciales de las entidades usadas como datos de prueba. Las relaciones
+ * también se declaran parciales porque cada mock reproduce solo los campos que
+ * el servicio consume en ese escenario.
+ */
+type MateriaParcial = Partial<Materia>;
+type TemaParcial = Partial<Tema>;
+type MaterialParcial = Partial<MaterialAcademico>;
+type PropuestaParcial = Partial<IaPropuestaPregunta>;
+
+interface GeneracionMaterialParcial
+  extends Partial<Omit<IaGeneracionMaterial, 'material'>> {
+  material?: MaterialParcial;
+}
+
+interface GeneracionParcial
+  extends Partial<
+    Omit<IaGeneracion, 'materia' | 'tema' | 'materiales' | 'propuestas'>
+  > {
+  materia?: MateriaParcial;
+  tema?: TemaParcial | null;
+  materiales?: GeneracionMaterialParcial[];
+  propuestas?: PropuestaParcial[];
+}
+
+interface RepoMock<T> {
+  find: jest.Mock<(...args: unknown[]) => Promise<T[]>>;
+  findOne: jest.Mock<(...args: unknown[]) => Promise<T | null>>;
+  findOneBy: jest.Mock<(...args: unknown[]) => Promise<T | null>>;
+  create: jest.Mock<(datos: T) => T>;
+  update: jest.Mock<
+    (...args: unknown[]) => Promise<RespuestaActualizacion>
+  >;
+  createQueryBuilder: jest.Mock<(...args: unknown[]) => QueryBuilderMock>;
+}
+
+function repoMock<T>(): RepoMock<T> {
   return {
-    find: jest.fn(),
-    findOne: jest.fn(),
-    findOneBy: jest.fn(),
-    create: jest.fn((datos: unknown) => datos),
-    update: jest.fn(),
-    createQueryBuilder: jest.fn(),
+    find: jest.fn<(...args: unknown[]) => Promise<T[]>>(),
+    findOne: jest.fn<(...args: unknown[]) => Promise<T | null>>(),
+    findOneBy: jest.fn<(...args: unknown[]) => Promise<T | null>>(),
+    create: jest.fn((datos: T) => datos),
+    update: jest.fn<
+      (...args: unknown[]) => Promise<RespuestaActualizacion>
+    >(),
+    createQueryBuilder: jest.fn<
+      (...args: unknown[]) => QueryBuilderMock
+    >(),
   };
 }
 
-function queryBuilder(resultado: { affected: number | null }) {
-  return {
-    update: jest.fn().mockReturnThis(),
-    set: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
-    execute: jest.fn().mockResolvedValue(resultado),
+function queryBuilder(resultado: RespuestaActualizacion): QueryBuilderMock {
+  const qb: QueryBuilderMock = {
+    update: jest.fn<(...args: unknown[]) => QueryBuilderMock>(() => qb),
+    set: jest.fn<(...args: unknown[]) => QueryBuilderMock>(() => qb),
+    where: jest.fn<(...args: unknown[]) => QueryBuilderMock>(() => qb),
+    andWhere: jest.fn<(...args: unknown[]) => QueryBuilderMock>(() => qb),
+    execute: jest.fn<
+      (...args: unknown[]) => Promise<RespuestaActualizacion>
+    >(async () => resultado),
   };
+
+  return qb;
+}
+
+interface PreguntaGeneradaMock {
+  pregunta_id: number;
+  materia_id: number;
+  tema_id: number;
+}
+
+interface PreguntaServiceMock {
+  crearEnTransaccion: jest.Mock<
+    (
+      manager: object,
+      dto: CreatePreguntaDto,
+      docenteId: number,
+      origen: OrigenPregunta,
+    ) => Promise<PreguntaGeneradaMock>
+  >;
+}
+
+type TransactionCallback = (manager: object) => unknown;
+
+interface DataSourceMock {
+  transaction: jest.Mock<
+    (callback: TransactionCallback) => Promise<unknown>
+  >;
 }
 
 function montarServicio(configuracion: Partial<IaConfig> = {}) {
-  const generacion = repoMock();
-  const generacionMaterial = repoMock();
-  const propuesta = repoMock();
-  const material = repoMock();
-  const materia = repoMock();
-  const tema = repoMock();
-  const dataSource = { transaction: jest.fn() };
-  const preguntaService = { crearEnTransaccion: jest.fn() };
+  const generacion = repoMock<GeneracionParcial>();
+  const generacionMaterial = repoMock<GeneracionMaterialParcial>();
+  const propuesta = repoMock<PropuestaParcial>();
+  const material = repoMock<MaterialParcial>();
+  const materia = repoMock<MateriaParcial>();
+  const tema = repoMock<TemaParcial>();
+  const dataSource: DataSourceMock = {
+    transaction: jest.fn<
+      (callback: TransactionCallback) => Promise<unknown>
+    >(),
+  };
+  const preguntaService: PreguntaServiceMock = {
+    crearEnTransaccion: jest.fn<
+      (
+        manager: object,
+        dto: CreatePreguntaDto,
+        docenteId: number,
+        origen: OrigenPregunta,
+      ) => Promise<PreguntaGeneradaMock>
+    >(),
+  };
 
   const servicio = new IaGeneracionService(
     generacion as unknown as Repository<IaGeneracion>,
     generacionMaterial as unknown as Repository<IaGeneracionMaterial>,
-    propuesta as unknown as Repository<unknown>,
+    propuesta as unknown as Repository<IaPropuestaPregunta>,
     material as unknown as Repository<MaterialAcademico>,
     materia as unknown as Repository<Materia>,
     tema as unknown as Repository<Tema>,
@@ -157,10 +258,12 @@ describe('IaGeneracionService', () => {
           ...datos,
           generacion_id: 9,
         })),
-        insert: jest.fn().mockResolvedValue(undefined),
+        insert: jest.fn<
+          (...args: unknown[]) => Promise<void>
+        >().mockResolvedValue(undefined),
       };
-      dataSource.transaction.mockImplementation(
-        async (callback: (manager: unknown) => unknown) => callback(manager),
+      dataSource.transaction.mockImplementation(async (callback) =>
+        callback(manager),
       );
 
       const resultado = await servicio.crear(7, {
@@ -212,10 +315,12 @@ describe('IaGeneracionService', () => {
             ...datos,
             generacion_id: 9,
           })),
-          insert: jest.fn().mockResolvedValue(undefined),
+          insert: jest.fn<
+            (...args: unknown[]) => Promise<void>
+          >().mockResolvedValue(undefined),
         };
-        dataSource.transaction.mockImplementation(
-          async (callback: (manager: unknown) => unknown) => callback(manager),
+        dataSource.transaction.mockImplementation(async (callback) =>
+          callback(manager),
         );
 
         await servicio.crear(7, {
@@ -513,7 +618,7 @@ describe('IaGeneracionService', () => {
       opciones: {
         estado?: string;
         tipoRespuesta?: string | null;
-        propuesta?: Record<string, unknown> | null;
+        propuesta?: PropuestaParcial | null;
       } = {},
     ) {
       const { servicio, generacion, propuesta, dataSource } = montarServicio();
@@ -673,8 +778,12 @@ describe('IaGeneracionService', () => {
         ) {
           const { servicio, dataSource, preguntaService } = montarServicio();
           const manager = {
-            findOne: jest.fn(),
-            update: jest.fn().mockResolvedValue({ affected: 1 }),
+            findOne: jest.fn<
+              (entidad: unknown, opciones?: unknown) => Promise<unknown>
+            >(),
+            update: jest.fn<
+              (...args: unknown[]) => Promise<RespuestaActualizacion>
+            >().mockResolvedValue({ affected: 1 }),
           };
           const generacion = {
             generacion_id: 9,
@@ -707,9 +816,8 @@ describe('IaGeneracionService', () => {
               opciones.propuestaExiste === false ? null : propuesta,
             );
           preguntaService.crearEnTransaccion.mockResolvedValue(preguntaGenerada);
-          dataSource.transaction.mockImplementation(
-            (callback: (manager: unknown) => Promise<unknown>) =>
-              callback(manager),
+          dataSource.transaction.mockImplementation(async (callback) =>
+            callback(manager),
           );
 
           return {

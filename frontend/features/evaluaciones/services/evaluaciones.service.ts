@@ -13,6 +13,7 @@ import type {
     GuardarAsignacionDto,
     GuardarConfiguracionDto,
     GuardarSeleccionDto,
+    PublicacionRespuestas,
     ResumenEvaluacion,
     SeleccionGuardada,
     UpdateEvaluacionDto,
@@ -84,6 +85,14 @@ class EvaluacionesService extends BaseService {
     publicar(id: number) {
         return this.post<EvaluacionPublicada, Record<string, never>>(
             `/${id}/publicar`,
+            {},
+        );
+    }
+
+    /** Publica las respuestas correctas de una evaluación ya publicada. */
+    publicarRespuestas(id: number) {
+        return this.post<PublicacionRespuestas, Record<string, never>>(
+            `/${id}/respuestas/publicar`,
             {},
         );
     }

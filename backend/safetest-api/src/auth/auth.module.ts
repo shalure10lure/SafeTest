@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -11,7 +11,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { Docente } from '../docente/entity/docente.entity';
 import { Estudiante } from '../estudiante/entity/estudiante.entity';
 import { GoogleAuthService } from './google-auth.service'; 
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { DocenteGuard } from './guards/docente.guard';
+import { EstudianteGuard } from './guards/estudiante.guard';
 
+@Global()
 @Module({
   imports: [
     ConfigModule,
@@ -44,10 +48,16 @@ import { GoogleAuthService } from './google-auth.service';
     AuthService,
     JwtStrategy,
     GoogleAuthService,
+    JwtAuthGuard,
+    DocenteGuard,
+    EstudianteGuard,
   ],
 
   exports: [
     AuthService,
+    JwtAuthGuard,
+    DocenteGuard,
+    EstudianteGuard,
   ],
 })
 export class AuthModule {}

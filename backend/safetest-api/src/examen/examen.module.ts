@@ -10,9 +10,13 @@ import { ExamenEstudiante } from '../examenestudiante/entity/examenestudiante.en
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
+import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
+import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
 
 import { ExamenController } from './examen.controller';
+import { ExamenEstudianteController } from './examen-estudiante.controller';
 import { ExamenService } from './examen.service';
+import { ExamenAccesoService } from './examen-acceso.service';
 
 @Module({
     imports: [
@@ -26,9 +30,11 @@ import { ExamenService } from './examen.service';
             Inscripcion,
             Pregunta,
             Tema,
+            ExamenPregunta,
+            AsignacionPregunta,
         ]),
     ],
-    controllers: [ExamenController],
-    providers: [ExamenService],
+    controllers: [ExamenController, ExamenEstudianteController],
+    providers: [ExamenService, ExamenAccesoService],
 })
 export class ExamenModule { }

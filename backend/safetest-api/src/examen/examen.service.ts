@@ -865,6 +865,8 @@ export class ExamenService {
             disponible_hasta: examen.disponible_hasta,
             modo_entrega_nota: examen.modo_entrega_nota,
             modo_asignacion: examen.modo_asignacion,
+            // NULL = las respuestas correctas aún no se publicaron.
+            resultados_publicados_en: examen.resultados_publicados_en,
             materia: examen.materia
                 ? {
                     materia_id: examen.materia.materia_id,
