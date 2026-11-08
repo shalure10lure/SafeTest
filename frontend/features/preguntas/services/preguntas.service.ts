@@ -77,6 +77,34 @@ class PreguntasService extends BaseService {
         );
     }
 
+    /** Cambia el contenido de una fórmula o tabla guardada. */
+    actualizarContenido(
+        id: number,
+        recurso: string,
+        dto: CrearRecursoEscritoDto,
+    ) {
+        return this.put<RecursoPregunta, CrearRecursoEscritoDto>(
+            `/${id}/recursos/${encodeURIComponent(recurso)}`,
+            dto,
+        );
+    }
+
+    /** Sustituye la imagen de un recurso; el servidor devuelve el recurso nuevo. */
+    reemplazarImagen(id: number, recurso: string, archivo: File) {
+        const formulario = new FormData();
+
+        formulario.append('archivo', archivo);
+
+        return this.put<RecursoPregunta, FormData>(
+            `/${id}/recursos/${encodeURIComponent(recurso)}/imagen`,
+            formulario,
+            {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 30_000,
+            },
+        );
+    }
+
     eliminarRecurso(id: number, recurso: string) {
         return this.delete<void>(
             `/${id}/recursos/${encodeURIComponent(recurso)}`,

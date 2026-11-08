@@ -5,6 +5,7 @@ import {
     useState,
     type ChangeEvent,
     type KeyboardEvent,
+    type ReactNode,
 } from 'react';
 import {
     Image as ImageIcon,
@@ -18,6 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 
 import type {
+    ObjetivoRecurso,
     RecursoPendiente,
     RecursosPreguntaEstado,
 } from '../hooks/useRecursosPregunta';
@@ -33,6 +35,8 @@ import {
 import type { ContenidoTabla, RecursoPregunta } from '../types';
 
 import FormulaRenderizada, { errorLatex } from './FormulaRenderizada';
+import ImagenRecurso from './ImagenRecurso';
+import TablaRecurso from './TablaRecurso';
 
 const BOTON =
     'inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-60';
@@ -49,6 +53,8 @@ interface RecursosEditorProps {
     recursos: RecursosPreguntaEstado;
     /** En edición los cambios se guardan al instante; al crear, junto con la pregunta. */
     enEdicion: boolean;
+    /** Pregunta a la que pertenecen los recursos guardados (para mostrar sus imágenes). */
+    preguntaId?: number;
 }
 
 function tamanoTabla(tabla: ContenidoTabla): string {
@@ -81,6 +87,92 @@ function evitarEnvio(evento: KeyboardEvent<HTMLInputElement>) {
     if (evento.key === 'Enter') evento.preventDefault();
 }
 
+function copiarTabla(tabla: ContenidoTabla): ContenidoTabla {
+    return {
+        encabezado: tabla.encabezado,
+        filas: tabla.filas.map((fila) => [...fila]),
+    };
+}
+
+function mismoObjetivo(a: ObjetivoRecurso | null, b: ObjetivoRecurso): boolean {
+    if (a === null || a.origen !== b.origen) return false;
+
+    return a.origen === 'guardado'
+        ? b.origen === 'guardado' && a.recurso === b.recurso
+        : b.origen === 'pendiente' && a.id === b.id;
+}
+
+interface TarjetaRecursoProps {
+    titulo: string;
+    pendiente: boolean;
+    activa: boolean;
+    deshabilitado: boolean;
+    etiquetaEditar: string;
+    onEditar: () => void;
+    onQuitar: () => void;
+    children: ReactNode;
+}
+
+/** Un elemento de contenido con su vista previa y sus acciones. */
+function TarjetaRecurso({
+    titulo,
+    pendiente,
+    activa,
+    deshabilitado,
+    etiquetaEditar,
+    onEditar,
+    onQuitar,
+    children,
+}: TarjetaRecursoProps) {
+    return (
+        <li
+            className={cn(
+                'rounded-lg border bg-white p-3',
+                pendiente
+                    ? 'border-dashed border-violet-300 bg-violet-50/40'
+                    : 'border-slate-200',
+                activa && 'ring-2 ring-violet-500',
+            )}
+        >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-700">
+                    {titulo}
+                    {pendiente && (
+                        <span className="ml-2 font-normal text-violet-700">
+                            (se guardará con la pregunta)
+                        </span>
+                    )}
+                </span>
+
+                <div className="flex gap-1.5">
+                    <button
+                        type="button"
+                        onClick={onEditar}
+                        disabled={deshabilitado}
+                        aria-label={`${etiquetaEditar}: ${titulo}`}
+                        className={BOTON_PEQUENO}
+                    >
+                        {etiquetaEditar}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={onQuitar}
+                        disabled={deshabilitado}
+                        aria-label={`Quitar: ${titulo}`}
+                        className={cn(BOTON_PEQUENO, 'hover:text-red-600')}
+                    >
+                        <X className="mr-1 size-3" aria-hidden="true" />
+                        Quitar
+                    </button>
+                </div>
+            </div>
+
+            <div className="mt-2 max-w-full overflow-x-auto">{children}</div>
+        </li>
+    );
+}
+
 /**
  * Editor del contenido especializado de una pregunta: imágenes, tablas y
  * fórmulas. Muestra qué hay agregado; el contenido se dibuja completo en la
@@ -89,22 +181,77 @@ function evitarEnvio(evento: KeyboardEvent<HTMLInputElement>) {
 export default function RecursosEditor({
     recursos,
     enEdicion,
+    preguntaId,
 }: RecursosEditorProps) {
     const entradaArchivo = useRef<HTMLInputElement>(null);
+    // Si hay un objetivo, el archivo elegido reemplaza esa imagen en vez de agregar otra.
+    const imagenAReemplazar = useRef<ObjetivoRecurso | null>(null);
+    const [editando, setEditando] = useState<ObjetivoRecurso | null>(null);
     const [panel, setPanel] = useState<Panel>(null);
     const [latex, setLatex] = useState('');
     const [tabla, setTabla] = useState<ContenidoTabla>(() => tablaVacia());
     const [errorLocal, setErrorLocal] = useState('');
 
     const total = recursos.guardados.length + recursos.pendientes.length;
-    const bloqueado = recursos.ocupado || recursos.cargando || recursos.lleno;
+    const ocupado = recursos.ocupado || recursos.cargando;
+    const bloqueado = ocupado || recursos.lleno;
     const mensajeError = errorLocal || recursos.error;
     const errorDeLatex = latex.trim() ? errorLatex(latex) : '';
 
     function abrirPanel(nuevo: Exclude<Panel, null>) {
         setErrorLocal('');
         recursos.limpiarError();
+
+        if (editando !== null) {
+            // Se estaba editando un elemento: se empieza uno nuevo desde cero.
+            setEditando(null);
+            setLatex('');
+            setTabla(tablaVacia());
+            setPanel(nuevo);
+
+            return;
+        }
+
         setPanel((actual) => (actual === nuevo ? null : nuevo));
+    }
+
+    function cerrarPanel() {
+        setPanel(null);
+        setEditando(null);
+        setErrorLocal('');
+    }
+
+    function editarFormula(objetivo: ObjetivoRecurso, valor: string) {
+        setErrorLocal('');
+        recursos.limpiarError();
+        setLatex(valor);
+        setEditando(objetivo);
+        setPanel('formula');
+    }
+
+    function editarTabla(objetivo: ObjetivoRecurso, valor: ContenidoTabla) {
+        setErrorLocal('');
+        recursos.limpiarError();
+        setTabla(copiarTabla(valor));
+        setEditando(objetivo);
+        setPanel('tabla');
+    }
+
+    function elegirReemplazo(objetivo: ObjetivoRecurso) {
+        setErrorLocal('');
+        recursos.limpiarError();
+        imagenAReemplazar.current = objetivo;
+        entradaArchivo.current?.click();
+    }
+
+    function quitar(objetivo: ObjetivoRecurso) {
+        if (mismoObjetivo(editando, objetivo)) cerrarPanel();
+
+        if (objetivo.origen === 'guardado') {
+            void recursos.quitarGuardado(objetivo.recurso);
+        } else {
+            recursos.quitarPendiente(objetivo.id);
+        }
     }
 
     async function elegirImagen(evento: ChangeEvent<HTMLInputElement>) {
@@ -116,10 +263,19 @@ export default function RecursosEditor({
         if (!archivo) return;
 
         setErrorLocal('');
-        await recursos.agregarImagen(archivo);
+
+        const objetivo = imagenAReemplazar.current;
+
+        imagenAReemplazar.current = null;
+
+        if (objetivo) {
+            await recursos.reemplazarImagen(objetivo, archivo);
+        } else {
+            await recursos.agregarImagen(archivo);
+        }
     }
 
-    async function agregarFormula() {
+    async function guardarFormula() {
         const mensaje = errorFormula(latex) || errorLatex(latex);
 
         if (mensaje) {
@@ -129,13 +285,17 @@ export default function RecursosEditor({
 
         setErrorLocal('');
 
-        if (await recursos.agregarFormula(latex)) {
+        const guardada = editando
+            ? await recursos.actualizarFormula(editando, latex)
+            : await recursos.agregarFormula(latex);
+
+        if (guardada) {
             setLatex('');
-            setPanel(null);
+            cerrarPanel();
         }
     }
 
-    async function agregarTabla() {
+    async function guardarTabla() {
         const mensaje = errorTabla(tabla);
 
         if (mensaje) {
@@ -145,9 +305,13 @@ export default function RecursosEditor({
 
         setErrorLocal('');
 
-        if (await recursos.agregarTabla(tabla)) {
+        const guardada = editando
+            ? await recursos.actualizarTabla(editando, tabla)
+            : await recursos.agregarTabla(tabla);
+
+        if (guardada) {
             setTabla(tablaVacia());
-            setPanel(null);
+            cerrarPanel();
         }
     }
 
@@ -218,7 +382,10 @@ export default function RecursosEditor({
             etiqueta: 'Imagen',
             icono: ImageIcon,
             activo: false,
-            accion: () => entradaArchivo.current?.click(),
+            accion: () => {
+                imagenAReemplazar.current = null;
+                entradaArchivo.current?.click();
+            },
         },
         {
             etiqueta: 'Tabla',
@@ -289,6 +456,12 @@ export default function RecursosEditor({
 
             {panel === 'formula' && (
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    {editando && (
+                        <p className="text-xs font-semibold text-violet-800">
+                            Editando fórmula
+                        </p>
+                    )}
+
                     <label
                         htmlFor="formula-latex"
                         className="block text-xs font-medium text-slate-700"
@@ -327,17 +500,19 @@ export default function RecursosEditor({
                     <div className="flex flex-wrap gap-2">
                         <button
                             type="button"
-                            onClick={() => void agregarFormula()}
-                            disabled={bloqueado}
+                            onClick={() => void guardarFormula()}
+                            disabled={editando ? ocupado : bloqueado}
                             className={cn(BOTON, 'border-violet-300 text-violet-800')}
                         >
-                            <Plus className="size-3.5" aria-hidden="true" />
-                            Agregar fórmula
+                            {!editando && (
+                                <Plus className="size-3.5" aria-hidden="true" />
+                            )}
+                            {editando ? 'Guardar cambios' : 'Agregar fórmula'}
                         </button>
 
                         <button
                             type="button"
-                            onClick={() => setPanel(null)}
+                            onClick={cerrarPanel}
                             className={BOTON}
                         >
                             Cancelar
@@ -348,6 +523,12 @@ export default function RecursosEditor({
 
             {panel === 'tabla' && (
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    {editando && (
+                        <p className="text-xs font-semibold text-violet-800">
+                            Editando tabla
+                        </p>
+                    )}
+
                     <div className="overflow-x-auto">
                         <table className="border-separate border-spacing-1">
                             <tbody>
@@ -440,17 +621,19 @@ export default function RecursosEditor({
                     <div className="flex flex-wrap gap-2">
                         <button
                             type="button"
-                            onClick={() => void agregarTabla()}
-                            disabled={bloqueado}
+                            onClick={() => void guardarTabla()}
+                            disabled={editando ? ocupado : bloqueado}
                             className={cn(BOTON, 'border-violet-300 text-violet-800')}
                         >
-                            <Plus className="size-3.5" aria-hidden="true" />
-                            Agregar tabla
+                            {!editando && (
+                                <Plus className="size-3.5" aria-hidden="true" />
+                            )}
+                            {editando ? 'Guardar cambios' : 'Agregar tabla'}
                         </button>
 
                         <button
                             type="button"
-                            onClick={() => setPanel(null)}
+                            onClick={cerrarPanel}
                             className={BOTON}
                         >
                             Cancelar
@@ -469,41 +652,113 @@ export default function RecursosEditor({
             )}
 
             {total > 0 && (
-                <ul className="flex flex-wrap gap-2" aria-label="Contenido agregado">
-                    {recursos.guardados.map((item) => (
-                        <li
-                            key={item.recurso}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white py-1 pr-1 pl-3 text-xs text-slate-700"
-                        >
-                            {etiquetaGuardado(item)}
-                            <button
-                                type="button"
-                                onClick={() => void recursos.quitarGuardado(item.recurso)}
-                                disabled={recursos.ocupado}
-                                aria-label={`Quitar: ${etiquetaGuardado(item)}`}
-                                className="inline-flex size-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-violet-600 disabled:opacity-50"
-                            >
-                                <X className="size-3" aria-hidden="true" />
-                            </button>
-                        </li>
-                    ))}
+                <ul className="space-y-2" aria-label="Contenido agregado">
+                    {recursos.guardados.map((item) => {
+                        const objetivo: ObjetivoRecurso = {
+                            origen: 'guardado',
+                            recurso: item.recurso,
+                        };
 
-                    {recursos.pendientes.map((item) => (
-                        <li
-                            key={item.id}
-                            className="inline-flex items-center gap-1 rounded-full border border-dashed border-violet-300 bg-violet-50/50 py-1 pr-1 pl-3 text-xs text-violet-900"
-                        >
-                            {etiquetaPendiente(item)}
-                            <button
-                                type="button"
-                                onClick={() => recursos.quitarPendiente(item.id)}
-                                aria-label={`Quitar: ${etiquetaPendiente(item)}`}
-                                className="inline-flex size-5 items-center justify-center rounded-full text-violet-600 hover:bg-violet-100 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-violet-600"
+                        return (
+                            <TarjetaRecurso
+                                key={item.recurso}
+                                titulo={etiquetaGuardado(item)}
+                                pendiente={false}
+                                activa={mismoObjetivo(editando, objetivo)}
+                                deshabilitado={ocupado}
+                                etiquetaEditar={
+                                    item.tipo === 'imagen' ? 'Reemplazar' : 'Editar'
+                                }
+                                onEditar={() => {
+                                    if (item.tipo === 'imagen') {
+                                        elegirReemplazo(objetivo);
+                                    } else if (
+                                        item.tipo === 'formula' &&
+                                        typeof item.contenido === 'string'
+                                    ) {
+                                        editarFormula(objetivo, item.contenido);
+                                    } else if (
+                                        item.tipo === 'tabla' &&
+                                        typeof item.contenido === 'object' &&
+                                        item.contenido !== null
+                                    ) {
+                                        editarTabla(objetivo, item.contenido);
+                                    }
+                                }}
+                                onQuitar={() => quitar(objetivo)}
                             >
-                                <X className="size-3" aria-hidden="true" />
-                            </button>
-                        </li>
-                    ))}
+                                {item.tipo === 'imagen' &&
+                                    preguntaId !== undefined && (
+                                        <ImagenRecurso
+                                            nombre={
+                                                item.nombre_original ??
+                                                'Imagen de la pregunta'
+                                            }
+                                            preguntaId={preguntaId}
+                                            recurso={item.recurso}
+                                            claseImagen="max-h-28 max-w-48"
+                                        />
+                                    )}
+
+                                {item.tipo === 'formula' &&
+                                    typeof item.contenido === 'string' && (
+                                        <FormulaRenderizada latex={item.contenido} />
+                                    )}
+
+                                {item.tipo === 'tabla' &&
+                                    typeof item.contenido === 'object' &&
+                                    item.contenido !== null && (
+                                        <TablaRecurso tabla={item.contenido} />
+                                    )}
+                            </TarjetaRecurso>
+                        );
+                    })}
+
+                    {recursos.pendientes.map((item) => {
+                        const objetivo: ObjetivoRecurso = {
+                            origen: 'pendiente',
+                            id: item.id,
+                        };
+
+                        return (
+                            <TarjetaRecurso
+                                key={item.id}
+                                titulo={etiquetaPendiente(item)}
+                                pendiente
+                                activa={mismoObjetivo(editando, objetivo)}
+                                deshabilitado={ocupado}
+                                etiquetaEditar={
+                                    item.tipo === 'imagen' ? 'Reemplazar' : 'Editar'
+                                }
+                                onEditar={() => {
+                                    if (item.tipo === 'imagen') {
+                                        elegirReemplazo(objetivo);
+                                    } else if (item.tipo === 'formula') {
+                                        editarFormula(objetivo, item.latex);
+                                    } else {
+                                        editarTabla(objetivo, item.tabla);
+                                    }
+                                }}
+                                onQuitar={() => quitar(objetivo)}
+                            >
+                                {item.tipo === 'imagen' && (
+                                    <ImagenRecurso
+                                        nombre={item.archivo.name}
+                                        urlLocal={item.url}
+                                        claseImagen="max-h-28 max-w-48"
+                                    />
+                                )}
+
+                                {item.tipo === 'formula' && (
+                                    <FormulaRenderizada latex={item.latex} />
+                                )}
+
+                                {item.tipo === 'tabla' && (
+                                    <TablaRecurso tabla={item.tabla} />
+                                )}
+                            </TarjetaRecurso>
+                        );
+                    })}
                 </ul>
             )}
         </section>

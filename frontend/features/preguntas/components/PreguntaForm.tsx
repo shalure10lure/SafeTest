@@ -628,7 +628,11 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
                     </select>
                 </Campo>
 
-                <RecursosEditor recursos={recursos} enEdicion={esEdicion} />
+                <RecursosEditor
+                    recursos={recursos}
+                    enEdicion={esEdicion}
+                    preguntaId={pregunta?.pregunta_id}
+                />
 
                 <ConfiguracionRespuesta
                     tipo={tipo}

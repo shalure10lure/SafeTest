@@ -146,6 +146,97 @@ export class PreguntaRecursosService {
     return this.aRespuesta(fila);
   }
 
+  // Cambiar el contenido de una fórmula o tabla ya guardada (mismo recurso).
+  async actualizarContenido(
+    preguntaId: number,
+    docenteId: number,
+    recurso: string,
+    dto: CrearRecursoDto,
+  ): Promise<RecursoPregunta> {
+    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
+
+    const fila = await this.buscar(preguntaId, recurso);
+
+    if (fila.tipo === 'imagen') {
+      throw new BadRequestException(
+        'Las imágenes no se editan: reemplázala por otra imagen',
+      );
+    }
+
+    if (dto.tipo !== fila.tipo) {
+      throw new BadRequestException(
+        'No se puede cambiar el tipo de un recurso. Elimínalo y crea uno nuevo',
+      );
+    }
+
+    fila.contenido =
+      fila.tipo === 'formula'
+        ? validarFormula(dto.contenido)
+        : JSON.stringify(validarTabla(dto.contenido));
+
+    return this.aRespuesta(await this.recursoRepository.save(fila));
+  }
+
+  // Sustituir la imagen de un recurso por otra, conservando su posición.
+  async reemplazarImagen(
+    preguntaId: number,
+    docenteId: number,
+    recurso: string,
+    archivo: ArchivoSubido | undefined,
+  ): Promise<RecursoPregunta> {
+    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
+
+    const fila = await this.buscar(preguntaId, recurso);
+
+    if (fila.tipo !== 'imagen') {
+      throw new BadRequestException('Este recurso no es una imagen');
+    }
+
+    if (!archivo) {
+      throw new BadRequestException('Adjunta una imagen en el campo "archivo"');
+    }
+
+    const imagen = validarImagen(archivo.buffer, this.config.maxBytesImagen);
+    // Nombre nuevo: así el navegador no muestra la imagen anterior desde su caché.
+    const nuevoRecurso = `${randomUUID()}.${imagen.extension}`;
+    const claveNueva = this.claveDe(docenteId, nuevoRecurso);
+
+    try {
+      await this.almacen.guardar(claveNueva, archivo.buffer);
+    } catch {
+      throw new ServiceUnavailableException(
+        'No se pudo guardar la imagen. Inténtalo de nuevo.',
+      );
+    }
+
+    try {
+      await this.recursoRepository.update(
+        { pregunta_id: preguntaId, recurso },
+        {
+          recurso: nuevoRecurso,
+          mime_type: imagen.mime,
+          nombre_original: limpiarNombre(archivo.originalname),
+        },
+      );
+    } catch (error) {
+      await this.almacen.eliminar(claveNueva).catch(() => undefined);
+
+      throw error;
+    }
+
+    try {
+      await this.almacen.eliminar(this.claveDe(docenteId, recurso));
+    } catch {
+      this.logger.warn(
+        'Se reemplazó la imagen pero no se pudo borrar el archivo anterior.',
+      );
+    }
+
+    const actualizada = await this.buscar(preguntaId, nuevoRecurso);
+
+    return this.aRespuesta(actualizada);
+  }
+
   // Quitar un recurso (y su archivo, si es una imagen).
   async eliminar(
     preguntaId: number,

@@ -19,6 +19,11 @@ export type RecursoPendiente =
     | { id: string; tipo: 'tabla'; tabla: ContenidoTabla }
     | { id: string; tipo: 'formula'; latex: string };
 
+/** Recurso que se quiere modificar: ya guardado en el servidor o aún pendiente. */
+export type ObjetivoRecurso =
+    | { origen: 'guardado'; recurso: string }
+    | { origen: 'pendiente'; id: string };
+
 const MENSAJE_LLENO = `Una pregunta admite hasta ${MAX_RECURSOS_POR_PREGUNTA} elementos de contenido.`;
 
 /**
@@ -224,6 +229,140 @@ export function useRecursosPregunta(preguntaId?: number) {
         setPendientes((previos) => previos.filter((item) => item.id !== id));
     }
 
+    function reemplazarGuardado(anterior: string, nuevo: RecursoPregunta) {
+        setGuardados((previos) =>
+            previos.map((item) => (item.recurso === anterior ? nuevo : item)),
+        );
+    }
+
+    async function actualizarFormula(
+        objetivo: ObjetivoRecurso,
+        latex: string,
+    ): Promise<boolean> {
+        const mensaje = errorFormula(latex);
+
+        if (mensaje) return rechazar(mensaje);
+
+        const formula = latex.trim();
+
+        if (objetivo.origen === 'pendiente') {
+            const idPendiente = objetivo.id;
+
+            setError('');
+            setPendientes((previos) =>
+                previos.map((item) =>
+                    item.id === idPendiente && item.tipo === 'formula'
+                        ? { ...item, latex: formula }
+                        : item,
+                ),
+            );
+
+            return true;
+        }
+
+        if (preguntaId === undefined) return false;
+
+        const id = preguntaId;
+        const recurso = objetivo.recurso;
+
+        return ejecutar(async () => {
+            const actualizado = await preguntasService.actualizarContenido(
+                id,
+                recurso,
+                { tipo: 'formula', contenido: formula },
+            );
+
+            reemplazarGuardado(recurso, actualizado);
+        });
+    }
+
+    async function actualizarTabla(
+        objetivo: ObjetivoRecurso,
+        tabla: ContenidoTabla,
+    ): Promise<boolean> {
+        const mensaje = errorTabla(tabla);
+
+        if (mensaje) return rechazar(mensaje);
+
+        if (objetivo.origen === 'pendiente') {
+            const idPendiente = objetivo.id;
+
+            setError('');
+            setPendientes((previos) =>
+                previos.map((item) =>
+                    item.id === idPendiente && item.tipo === 'tabla'
+                        ? { ...item, tabla }
+                        : item,
+                ),
+            );
+
+            return true;
+        }
+
+        if (preguntaId === undefined) return false;
+
+        const id = preguntaId;
+        const recurso = objetivo.recurso;
+
+        return ejecutar(async () => {
+            const actualizado = await preguntasService.actualizarContenido(
+                id,
+                recurso,
+                { tipo: 'tabla', contenido: tabla },
+            );
+
+            reemplazarGuardado(recurso, actualizado);
+        });
+    }
+
+    async function reemplazarImagen(
+        objetivo: ObjetivoRecurso,
+        archivo: File,
+    ): Promise<boolean> {
+        const mensaje = errorArchivoImagen(archivo);
+
+        if (mensaje) return rechazar(mensaje);
+
+        if (objetivo.origen === 'pendiente') {
+            const idPendiente = objetivo.id;
+            const anterior = pendientes.find((item) => item.id === idPendiente);
+
+            if (anterior?.tipo !== 'imagen') return false;
+
+            URL.revokeObjectURL(anterior.url);
+            urlsLocales.current.delete(anterior.url);
+
+            const url = URL.createObjectURL(archivo);
+
+            urlsLocales.current.add(url);
+            setError('');
+            setPendientes((previos) =>
+                previos.map((item) =>
+                    item.id === idPendiente && item.tipo === 'imagen'
+                        ? { ...item, archivo, url }
+                        : item,
+                ),
+            );
+
+            return true;
+        }
+
+        if (preguntaId === undefined) return false;
+
+        const id = preguntaId;
+        const recurso = objetivo.recurso;
+
+        return ejecutar(async () => {
+            const actualizado = await preguntasService.reemplazarImagen(
+                id,
+                recurso,
+                archivo,
+            );
+
+            reemplazarGuardado(recurso, actualizado);
+        });
+    }
+
     /**
      * Sube el contenido acumulado a una pregunta recién creada, en orden.
      * Devuelve cuántos elementos no se pudieron subir.
@@ -270,6 +409,9 @@ export function useRecursosPregunta(preguntaId?: number) {
         agregarTabla,
         quitarGuardado,
         quitarPendiente,
+        actualizarFormula,
+        actualizarTabla,
+        reemplazarImagen,
         subirPendientes,
     };
 }

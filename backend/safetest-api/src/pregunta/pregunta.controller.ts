@@ -139,6 +139,38 @@ export class PreguntaController {
     );
   }
 
+  @Put(':id/recursos/:recurso')
+  actualizarRecurso(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('recurso') recurso: string,
+    @Body() dto: CrearRecursoDto,
+    @Req() req: Request,
+  ) {
+    return this.recursosService.actualizarContenido(
+      id,
+      this.docenteId(req),
+      recurso,
+      dto,
+    );
+  }
+
+  @Put(':id/recursos/:recurso/imagen')
+  @UseFilters(RecursosTamanoFilter)
+  @UseInterceptors(FileInterceptor('archivo'))
+  reemplazarImagen(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('recurso') recurso: string,
+    @UploadedFile() archivo: ArchivoSubido | undefined,
+    @Req() req: Request,
+  ) {
+    return this.recursosService.reemplazarImagen(
+      id,
+      this.docenteId(req),
+      recurso,
+      archivo,
+    );
+  }
+
   @Get(':id/recursos/:recurso/archivo')
   async obtenerImagen(
     @Param('id', ParseIntPipe) id: number,

@@ -12,6 +12,8 @@ interface ImagenRecursoProps {
     /** Imagen ya guardada: se descarga con la sesión del docente. */
     preguntaId?: number;
     recurso?: string;
+    /** Clases de la imagen (por defecto, tamaño completo). */
+    claseImagen?: string;
 }
 
 /**
@@ -24,6 +26,7 @@ export default function ImagenRecurso({
     urlLocal,
     preguntaId,
     recurso,
+    claseImagen = 'max-h-72 max-w-full',
 }: ImagenRecursoProps) {
     const [urlRemota, setUrlRemota] = useState('');
     const [fallo, setFallo] = useState(false);
@@ -78,7 +81,7 @@ export default function ImagenRecurso({
         <img
             src={origen}
             alt={nombre}
-            className="max-h-72 max-w-full rounded-lg border border-slate-200 object-contain"
+            className={`${claseImagen} rounded-lg border border-slate-200 object-contain`}
         />
     );
 }
