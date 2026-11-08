@@ -6,8 +6,10 @@ import {
     Clock3,
     RefreshCw,
 } from 'lucide-react';
+import Link from 'next/link';
 
 import { Badge } from '@/components/ui/Card';
+import { ROUTES } from '@/constants/routes';
 import { useEvaluacionesAsignadas } from '../hooks/useEvaluacionesAsignadas';
 import type {
     EstadoDisponibilidadEvaluacion,
@@ -138,6 +140,14 @@ function TarjetaEvaluacion({
                         </div>
                     </dl>
                 </div>
+                <Link
+                    href={ROUTES.estudiante.instruccionesEvaluacion(
+                        evaluacion.examen_id,
+                    )}
+                    className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                >
+                    Ver instrucciones
+                </Link>
             </div>
         </article>
     );

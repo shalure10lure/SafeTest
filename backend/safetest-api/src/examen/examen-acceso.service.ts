@@ -11,6 +11,7 @@ import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregu
 import { Estudiante } from '../estudiante/entity/estudiante.entity';
 import { ExamenEstudiante } from '../examenestudiante/entity/examenestudiante.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
+import { ExamenTema } from '../examentema/entity/examentema.entity';
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
@@ -19,6 +20,7 @@ import type {
   EstadoDisponibilidadEvaluacion,
   EvaluacionAsignadaDto,
 } from './dto/evaluacion-asignada.dto';
+import type { InstruccionesEvaluacionEstudianteDto } from './dto/instrucciones-evaluacion-estudiante.dto';
 import {
   IncisoDocenteDto,
   OpcionDocenteDto,
@@ -88,6 +90,9 @@ export class ExamenAccesoService {
 
     @InjectRepository(ExamenPregunta)
     private readonly examenPreguntaRepository: Repository<ExamenPregunta>,
+
+    @InjectRepository(ExamenTema)
+    private readonly examenTemaRepository: Repository<ExamenTema>,
 
     @InjectRepository(AsignacionPregunta)
     private readonly asignacionPreguntaRepository: Repository<AsignacionPregunta>,
@@ -220,6 +225,72 @@ export class ExamenAccesoService {
         ),
       };
     });
+  }
+
+  /**
+   * Devuelve solo la proyección previa de una evaluación disponible.
+   * Reutiliza las reglas de asignación y ventana sin cargar preguntas.
+   */
+  async obtenerInstruccionesEstudiante(
+    examenId: number,
+    estudianteId: number,
+  ): Promise<InstruccionesEvaluacionEstudianteDto> {
+    const examen = await this.examenRepository.findOne({
+      where: { examen_id: examenId },
+      relations: { materia: true, docente: true },
+      select: {
+        examen_id: true,
+        titulo: true,
+        instrucciones: true,
+        estado: true,
+        modo_asignacion: true,
+        modo_seleccion: true,
+        duracion_min: true,
+        disponible_desde: true,
+        disponible_hasta: true,
+        materia: { nombre: true },
+        docente: { nombre: true },
+      },
+    });
+
+    if (!examen || examen.estado !== 'publicado') {
+      throw new NotFoundException('La evaluación no está disponible.');
+    }
+
+    if (!(await this.estaAsignado(examen, estudianteId))) {
+      throw new NotFoundException('La evaluación no está disponible.');
+    }
+
+    if (!this.estaEnVentana(examen)) {
+      throw new ForbiddenException(
+        'Las instrucciones estarán disponibles durante el periodo de la evaluación.',
+      );
+    }
+
+    const totalPreguntas =
+      examen.modo_seleccion === 'aleatorio'
+        ? (
+            await this.examenTemaRepository.find({
+              where: { examen_id: examenId },
+              select: { cantidad: true },
+            })
+          ).reduce((total, criterio) => total + criterio.cantidad, 0)
+        : await this.examenPreguntaRepository.count({
+            where: { examen_id: examenId },
+          });
+
+    return {
+      examen_id: examen.examen_id,
+      titulo: examen.titulo,
+      instrucciones: examen.instrucciones,
+      materia: examen.materia?.nombre ?? null,
+      docente: examen.docente?.nombre ?? null,
+      duracion_min: examen.duracion_min,
+      disponible_desde: examen.disponible_desde,
+      disponible_hasta: examen.disponible_hasta,
+      total_preguntas: totalPreguntas,
+      estado_disponibilidad: 'disponible',
+    };
   }
 
   /**

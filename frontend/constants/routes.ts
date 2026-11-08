@@ -69,6 +69,8 @@ export const ROUTES = {
         invitaciones: '/estudiante/invitaciones',
         paralelos: '/estudiante/paralelos',
         evaluaciones: '/estudiante/evaluaciones',
+        instruccionesEvaluacion: (id: number) =>
+            `/estudiante/evaluaciones/${id}/instrucciones`,
         resultados: '/estudiante/resultados',
         historial: '/estudiante/historial',
     },
@@ -513,6 +515,17 @@ export const NAV_ESTUDIANTE: NavSection[] = [
                     titulo: 'Mis evaluaciones',
                     subtitulo: 'Todas tus evaluaciones asignadas',
                 },
+                rutasExtra: [
+                    {
+                        patron: /^\/estudiante\/evaluaciones\/\d+\/instrucciones$/,
+                        topbar: {
+                            seccion: 'Mis evaluaciones',
+                            titulo: 'Instrucciones de la evaluación',
+                            subtitulo: 'Lee con atención antes de comenzar',
+                            migaFinal: 'Instrucciones',
+                        },
+                    },
+                ],
             },
             {
                 label: 'Resultados',

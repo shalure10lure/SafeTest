@@ -13,6 +13,7 @@ import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
+import { ExamenTema } from '../examentema/entity/examentema.entity';
 
 import { ExamenController } from './examen.controller';
 import { ExamenEstudianteController } from './examen-estudiante.controller';
@@ -33,6 +34,7 @@ import { ExamenAccesoService } from './examen-acceso.service';
             Pregunta,
             Tema,
             ExamenPregunta,
+            ExamenTema,
             AsignacionPregunta,
         ]),
     ],

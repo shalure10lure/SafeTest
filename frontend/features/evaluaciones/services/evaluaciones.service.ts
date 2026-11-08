@@ -14,6 +14,7 @@ import type {
     GuardarAsignacionDto,
     GuardarConfiguracionDto,
     GuardarSeleccionDto,
+    InstruccionesEvaluacionEstudiante,
     PublicacionRespuestas,
     ResumenEvaluacion,
     SeleccionGuardada,
@@ -31,6 +32,12 @@ class EvaluacionesService extends BaseService {
 
     getAsignadasEstudiante() {
         return this.get<EvaluacionAsignada[]>('/estudiante/evaluaciones');
+    }
+
+    getInstruccionesEstudiante(id: number) {
+        return this.get<InstruccionesEvaluacionEstudiante>(
+            `/${id}/estudiante/instrucciones`,
+        );
     }
 
     getById(id: number) {
