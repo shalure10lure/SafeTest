@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
 

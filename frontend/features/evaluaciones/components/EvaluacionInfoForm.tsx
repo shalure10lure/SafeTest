@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { mensajeDeError } from '../mensaje-error';
 
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import LinkButton from '@/components/ui/LinkButton';
 import { ROUTES } from '@/constants/routes';
 import { useParalelos } from '@/features/paralelos/hooks/useParalelos';
@@ -87,6 +88,8 @@ export default function EvaluacionInfoForm({
     } = useParalelos();
 
     const materiaOriginalId = evaluacion?.materia?.materia_id ?? null;
+    const semestreOriginalId = evaluacion?.semestre.semestre_id ?? null;
+    const paralelosOriginales = evaluacion?.paralelos ?? [];
 
     const [titulo, setTitulo] = useState(evaluacion?.titulo ?? '');
     const [periodoElegido, setPeriodoElegido] = useState<number | null>(
@@ -103,6 +106,10 @@ export default function EvaluacionInfoForm({
     const [intentoGuardar, setIntentoGuardar] = useState(false);
     const [enviando, setEnviando] = useState(false);
     const [errorEnvio, setErrorEnvio] = useState('');
+    const [confirmacionAbierta, setConfirmacionAbierta] = useState(false);
+
+    // Evita que dos clics rápidos (o Enter + clic) envíen dos solicitudes.
+    const enviandoRef = useRef(false);
 
     // El periodo arranca en el vigente (o el primero) hasta que el docente elija otro.
     const periodoVigente = periodos.find((p) => p.activo) ?? periodos[0];
@@ -126,6 +133,20 @@ export default function EvaluacionInfoForm({
 
     const palabras = contarPalabras(instrucciones);
 
+    /**
+     * Debe coincidir con `ExamenService.update`: el reinicio ocurre cuando
+     * cambia la materia, cambia el semestre o se elige un paralelo que no
+     * estaba asociado a la evaluación. Título e instrucciones no lo provocan.
+     */
+    const reiniciaraAsignacion =
+        Boolean(evaluacion) &&
+        (materiaId !== materiaOriginalId ||
+            periodoId !== semestreOriginalId ||
+            (paraleloId !== null &&
+                !paralelosOriginales.some(
+                    (paralelo) => paralelo.paralelo_id === paraleloId,
+                )));
+
     function alCambiarPeriodo(valor: string) {
         setPeriodoElegido(Number(valor) || null);
         setMateriaId(null);
@@ -137,16 +158,15 @@ export default function EvaluacionInfoForm({
         setParaleloId(null);
     }
 
-    async function guardar(evento: FormEvent<HTMLFormElement>) {
-        evento.preventDefault();
-        setIntentoGuardar(true);
-        setErrorEnvio('');
-
-        if (hayErrores || periodoId === null || materiaId === null || paraleloId === null) {
+    async function enviarFormulario() {
+        if (enviandoRef.current) return;
+        if (periodoId === null || materiaId === null || paraleloId === null) {
             return;
         }
 
+        enviandoRef.current = true;
         setEnviando(true);
+        setErrorEnvio('');
 
         try {
             if (evaluacion) {
@@ -159,6 +179,7 @@ export default function EvaluacionInfoForm({
                     instrucciones: instrucciones.trim(),
                 });
 
+                setConfirmacionAbierta(false);
                 router.push(ROUTES.docente.evaluacionPreguntas(evaluacion.examen_id));
             } else {
                 const creada = await evaluacionesService.create({
@@ -172,6 +193,8 @@ export default function EvaluacionInfoForm({
                 router.push(ROUTES.docente.evaluacionPreguntas(creada.examen_id));
             }
         } catch (error) {
+            enviandoRef.current = false;
+            setConfirmacionAbierta(false);
             setErrorEnvio(
                 mensajeDeError(
                     error,
@@ -180,6 +203,35 @@ export default function EvaluacionInfoForm({
             );
             setEnviando(false); // antes quedaba bloqueado tras un error
         }
+    }
+
+    function guardar(evento: FormEvent<HTMLFormElement>) {
+        evento.preventDefault();
+        if (enviandoRef.current) return;
+
+        setIntentoGuardar(true);
+        setErrorEnvio('');
+
+        if (hayErrores || periodoId === null || materiaId === null || paraleloId === null) {
+            return;
+        }
+
+        // La confirmación se pide antes de llamar al backend, nunca después.
+        if (evaluacion && reiniciaraAsignacion) {
+            setConfirmacionAbierta(true);
+            return;
+        }
+
+        void enviarFormulario();
+    }
+
+    function confirmarCambios() {
+        void enviarFormulario();
+    }
+
+    function cancelarConfirmacion() {
+        if (enviandoRef.current) return;
+        setConfirmacionAbierta(false);
     }
 
     const cargando = cargandoPeriodos || cargandoParalelos;
@@ -334,6 +386,29 @@ export default function EvaluacionInfoForm({
                     value={enviando ? 'Guardando...' : 'Siguiente →'}
                 />
             </div>
+
+            <ConfirmDialog
+                abierto={confirmacionAbierta}
+                titulo="¿Confirmar cambio y reinicio de asignaciones?"
+                onConfirmar={confirmarCambios}
+                onCancelar={cancelarConfirmacion}
+                procesando={enviando}
+            >
+                <p>
+                    Al modificar la materia, el semestre o el paralelo principal,
+                    se reiniciará la asignación actual de esta evaluación.
+                </p>
+                <p>Esto significa que:</p>
+                <ul className="list-disc space-y-1 pl-5">
+                    <li>Se eliminará la selección individual actual de estudiantes.</li>
+                    <li>La evaluación volverá al modo de asignación por paralelos.</li>
+                    <li>Se conservará únicamente el paralelo principal seleccionado.</li>
+                    <li>
+                        Deberás revisar y configurar nuevamente los destinatarios
+                        antes de publicar la evaluación.
+                    </li>
+                </ul>
+            </ConfirmDialog>
         </form>
     );
 }

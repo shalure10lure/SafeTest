@@ -27,6 +27,10 @@ beforeAll(async () => {
     () => ({ AsignacionPregunta: class AsignacionPregunta {} }),
   );
   jest.unstable_mockModule(
+    '../estudiante/entity/estudiante.entity',
+    () => ({ Estudiante: class Estudiante {} }),
+  );
+  jest.unstable_mockModule(
     '../inscripcion/entity/inscripcion.entity',
     () => ({ Inscripcion: class Inscripcion {} }),
   );
@@ -66,6 +70,7 @@ function repoMock(): RepoMock {
 
 function queryBuilderMock(filas: unknown[]) {
   const qb = {
+    distinct: jest.fn(),
     innerJoin: jest.fn(),
     leftJoin: jest.fn(),
     select: jest.fn(),
@@ -78,6 +83,7 @@ function queryBuilderMock(filas: unknown[]) {
     getCount: jest.fn().mockResolvedValue(0),
   };
 
+  qb.distinct.mockReturnValue(qb);
   qb.innerJoin.mockReturnValue(qb);
   qb.leftJoin.mockReturnValue(qb);
   qb.select.mockReturnValue(qb);
@@ -116,6 +122,7 @@ function montar() {
   const inscripcion = repoMock();
   const examenEstudiante = repoMock();
   const pregunta = repoMock();
+  const estudiante = repoMock();
 
   const servicio = new ExamenAccesoService(
     examen as unknown as Repository<any>,
@@ -124,6 +131,7 @@ function montar() {
     inscripcion as unknown as Repository<any>,
     examenEstudiante as unknown as Repository<any>,
     pregunta as unknown as Repository<any>,
+    estudiante as unknown as Repository<any>,
   );
 
   return {
@@ -134,6 +142,7 @@ function montar() {
     inscripcion,
     examenEstudiante,
     pregunta,
+    estudiante,
   };
 }
 
@@ -180,32 +189,44 @@ describe('ExamenAccesoService', () => {
 
   beforeEach(() => {
     montaje = montar();
+    montaje.estudiante.count.mockResolvedValue(1);
   });
 
-  describe('vista del estudiante', () => {
-    function prepararVista(
-      resultadosPublicadosEn: Date | null,
-      filas: unknown[],
-    ) {
-      montaje.examen.findOne.mockResolvedValue({
-        examen_id: 5,
-        titulo: 'Evaluación de prueba',
-        instrucciones: null,
-        estado: 'publicado',
-        duracion_min: 60,
-        ...VENTANA,
-        resultados_publicados_en: resultadosPublicadosEn,
-      });
-      montaje.examenEstudiante.count.mockResolvedValue(1);
-      montaje.asignacion.find.mockResolvedValue([]);
-      montaje.examenPregunta.find.mockResolvedValue([
-        { pregunta_id: 10, orden: 1 },
-      ]);
-      montaje.pregunta.createQueryBuilder.mockReturnValue(
-        queryBuilderMock(filas),
-      );
+  function prepararVista(
+    resultadosPublicadosEn: Date | null,
+    filas: unknown[],
+    modoAsignacion: 'paralelos' | 'estudiantes' = 'estudiantes',
+  ): ReturnType<typeof queryBuilderMock> | undefined {
+    montaje.examen.findOne.mockResolvedValue({
+      examen_id: 5,
+      titulo: 'Evaluación de prueba',
+      instrucciones: null,
+      estado: 'publicado',
+      modo_asignacion: modoAsignacion,
+      duracion_min: 60,
+      ...VENTANA,
+      resultados_publicados_en: resultadosPublicadosEn,
+    });
+    montaje.examenEstudiante.count.mockResolvedValue(1);
+    montaje.asignacion.find.mockResolvedValue([]);
+    montaje.examenPregunta.find.mockResolvedValue([
+      { pregunta_id: 10, orden: 1 },
+    ]);
+    montaje.pregunta.createQueryBuilder.mockReturnValue(
+      queryBuilderMock(filas),
+    );
+
+    if (modoAsignacion === 'paralelos') {
+      const qbInscripcion = queryBuilderMock([]);
+      qbInscripcion.getCount.mockResolvedValue(1);
+      montaje.inscripcion.createQueryBuilder.mockReturnValue(qbInscripcion);
+      return qbInscripcion;
     }
 
+    return undefined;
+  }
+
+  describe('vista del estudiante', () => {
     it('no expone respuestas correctas antes de la publicación autorizada', async () => {
       prepararVista(null, FILAS_SEGURAS);
 
@@ -286,6 +307,7 @@ describe('ExamenAccesoService', () => {
       montaje.examen.findOne.mockResolvedValue({
         examen_id: 5,
         estado: 'publicado',
+        modo_asignacion: 'estudiantes',
         ...VENTANA,
         resultados_publicados_en: null,
       });
@@ -303,6 +325,7 @@ describe('ExamenAccesoService', () => {
       montaje.examen.findOne.mockResolvedValue({
         examen_id: 5,
         estado: 'borrador',
+        modo_asignacion: 'estudiantes',
         ...VENTANA,
         resultados_publicados_en: null,
       });
@@ -316,6 +339,7 @@ describe('ExamenAccesoService', () => {
       montaje.examen.findOne.mockResolvedValue({
         examen_id: 5,
         estado: 'publicado',
+        modo_asignacion: 'estudiantes',
         disponible_desde: new Date(AHORA - 2 * 60 * 60 * 1000),
         disponible_hasta: new Date(AHORA - 60 * 60 * 1000),
         resultados_publicados_en: null,
@@ -325,6 +349,324 @@ describe('ExamenAccesoService', () => {
       await expect(
         montaje.servicio.obtenerVistaEstudiante(5, 9),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('listado de evaluaciones asignadas', () => {
+    function prepararListado(filas: unknown[]) {
+      const qb = queryBuilderMock(filas);
+      montaje.examen.createQueryBuilder.mockReturnValue(qb);
+      return qb;
+    }
+
+    it('devuelve solo la proyección de tarjeta y clasifica la ventana', async () => {
+      const ahora = Date.now();
+      const filas = [
+        {
+          examen_id: '5',
+          titulo: 'Práctica futura',
+          materia: 'Programación',
+          docente: 'Juan Pérez',
+          disponible_desde: new Date(ahora + 60_000),
+          disponible_hasta: new Date(ahora + 3_600_000),
+          duracion_min: '45',
+          total_preguntas: '6',
+          nota_final: '100',
+          explicacion: 'No debe serializarse',
+        },
+        {
+          examen_id: 6,
+          titulo: 'Quiz vigente',
+          materia: 'Estadística',
+          docente: 'María Castro',
+          disponible_desde: new Date(ahora - 60_000),
+          disponible_hasta: new Date(ahora + 3_600_000),
+          duracion_min: 60,
+          total_preguntas: 10,
+        },
+        {
+          examen_id: 7,
+          titulo: 'Práctica finalizada',
+          materia: 'Álgebra',
+          docente: 'Pedro Vargas',
+          disponible_desde: new Date(ahora - 3_600_000),
+          disponible_hasta: new Date(ahora - 60_000),
+          duracion_min: 90,
+          total_preguntas: 20,
+        },
+      ];
+      prepararListado(filas);
+
+      const resultado =
+        await montaje.servicio.listarEvaluacionesAsignadas(9);
+
+      expect(resultado.map((item) => item.estado_disponibilidad)).toEqual([
+        'proxima',
+        'disponible',
+        'finalizada',
+      ]);
+      expect(resultado[0]).toEqual({
+        examen_id: 5,
+        titulo: 'Práctica futura',
+        materia: 'Programación',
+        docente: 'Juan Pérez',
+        disponible_desde: filas[0].disponible_desde,
+        disponible_hasta: filas[0].disponible_hasta,
+        duracion_min: 45,
+        total_preguntas: 6,
+        estado_disponibilidad: 'proxima',
+      });
+
+      const serializado = JSON.stringify(resultado);
+      expect(serializado).not.toContain('nota_final');
+      expect(serializado).not.toContain('explicacion');
+      expect(serializado).not.toContain('respuesta');
+      expect(serializado).not.toContain('estudiante_id');
+    });
+
+    it('filtra por publicado y usa asignación individual o inscripción actual según el modo', async () => {
+      const qb = prepararListado([]);
+
+      await montaje.servicio.listarEvaluacionesAsignadas(9);
+
+      expect(montaje.examen.createQueryBuilder).toHaveBeenCalledWith(
+        'examen',
+      );
+      expect(qb.where).toHaveBeenCalledWith(
+        'examen.estado = :estadoPublicado',
+        { estadoPublicado: 'publicado' },
+      );
+      const llamadaAsignacion = qb.andWhere.mock.calls.find(([filtro]) =>
+        String(filtro).includes('modo_asignacion'),
+      );
+      expect(llamadaAsignacion).toBeDefined();
+      const [filtroAsignacion, parametros] = llamadaAsignacion!;
+      const filtros = qb.andWhere.mock.calls
+        .map(([filtro]) => String(filtro))
+        .join('\n');
+      expect(filtros).toContain('FROM estudiante estudianteActivo');
+      expect(filtros).toContain('estudianteActivo.activo = true');
+      expect(filtroAsignacion).toContain(
+        'examen.modo_asignacion = :modoEstudiantes',
+      );
+      expect(filtroAsignacion).toContain('FROM examen_estudiante');
+      expect(filtroAsignacion).toContain(
+        'asignacionIndividual.estudiante_id = :estudianteId',
+      );
+      expect(filtroAsignacion).toContain(
+        'examen.modo_asignacion = :modoParalelos',
+      );
+      expect(filtroAsignacion).toContain('FROM inscripcion');
+      expect(filtroAsignacion).toContain('INNER JOIN paralelo_examen');
+      expect(filtroAsignacion).toContain(
+        'inscripcion.estudiante_id = :estudianteId',
+      );
+      expect(parametros).toEqual({
+        modoEstudiantes: 'estudiantes',
+        modoParalelos: 'paralelos',
+        estudianteId: 9,
+      });
+      const selecciones = qb.addSelect.mock.calls.map(([expresion]) =>
+        typeof expresion === 'string' ? expresion : '',
+      );
+      expect(selecciones.join('\n')).toContain(
+        "examen.modo_seleccion = 'aleatorio'",
+      );
+      expect(selecciones.join('\n')).toContain('FROM examen_tema');
+      expect(selecciones.join('\n')).toContain('FROM examen_pregunta');
+      expect(selecciones.join('\n')).not.toMatch(
+        /respuesta|explicacion|solucion|nota_final/i,
+      );
+      expect(qb.distinct).toHaveBeenCalledWith(true);
+      expect(qb.getRawMany).toHaveBeenCalledTimes(1);
+      expect(qb.leftJoin).toHaveBeenCalledTimes(2);
+      expect(qb.leftJoin).toHaveBeenCalledWith(
+        'examen.materia',
+        'materia',
+      );
+      expect(qb.leftJoin).toHaveBeenCalledWith(
+        'examen.docente',
+        'docente',
+      );
+    });
+
+    it('excluye estudiantes inactivos en la misma consulta del listado', async () => {
+      const qb = prepararListado([]);
+
+      await expect(
+        montaje.servicio.listarEvaluacionesAsignadas(9),
+      ).resolves.toEqual([]);
+
+      expect(qb.andWhere.mock.calls[0][0]).toContain(
+        'estudianteActivo.activo = true',
+      );
+      expect(qb.getRawMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('no clasifica una ventana ausente o inválida como disponible', async () => {
+      prepararListado([
+        {
+          examen_id: 5,
+          titulo: 'Sin ventana',
+          materia: null,
+          docente: null,
+          disponible_desde: null,
+          disponible_hasta: null,
+          duracion_min: null,
+          total_preguntas: '0',
+        },
+        {
+          examen_id: 6,
+          titulo: 'Ventana inválida',
+          materia: null,
+          docente: null,
+          disponible_desde: new Date('invalid'),
+          disponible_hasta: new Date(),
+          duracion_min: null,
+          total_preguntas: '0',
+        },
+      ]);
+
+      const resultado =
+        await montaje.servicio.listarEvaluacionesAsignadas(9);
+
+      expect(resultado.map((item) => item.estado_disponibilidad)).toEqual([
+        null,
+        null,
+      ]);
+      expect(resultado[0].disponible_desde).toBeNull();
+      expect(resultado[0].disponible_hasta).toBeNull();
+    });
+  });
+
+  describe('regla de acceso según modo_asignacion', () => {
+    it('permite el acceso al estudiante seleccionado en modo estudiantes', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'estudiantes');
+
+      const vista = await montaje.servicio.obtenerVistaEstudiante(5, 9);
+
+      expect(vista.examen_id).toBe(5);
+      expect(montaje.examenEstudiante.count).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9 },
+      });
+    });
+
+    it('no usa la pertenencia al paralelo como autorización alternativa', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'estudiantes');
+      montaje.examenEstudiante.count.mockResolvedValue(0);
+
+      // Aunque el estudiante pertenezca a un paralelo vinculado, en modo
+      // "estudiantes" esa relación no debe consultarse para autorizar.
+      const qbInscripcion = queryBuilderMock([]);
+      qbInscripcion.getCount.mockResolvedValue(1);
+      montaje.inscripcion.createQueryBuilder.mockReturnValue(qbInscripcion);
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 10),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(montaje.inscripcion.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('permite el acceso a un estudiante activo del paralelo en modo paralelos', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'paralelos');
+
+      const vista = await montaje.servicio.obtenerVistaEstudiante(5, 9);
+
+      expect(vista.examen_id).toBe(5);
+      expect(montaje.inscripcion.createQueryBuilder).toHaveBeenCalled();
+    });
+
+    it('niega el acceso a un estudiante de otro paralelo', async () => {
+      const qbInscripcion = prepararVista(
+        null,
+        FILAS_SEGURAS,
+        'paralelos',
+      )!;
+      qbInscripcion.getCount.mockResolvedValue(0);
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 99),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('evalúa la pertenencia al paralelo dinámicamente', async () => {
+      const qbInscripcion = prepararVista(
+        null,
+        FILAS_SEGURAS,
+        'paralelos',
+      )!;
+
+      // Primero no pertenece; después ingresa al paralelo.
+      qbInscripcion.getCount.mockResolvedValueOnce(0);
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      qbInscripcion.getCount.mockResolvedValueOnce(1);
+
+      const vista = await montaje.servicio.obtenerVistaEstudiante(5, 9);
+
+      expect(vista.examen_id).toBe(5);
+    });
+
+    it('niega el acceso a un estudiante inactivo en modo estudiantes', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'estudiantes');
+      montaje.estudiante.count.mockResolvedValue(0);
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('niega el acceso a un estudiante inactivo en modo paralelos', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'paralelos');
+      montaje.estudiante.count.mockResolvedValue(0);
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('recupera el acceso al reactivarse si conserva su asignación individual', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'estudiantes');
+
+      // Inactivo: pierde el acceso.
+      montaje.estudiante.count.mockResolvedValueOnce(0);
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Reactivado: la evaluación sigue publicada, disponible y asignada.
+      montaje.estudiante.count.mockResolvedValueOnce(1);
+
+      const vista = await montaje.servicio.obtenerVistaEstudiante(5, 9);
+
+      expect(vista.examen_id).toBe(5);
+      expect(montaje.examenEstudiante.count).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9 },
+      });
+    });
+
+    it('niega el acceso si modo_asignacion tiene un valor desconocido', async () => {
+      prepararVista(null, FILAS_SEGURAS, 'estudiantes');
+
+      montaje.examen.findOne.mockResolvedValue({
+        examen_id: 5,
+        titulo: 'Evaluación de prueba',
+        instrucciones: null,
+        estado: 'publicado',
+        modo_asignacion: 'desconocido',
+        duracion_min: 60,
+        ...VENTANA,
+        resultados_publicados_en: null,
+      });
+
+      await expect(
+        montaje.servicio.obtenerVistaEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

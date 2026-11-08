@@ -10,6 +10,7 @@ import {
 import { EstudianteGuard } from '../auth/guards/estudiante.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ExamenAccesoService } from './examen-acceso.service';
+import { EvaluacionAsignadaDto } from './dto/evaluacion-asignada.dto';
 
 /**
  * Vista de la evaluación para el estudiante autenticado.
@@ -22,6 +23,15 @@ import { ExamenAccesoService } from './examen-acceso.service';
 @UseGuards(JwtAuthGuard, EstudianteGuard)
 export class ExamenEstudianteController {
   constructor(private readonly examenAccesoService: ExamenAccesoService) {}
+
+  @Get('estudiante/evaluaciones')
+  listarEvaluaciones(
+    @Req() request: { user: { id: number } },
+  ): Promise<EvaluacionAsignadaDto[]> {
+    return this.examenAccesoService.listarEvaluacionesAsignadas(
+      request.user.id,
+    );
+  }
 
   @Get(':id/estudiante')
   obtener(

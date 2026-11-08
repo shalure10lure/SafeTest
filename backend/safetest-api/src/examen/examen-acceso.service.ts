@@ -8,12 +8,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
+import { Estudiante } from '../estudiante/entity/estudiante.entity';
 import { ExamenEstudiante } from '../examenestudiante/entity/examenestudiante.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Examen } from './entity/examen.entity';
+import type {
+  EstadoDisponibilidadEvaluacion,
+  EvaluacionAsignadaDto,
+} from './dto/evaluacion-asignada.dto';
 import {
   IncisoDocenteDto,
   OpcionDocenteDto,
@@ -95,7 +100,127 @@ export class ExamenAccesoService {
 
     @InjectRepository(Pregunta)
     private readonly preguntaRepository: Repository<Pregunta>,
+
+    @InjectRepository(Estudiante)
+    private readonly estudianteRepository: Repository<Estudiante>,
   ) {}
+
+  /**
+   * Lista los metadatos de evaluaciones publicadas asignadas al estudiante.
+   * La autorización se calcula con EXISTS para no duplicar filas por múltiples
+   * inscripciones ni mezclar la selección individual con la grupal.
+   */
+  async listarEvaluacionesAsignadas(
+    estudianteId: number,
+  ): Promise<EvaluacionAsignadaDto[]> {
+    const filas = await this.examenRepository
+      .createQueryBuilder('examen')
+      .distinct(true)
+      .leftJoin('examen.materia', 'materia')
+      .leftJoin('examen.docente', 'docente')
+      .select('examen.examen_id', 'examen_id')
+      .addSelect('examen.titulo', 'titulo')
+      .addSelect('materia.nombre', 'materia')
+      .addSelect('docente.nombre', 'docente')
+      .addSelect('examen.disponible_desde', 'disponible_desde')
+      .addSelect('examen.disponible_hasta', 'disponible_hasta')
+      .addSelect('examen.duracion_min', 'duracion_min')
+      .addSelect(
+        `CASE
+          WHEN examen.modo_seleccion = 'aleatorio' THEN COALESCE(
+            (
+              SELECT SUM(examenTema.cantidad)
+              FROM examen_tema examenTema
+              WHERE examenTema.examen_id = examen.examen_id
+            ),
+            0
+          )
+          ELSE (
+            SELECT COUNT(*)
+            FROM examen_pregunta examenPregunta
+            WHERE examenPregunta.examen_id = examen.examen_id
+          )
+        END`,
+        'total_preguntas',
+      )
+      .where('examen.estado = :estadoPublicado', {
+        estadoPublicado: 'publicado',
+      })
+      .andWhere(
+        `EXISTS (
+          SELECT 1
+          FROM estudiante estudianteActivo
+          WHERE estudianteActivo.estudiante_id = :estudianteId
+            AND estudianteActivo.activo = true
+        )`,
+      )
+      .andWhere(
+        `(
+          (
+            examen.modo_asignacion = :modoEstudiantes
+            AND EXISTS (
+              SELECT 1
+              FROM examen_estudiante asignacionIndividual
+              WHERE asignacionIndividual.examen_id = examen.examen_id
+                AND asignacionIndividual.estudiante_id = :estudianteId
+            )
+          )
+          OR
+          (
+            examen.modo_asignacion = :modoParalelos
+            AND EXISTS (
+              SELECT 1
+              FROM inscripcion
+              INNER JOIN paralelo_examen
+                ON paralelo_examen.paralelo_id = inscripcion.paralelo_id
+              WHERE inscripcion.estudiante_id = :estudianteId
+                AND paralelo_examen.examen_id = examen.examen_id
+            )
+          )
+        )`,
+        {
+          modoEstudiantes: 'estudiantes',
+          modoParalelos: 'paralelos',
+          estudianteId,
+        },
+      )
+      .orderBy('examen.disponible_desde', 'ASC')
+      .addOrderBy('examen.examen_id', 'DESC')
+      .getRawMany<{
+        examen_id: number | string;
+        titulo: string | null;
+        materia: string | null;
+        docente: string | null;
+        disponible_desde: Date | string | null;
+        disponible_hasta: Date | string | null;
+        duracion_min: number | string | null;
+        total_preguntas: number | string;
+      }>();
+
+    const ahora = Date.now();
+
+    return filas.map((fila) => {
+      const disponibleDesde = this.convertirFecha(fila.disponible_desde);
+      const disponibleHasta = this.convertirFecha(fila.disponible_hasta);
+
+      return {
+        examen_id: Number(fila.examen_id),
+        titulo: fila.titulo,
+        materia: fila.materia,
+        docente: fila.docente,
+        disponible_desde: disponibleDesde,
+        disponible_hasta: disponibleHasta,
+        duracion_min:
+          fila.duracion_min === null ? null : Number(fila.duracion_min),
+        total_preguntas: Number(fila.total_preguntas),
+        estado_disponibilidad: this.clasificarDisponibilidad(
+          disponibleDesde,
+          disponibleHasta,
+          ahora,
+        ),
+      };
+    });
+  }
 
   /**
    * Vista segura del estudiante. Las respuestas correctas solo se agregan si
@@ -112,6 +237,7 @@ export class ExamenAccesoService {
         titulo: true,
         instrucciones: true,
         estado: true,
+        modo_asignacion: true,
         duracion_min: true,
         disponible_desde: true,
         disponible_hasta: true,
@@ -125,7 +251,7 @@ export class ExamenAccesoService {
       throw new NotFoundException('La evaluación no está disponible.');
     }
 
-    const asignado = await this.estaAsignado(examenId, estudianteId);
+    const asignado = await this.estaAsignado(examen, estudianteId);
 
     if (!asignado) {
       throw new NotFoundException('La evaluación no está disponible.');
@@ -283,31 +409,57 @@ export class ExamenAccesoService {
     };
   }
 
-  /** El estudiante debe estar asignado por paralelo o de forma individual. */
+  /**
+   * El estudiante debe estar activo y asignado según el modo de la evaluación.
+   *
+   * - `estudiantes`: solo la selección individual en `examen_estudiante`.
+   *   `paralelo_examen` se conserva como contexto, nunca como autorización.
+   * - `paralelos`: pertenencia dinámica al paralelo mediante `inscripcion`.
+   *
+   * Un modo desconocido se rechaza (fail closed).
+   */
   private async estaAsignado(
-    examenId: number,
+    examen: Pick<Examen, 'examen_id' | 'modo_asignacion'>,
     estudianteId: number,
   ): Promise<boolean> {
-    const asignacionDirecta = await this.examenEstudianteRepository.count({
-      where: { examen_id: examenId, estudiante_id: estudianteId },
+    // Un estudiante inactivo no accede aunque conserve su asignación.
+    const estudianteActivo = await this.estudianteRepository.count({
+      where: { estudiante_id: estudianteId, activo: true },
     });
 
-    if (asignacionDirecta > 0) {
-      return true;
+    if (estudianteActivo === 0) {
+      return false;
     }
 
-    const asignacionPorParalelo = await this.inscripcionRepository
-      .createQueryBuilder('inscripcion')
-      .innerJoin(
-        ParaleloExamen,
-        'paraleloExamen',
-        'paraleloExamen.paralelo_id = inscripcion.paralelo_id',
-      )
-      .where('inscripcion.estudiante_id = :estudianteId', { estudianteId })
-      .andWhere('paraleloExamen.examen_id = :examenId', { examenId })
-      .getCount();
+    if (examen.modo_asignacion === 'estudiantes') {
+      const asignacionDirecta = await this.examenEstudianteRepository.count({
+        where: {
+          examen_id: examen.examen_id,
+          estudiante_id: estudianteId,
+        },
+      });
 
-    return asignacionPorParalelo > 0;
+      return asignacionDirecta > 0;
+    }
+
+    if (examen.modo_asignacion === 'paralelos') {
+      const asignacionPorParalelo = await this.inscripcionRepository
+        .createQueryBuilder('inscripcion')
+        .innerJoin(
+          ParaleloExamen,
+          'paraleloExamen',
+          'paraleloExamen.paralelo_id = inscripcion.paralelo_id',
+        )
+        .where('inscripcion.estudiante_id = :estudianteId', { estudianteId })
+        .andWhere('paraleloExamen.examen_id = :examenId', {
+          examenId: examen.examen_id,
+        })
+        .getCount();
+
+      return asignacionPorParalelo > 0;
+    }
+
+    return false;
   }
 
   private estaEnVentana(examen: Examen): boolean {
@@ -320,6 +472,35 @@ export class ExamenAccesoService {
     const hasta = new Date(examen.disponible_hasta).getTime();
 
     return ahora >= desde && ahora <= hasta;
+  }
+
+  private convertirFecha(fecha: Date | string | null): Date | null {
+    if (fecha === null) {
+      return null;
+    }
+
+    const resultado = fecha instanceof Date ? fecha : new Date(fecha);
+    return Number.isNaN(resultado.getTime()) ? null : resultado;
+  }
+
+  private clasificarDisponibilidad(
+    desde: Date | null,
+    hasta: Date | null,
+    ahora: number,
+  ): EstadoDisponibilidadEvaluacion | null {
+    if (!desde || !hasta || hasta.getTime() <= desde.getTime()) {
+      return null;
+    }
+
+    if (ahora < desde.getTime()) {
+      return 'proxima';
+    }
+
+    if (ahora <= hasta.getTime()) {
+      return 'disponible';
+    }
+
+    return 'finalizada';
   }
 
   /**
