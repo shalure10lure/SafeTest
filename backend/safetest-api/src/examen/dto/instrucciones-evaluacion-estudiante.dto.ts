@@ -15,4 +15,8 @@ export class InstruccionesEvaluacionEstudianteDto {
   disponible_hasta: Date | null;
   total_preguntas: number;
   estado_disponibilidad: EstadoDisponibilidadEvaluacion;
+  paralelos_rendicion: {
+    paralelo_id: number;
+    nombre_paralelo: string;
+  }[];
 }

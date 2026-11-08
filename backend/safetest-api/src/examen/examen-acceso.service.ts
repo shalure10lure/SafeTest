@@ -237,7 +237,11 @@ export class ExamenAccesoService {
   ): Promise<InstruccionesEvaluacionEstudianteDto> {
     const examen = await this.examenRepository.findOne({
       where: { examen_id: examenId },
-      relations: { materia: true, docente: true },
+      relations: {
+        materia: true,
+        docente: true,
+        paralelos: { paralelo: true },
+      },
       select: {
         examen_id: true,
         titulo: true,
@@ -250,6 +254,10 @@ export class ExamenAccesoService {
         disponible_hasta: true,
         materia: { nombre: true },
         docente: { nombre: true },
+        paralelos: {
+          paralelo_id: true,
+          paralelo: { paralelo_id: true, nombre_paralelo: true },
+        },
       },
     });
 
@@ -279,6 +287,18 @@ export class ExamenAccesoService {
             where: { examen_id: examenId },
           });
 
+    const paralelosAsignados =
+      examen.modo_asignacion === 'paralelos'
+        ? new Set(
+            (
+              await this.inscripcionRepository.find({
+                where: { estudiante_id: estudianteId },
+                select: { paralelo_id: true },
+              })
+            ).map((inscripcion) => inscripcion.paralelo_id),
+          )
+        : null;
+
     return {
       examen_id: examen.examen_id,
       titulo: examen.titulo,
@@ -290,7 +310,55 @@ export class ExamenAccesoService {
       disponible_hasta: examen.disponible_hasta,
       total_preguntas: totalPreguntas,
       estado_disponibilidad: 'disponible',
+      paralelos_rendicion: (examen.paralelos ?? [])
+        .filter(
+          (asignacion) =>
+            !paralelosAsignados ||
+            paralelosAsignados.has(asignacion.paralelo_id),
+        )
+        .map((asignacion) => ({
+          paralelo_id: asignacion.paralelo.paralelo_id,
+          nombre_paralelo: asignacion.paralelo.nombre_paralelo,
+        })),
     };
+  }
+
+  /**
+   * Reutiliza las reglas de asignación y ventana antes de crear o recuperar
+   * una rendición estudiantil.
+   */
+  async obtenerExamenParaRendicion(
+    examenId: number,
+    estudianteId: number,
+  ): Promise<Examen> {
+    const examen = await this.examenRepository.findOne({
+      where: { examen_id: examenId },
+      select: {
+        examen_id: true,
+        estado: true,
+        modo_asignacion: true,
+        modo_seleccion: true,
+        orden_preguntas: true,
+        disponible_desde: true,
+        disponible_hasta: true,
+      },
+    });
+
+    if (!examen || examen.estado !== 'publicado') {
+      throw new NotFoundException('La evaluación no está disponible.');
+    }
+
+    if (!(await this.estaAsignado(examen, estudianteId))) {
+      throw new NotFoundException('La evaluación no está disponible.');
+    }
+
+    if (!this.estaEnVentana(examen)) {
+      throw new ForbiddenException(
+        'La evaluación no está disponible en este momento.',
+      );
+    }
+
+    return examen;
   }
 
   /**

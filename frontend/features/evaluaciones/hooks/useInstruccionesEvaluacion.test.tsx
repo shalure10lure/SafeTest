@@ -28,6 +28,9 @@ function crearInstrucciones(
         disponible_hasta: '2026-11-07T14:30:00.000Z',
         total_preguntas: 10,
         estado_disponibilidad: 'disponible',
+        paralelos_rendicion: [
+            { paralelo_id: 7, nombre_paralelo: 'A' },
+        ],
         ...cambios,
     };
 }

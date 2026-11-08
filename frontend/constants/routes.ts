@@ -34,8 +34,7 @@ export const ROUTES = {
         estudiantes: '/docente/estudiantes',
         materiales: '/docente/materiales',
         materialNuevo: '/docente/materiales/nuevo',
-        materialDetalle: (id: number | string) =>
-            `/docente/materiales/${id}`,
+        materialDetalle: (id: number | string) => `/docente/materiales/${id}`,
         preguntas: '/docente/preguntas',
         preguntaNueva: '/docente/preguntas/nuevo',
         preguntaEditar: (id: number | string) =>
@@ -54,8 +53,7 @@ export const ROUTES = {
         estadisticas: '/docente/estadisticas',
         evaluacionPreguntas: (id: number) =>
             `/docente/evaluaciones/${id}/preguntas`,
-        evaluacionEditar: (id: number) =>
-            `/docente/evaluaciones/${id}/editar`,
+        evaluacionEditar: (id: number) => `/docente/evaluaciones/${id}/editar`,
         evaluacionConfiguracion: (id: number) =>
             `/docente/evaluaciones/${id}/configuracion`,
         evaluacionAsignacion: (id: number) =>
@@ -71,10 +69,11 @@ export const ROUTES = {
         evaluaciones: '/estudiante/evaluaciones',
         instruccionesEvaluacion: (id: number) =>
             `/estudiante/evaluaciones/${id}/instrucciones`,
+        rendicionEvaluacion: (id: number) =>
+            `/estudiante/evaluaciones/${id}/rendicion`,
         resultados: '/estudiante/resultados',
         historial: '/estudiante/historial',
     },
-
 } as const;
 
 /* ------------------------------------------------------------------ */
@@ -200,7 +199,7 @@ export const NAV_DOCENTE: NavSection[] = [
                     seccion: 'Gestión académica',
                     titulo: 'Mis estudiantes',
                     subtitulo: 'Estudiantes incorporados a tus paralelos',
-                }
+                },
             },
         ],
     },
@@ -338,8 +337,18 @@ export const NAV_DOCENTE: NavSection[] = [
     {
         titulo: 'Gestión de temas',
         items: [
-            { label: 'Todos los temas', href: ROUTES.docente.temas, icono: BookOpen, disponible: true },
-            { label: 'Crear tema', href: ROUTES.docente.temaNuevo, icono: Plus, disponible: true },
+            {
+                label: 'Todos los temas',
+                href: ROUTES.docente.temas,
+                icono: BookOpen,
+                disponible: true,
+            },
+            {
+                label: 'Crear tema',
+                href: ROUTES.docente.temaNuevo,
+                icono: Plus,
+                disponible: true,
+            },
         ],
     },
 
@@ -523,6 +532,15 @@ export const NAV_ESTUDIANTE: NavSection[] = [
                             titulo: 'Instrucciones de la evaluación',
                             subtitulo: 'Lee con atención antes de comenzar',
                             migaFinal: 'Instrucciones',
+                        },
+                    },
+                    {
+                        patron: /^\/estudiante\/evaluaciones\/\d+\/rendicion$/,
+                        topbar: {
+                            seccion: 'Mis evaluaciones',
+                            titulo: 'Evaluación en curso',
+                            subtitulo: 'Rendición activa',
+                            migaFinal: 'Rendición',
                         },
                     },
                 ],
