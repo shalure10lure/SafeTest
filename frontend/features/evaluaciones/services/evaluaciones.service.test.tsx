@@ -28,3 +28,20 @@ describe('evaluacionesService.getAsignadasEstudiante', () => {
         );
     });
 });
+
+describe('evaluacionesService.getInstruccionesEstudiante', () => {
+    beforeEach(() => {
+        mocks.get.mockReset();
+        mocks.get.mockResolvedValue({ data: {} });
+    });
+
+    it('consulta las instrucciones por ID sin enviar parámetros ni identidad', async () => {
+        await evaluacionesService.getInstruccionesEstudiante(12);
+
+        expect(mocks.get).toHaveBeenCalledTimes(1);
+        expect(mocks.get).toHaveBeenCalledWith(
+            '/examenes/12/estudiante/instrucciones',
+            undefined,
+        );
+    });
+});

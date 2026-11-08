@@ -23,6 +23,10 @@ beforeAll(async () => {
     () => ({ ExamenPregunta: class ExamenPregunta {} }),
   );
   jest.unstable_mockModule(
+    '../examentema/entity/examentema.entity',
+    () => ({ ExamenTema: class ExamenTema {} }),
+  );
+  jest.unstable_mockModule(
     '../asignacionpregunta/entity/asignacionpregunta.entity',
     () => ({ AsignacionPregunta: class AsignacionPregunta {} }),
   );
@@ -118,6 +122,7 @@ function updateBuilderMock() {
 function montar() {
   const examen = repoMock();
   const examenPregunta = repoMock();
+  const examenTema = repoMock();
   const asignacion = repoMock();
   const inscripcion = repoMock();
   const examenEstudiante = repoMock();
@@ -127,6 +132,7 @@ function montar() {
   const servicio = new ExamenAccesoService(
     examen as unknown as Repository<any>,
     examenPregunta as unknown as Repository<any>,
+    examenTema as unknown as Repository<any>,
     asignacion as unknown as Repository<any>,
     inscripcion as unknown as Repository<any>,
     examenEstudiante as unknown as Repository<any>,
@@ -138,6 +144,7 @@ function montar() {
     servicio,
     examen,
     examenPregunta,
+    examenTema,
     asignacion,
     inscripcion,
     examenEstudiante,
@@ -536,6 +543,135 @@ describe('ExamenAccesoService', () => {
       ]);
       expect(resultado[0].disponible_desde).toBeNull();
       expect(resultado[0].disponible_hasta).toBeNull();
+    });
+  });
+
+  describe('instrucciones de evaluación para estudiantes', () => {
+    function prepararInstrucciones(
+      sobrescribir: Record<string, unknown> = {},
+    ) {
+      montaje.examen.findOne.mockResolvedValue({
+        examen_id: 5,
+        titulo: 'Parcial 1',
+        instrucciones: 'Lee cada pregunta cuidadosamente.',
+        estado: 'publicado',
+        modo_asignacion: 'estudiantes',
+        modo_seleccion: 'manual',
+        duracion_min: 90,
+        ...VENTANA,
+        materia: { nombre: 'Investigación Operativa' },
+        docente: { nombre: 'Juan Pérez' },
+        ...sobrescribir,
+      });
+      montaje.examenEstudiante.count.mockResolvedValue(1);
+    }
+
+    it('devuelve metadatos e instrucciones sin cargar preguntas ni soluciones', async () => {
+      prepararInstrucciones();
+      montaje.examenPregunta.count.mockResolvedValue(10);
+
+      const resultado =
+        await montaje.servicio.obtenerInstruccionesEstudiante(5, 9);
+
+      expect(resultado).toEqual({
+        examen_id: 5,
+        titulo: 'Parcial 1',
+        instrucciones: 'Lee cada pregunta cuidadosamente.',
+        materia: 'Investigación Operativa',
+        docente: 'Juan Pérez',
+        duracion_min: 90,
+        disponible_desde: VENTANA.disponible_desde,
+        disponible_hasta: VENTANA.disponible_hasta,
+        total_preguntas: 10,
+        estado_disponibilidad: 'disponible',
+      });
+      expect(montaje.examen.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { examen_id: 5 },
+          relations: { materia: true, docente: true },
+          select: expect.objectContaining({
+            instrucciones: true,
+            disponible_desde: true,
+            disponible_hasta: true,
+          }),
+        }),
+      );
+      expect(montaje.examenPregunta.count).toHaveBeenCalledWith({
+        where: { examen_id: 5 },
+      });
+      expect(montaje.examenPregunta.find).not.toHaveBeenCalled();
+      expect(montaje.examenTema.find).not.toHaveBeenCalled();
+      expect(montaje.pregunta.createQueryBuilder).not.toHaveBeenCalled();
+
+      const serializado = JSON.stringify(resultado);
+      expect(serializado).not.toMatch(
+        /pregunta_id|opciones|respuesta|explicacion|solucion|nota_final/i,
+      );
+    });
+
+    it('cuenta los criterios aleatorios sin devolver preguntas', async () => {
+      prepararInstrucciones({ modo_seleccion: 'aleatorio' });
+      montaje.examenTema.find.mockResolvedValue([
+        { cantidad: 4 },
+        { cantidad: 6 },
+      ]);
+
+      const resultado =
+        await montaje.servicio.obtenerInstruccionesEstudiante(5, 9);
+
+      expect(resultado.total_preguntas).toBe(10);
+      expect(montaje.examenTema.find).toHaveBeenCalledWith({
+        where: { examen_id: 5 },
+        select: { cantidad: true },
+      });
+      expect(montaje.examenPregunta.count).not.toHaveBeenCalled();
+      expect(montaje.pregunta.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('rechaza evaluaciones no publicadas antes de consultar la asignación', async () => {
+      prepararInstrucciones({ estado: 'borrador' });
+
+      await expect(
+        montaje.servicio.obtenerInstruccionesEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(montaje.estudiante.count).not.toHaveBeenCalled();
+      expect(montaje.examenEstudiante.count).not.toHaveBeenCalled();
+    });
+
+    it('rechaza a estudiantes no asignados', async () => {
+      prepararInstrucciones();
+      montaje.examenEstudiante.count.mockResolvedValue(0);
+
+      await expect(
+        montaje.servicio.obtenerInstruccionesEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(montaje.examenPregunta.count).not.toHaveBeenCalled();
+    });
+
+    it('rechaza a estudiantes inactivos', async () => {
+      prepararInstrucciones();
+      montaje.estudiante.count.mockResolvedValue(0);
+
+      await expect(
+        montaje.servicio.obtenerInstruccionesEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(montaje.examenEstudiante.count).not.toHaveBeenCalled();
+    });
+
+    it('rechaza instrucciones fuera de la ventana publicada', async () => {
+      prepararInstrucciones({
+        disponible_desde: new Date(AHORA - 2 * 60 * 60 * 1000),
+        disponible_hasta: new Date(AHORA - 60 * 60 * 1000),
+      });
+
+      await expect(
+        montaje.servicio.obtenerInstruccionesEstudiante(5, 9),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(montaje.examenPregunta.count).not.toHaveBeenCalled();
     });
   });
 

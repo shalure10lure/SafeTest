@@ -32,6 +32,20 @@ export interface EvaluacionAsignada {
     estado_disponibilidad: EstadoDisponibilidadEvaluacion | null;
 }
 
+/** Metadatos de acceso previo, sin preguntas ni datos de rendición. */
+export interface InstruccionesEvaluacionEstudiante {
+    examen_id: number;
+    titulo: string | null;
+    instrucciones: string | null;
+    materia: string | null;
+    docente: string | null;
+    duracion_min: number | null;
+    disponible_desde: string | null;
+    disponible_hasta: string | null;
+    total_preguntas: number;
+    estado_disponibilidad: 'disponible';
+}
+
 export interface Evaluacion {
     examen_id: number;
     titulo: string | null;

@@ -10,7 +10,8 @@ import {
 import { EstudianteGuard } from '../auth/guards/estudiante.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ExamenAccesoService } from './examen-acceso.service';
-import { EvaluacionAsignadaDto } from './dto/evaluacion-asignada.dto';
+import type { EvaluacionAsignadaDto } from './dto/evaluacion-asignada.dto';
+import type { InstruccionesEvaluacionEstudianteDto } from './dto/instrucciones-evaluacion-estudiante.dto';
 
 /**
  * Vista de la evaluación para el estudiante autenticado.
@@ -29,6 +30,17 @@ export class ExamenEstudianteController {
     @Req() request: { user: { id: number } },
   ): Promise<EvaluacionAsignadaDto[]> {
     return this.examenAccesoService.listarEvaluacionesAsignadas(
+      request.user.id,
+    );
+  }
+
+  @Get(':id/estudiante/instrucciones')
+  obtenerInstrucciones(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: { user: { id: number } },
+  ): Promise<InstruccionesEvaluacionEstudianteDto> {
+    return this.examenAccesoService.obtenerInstruccionesEstudiante(
+      id,
       request.user.id,
     );
   }
