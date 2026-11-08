@@ -13,6 +13,7 @@ import { temasService } from '@/features/temas/services/temas.service';
 import type { Tema } from '@/features/temas/types';
 import { cn } from '@/lib/utils';
 import VistaPreviaRespuesta from './VistaPreviaRespuesta';
+import { useRecursosPregunta } from '../hooks/useRecursosPregunta';
 import { preguntasService } from '../services/preguntas.service';
 import { TIPOS_PREGUNTA_FORMULARIO } from '../tipos';
 import type {
@@ -25,7 +26,8 @@ import { construirDto, validarFormulario } from '../validacion';
 
 import Campo from './Campo';
 import ConfiguracionRespuesta from './ConfiguracionRespuesta';
-import RecursosOpcionales from './RecursosOpcionales';
+import RecursosEditor from './RecursosEditor';
+import RecursosPregunta from './RecursosPregunta';
 
 const ENTRADA =
     'h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
@@ -143,6 +145,12 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
     const [tocados, setTocados] = useState<Record<string, boolean>>({});
     const [enviando, setEnviando] = useState(false);
     const [errorEnvio, setErrorEnvio] = useState('');
+    // Se llena si la pregunta se creó pero parte de su contenido no se pudo subir.
+    const [preguntaCreadaId, setPreguntaCreadaId] = useState<number | null>(
+        null,
+    );
+
+    const recursos = useRecursosPregunta(pregunta?.pregunta_id);
 
     useEffect(() => {
         let vigente = true;
@@ -301,7 +309,24 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
             if (pregunta) {
                 await preguntasService.update(pregunta.pregunta_id, datos);
             } else {
-                await preguntasService.create(datos);
+                const creada = await preguntasService.create(datos);
+                const fallidos = await recursos.subirPendientes(
+                    creada.pregunta_id,
+                );
+
+                if (fallidos > 0) {
+                    // La pregunta ya existe: se evita crearla de nuevo.
+                    setPreguntaCreadaId(creada.pregunta_id);
+                    setErrorEnvio(
+                        `La pregunta se creó, pero ${
+                            fallidos === 1
+                                ? '1 elemento de contenido no se pudo subir'
+                                : `${fallidos} elementos de contenido no se pudieron subir`
+                        }. Ábrela para agregarlos de nuevo.`,
+                    );
+
+                    return;
+                }
             }
 
             router.push(ROUTES.docente.preguntas);
@@ -603,7 +628,7 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
                     </select>
                 </Campo>
 
-                <RecursosOpcionales />
+                <RecursosEditor recursos={recursos} enEdicion={esEdicion} />
 
                 <ConfiguracionRespuesta
                     tipo={tipo}
@@ -638,6 +663,13 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
                     opciones={opciones
                         .filter((opcion) => opcion.texto.trim())
                         .map((opcion) => opcion.texto.trim())}
+                    recursos={
+                        <RecursosPregunta
+                            preguntaId={pregunta?.pregunta_id}
+                            guardados={recursos.guardados}
+                            pendientes={recursos.pendientes}
+                        />
+                    }
                 />
 
                 {errorEnvio && (
@@ -648,6 +680,15 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
                         {errorEnvio}
                     </p>
                 )}
+
+                {preguntaCreadaId !== null && (
+                    <Link
+                        href={ROUTES.docente.preguntaEditar(preguntaCreadaId)}
+                        className="text-sm font-medium text-violet-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+                    >
+                        Abrir la pregunta creada
+                    </Link>
+                )}
             </div>
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -657,7 +698,12 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
 
                 <button
                     type="submit"
-                    disabled={!formularioValido || enviando}
+                    disabled={
+                        !formularioValido ||
+                        enviando ||
+                        recursos.ocupado ||
+                        preguntaCreadaId !== null
+                    }
                     className="inline-flex h-9 items-center justify-center rounded-lg bg-violet-600 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                     {enviando
