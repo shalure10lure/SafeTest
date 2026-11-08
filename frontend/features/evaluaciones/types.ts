@@ -44,6 +44,63 @@ export interface InstruccionesEvaluacionEstudiante {
     disponible_hasta: string | null;
     total_preguntas: number;
     estado_disponibilidad: 'disponible';
+    paralelos_rendicion: {
+        paralelo_id: number;
+        nombre_paralelo: string;
+    }[];
+}
+
+/** Rendición activa iniciada o recuperada por el estudiante autenticado. */
+export interface RendicionEstudiante {
+    examen_id: number;
+    paralelo_id: number;
+    estado: 'en_curso';
+    fecha_inicio: string | null;
+    preguntas: {
+        pregunta_id: number;
+        orden: number;
+    }[];
+    recuperada: boolean;
+}
+
+export type EstadoRespuestaPregunta = 'respondida' | 'pendiente';
+
+export interface OpcionRendicionEstudiante {
+    nro_opcion: number;
+    texto_opcion: string;
+}
+
+export interface IncisoRendicionEstudiante {
+    letra: string;
+    enunciado_inciso: string;
+    tipo_respuesta: string;
+    opciones: OpcionRendicionEstudiante[];
+}
+
+export interface PreguntaRendicionEstudiante {
+    pregunta_id: number;
+    orden: number;
+    enunciado: string;
+    tipo_respuesta: string | null;
+    incisos: IncisoRendicionEstudiante[];
+    estado_respuesta: EstadoRespuestaPregunta;
+}
+
+export interface PreguntasRendicionEstudiante {
+    examen_id: number;
+    preguntas: PreguntaRendicionEstudiante[];
+}
+
+export type RespuestaRendicion =
+    | { opciones: number[] }
+    | { respuesta_texto: string };
+
+export interface RespuestaGuardadaEstudiante {
+    examen_id: number;
+    pregunta_id: number;
+    letra: string;
+    estado_respuesta: EstadoRespuestaPregunta;
+    guardado_en: string;
 }
 
 export interface Evaluacion {

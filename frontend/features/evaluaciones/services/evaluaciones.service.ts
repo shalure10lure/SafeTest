@@ -16,6 +16,10 @@ import type {
     GuardarSeleccionDto,
     InstruccionesEvaluacionEstudiante,
     PublicacionRespuestas,
+    PreguntasRendicionEstudiante,
+    RendicionEstudiante,
+    RespuestaGuardadaEstudiante,
+    RespuestaRendicion,
     ResumenEvaluacion,
     SeleccionGuardada,
     UpdateEvaluacionDto,
@@ -37,6 +41,31 @@ class EvaluacionesService extends BaseService {
     getInstruccionesEstudiante(id: number) {
         return this.get<InstruccionesEvaluacionEstudiante>(
             `/${id}/estudiante/instrucciones`,
+        );
+    }
+
+    iniciarORecuperarRendicion(id: number, paraleloId: number) {
+        return this.post<RendicionEstudiante, { paralelo_id: number }>(
+            `/${id}/estudiante/rendicion`,
+            { paralelo_id: paraleloId },
+        );
+    }
+
+    getPreguntasRendicion(id: number) {
+        return this.get<PreguntasRendicionEstudiante>(
+            `/${id}/estudiante/rendicion/preguntas`,
+        );
+    }
+
+    guardarRespuestaRendicion(
+        id: number,
+        preguntaId: number,
+        letra: string,
+        respuesta: RespuestaRendicion,
+    ) {
+        return this.patch<RespuestaGuardadaEstudiante, RespuestaRendicion>(
+            `/${id}/estudiante/rendicion/respuestas/${preguntaId}/${encodeURIComponent(letra)}`,
+            respuesta,
         );
     }
 

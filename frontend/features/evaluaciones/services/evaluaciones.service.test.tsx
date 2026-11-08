@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
 }));
 
 vi.mock('@/lib/axios/client', () => ({
     default: {
         get: mocks.get,
+        post: mocks.post,
+        patch: mocks.patch,
     },
 }));
 
@@ -33,6 +37,73 @@ describe('evaluacionesService.getInstruccionesEstudiante', () => {
     beforeEach(() => {
         mocks.get.mockReset();
         mocks.get.mockResolvedValue({ data: {} });
+    });
+
+    describe('evaluacionesService.getPreguntasRendicion', () => {
+        beforeEach(() => {
+            mocks.get.mockReset();
+            mocks.get.mockResolvedValue({
+                data: { examen_id: 12, preguntas: [] },
+            });
+        });
+
+        it('consulta las preguntas de la rendición activa sin enviar identidad', async () => {
+            await evaluacionesService.getPreguntasRendicion(12);
+
+            expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
+                '/examenes/12/estudiante/rendicion/preguntas',
+                undefined,
+            );
+        });
+    });
+
+    describe('evaluacionesService.guardarRespuestaRendicion', () => {
+        beforeEach(() => {
+            mocks.patch.mockReset();
+            mocks.patch.mockResolvedValue({ data: {} });
+        });
+
+        it('actualiza la respuesta del inciso con la ruta y el cuerpo contractuales', async () => {
+            await evaluacionesService.guardarRespuestaRendicion(12, 21, 'a', {
+                opciones: [1, 3],
+            });
+
+            expect(mocks.patch).toHaveBeenCalledExactlyOnceWith(
+                '/examenes/12/estudiante/rendicion/respuestas/21/a',
+                { opciones: [1, 3] },
+                undefined,
+            );
+        });
+
+        it('codifica la letra del inciso en la ruta', async () => {
+            await evaluacionesService.guardarRespuestaRendicion(12, 21, 'a/b', {
+                respuesta_texto: 'Respuesta',
+            });
+
+            expect(mocks.patch).toHaveBeenCalledWith(
+                '/examenes/12/estudiante/rendicion/respuestas/21/a%2Fb',
+                { respuesta_texto: 'Respuesta' },
+                undefined,
+            );
+        });
+    });
+
+    describe('evaluacionesService.iniciarORecuperarRendicion', () => {
+        beforeEach(() => {
+            mocks.post.mockReset();
+            mocks.post.mockResolvedValue({ data: {} });
+        });
+
+        it('inicia o recupera la rendición enviando solo el paralelo de contexto', async () => {
+            await evaluacionesService.iniciarORecuperarRendicion(12, 7);
+
+            expect(mocks.post).toHaveBeenCalledTimes(1);
+            expect(mocks.post).toHaveBeenCalledWith(
+                '/examenes/12/estudiante/rendicion',
+                { paralelo_id: 7 },
+                undefined,
+            );
+        });
     });
 
     it('consulta las instrucciones por ID sin enviar parámetros ni identidad', async () => {

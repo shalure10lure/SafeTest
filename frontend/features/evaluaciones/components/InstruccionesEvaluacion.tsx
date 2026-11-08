@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
     ArrowLeft,
     BookOpenText,
@@ -14,7 +16,11 @@ import { Badge } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
 import { ROUTES } from '@/constants/routes';
 import { useInstruccionesEvaluacion } from '../hooks/useInstruccionesEvaluacion';
-import type { InstruccionesEvaluacionEstudiante } from '../types';
+import { useIniciarRendicion } from '../hooks/useIniciarRendicion';
+import type {
+    InstruccionesEvaluacionEstudiante,
+    RendicionEstudiante,
+} from '../types';
 
 const FORMATO_FECHA_HORA = new Intl.DateTimeFormat('es-BO', {
     weekday: 'short',
@@ -207,13 +213,17 @@ export default function InstruccionesEvaluacion({
 }: {
     examenId: number;
 }) {
+    const router = useRouter();
+    const { instrucciones, cargando, error, noDisponible, recargar } =
+        useInstruccionesEvaluacion(examenId);
     const {
-        instrucciones,
-        cargando,
-        error,
-        noDisponible,
-        recargar,
-    } = useInstruccionesEvaluacion(examenId);
+        rendicion,
+        iniciando,
+        error: errorInicio,
+        iniciarORecuperar,
+    } = useIniciarRendicion();
+    const [paraleloId, setParaleloId] = useState<number | null>(null);
+    const [errorNavegacion, setErrorNavegacion] = useState('');
 
     if (cargando) return <PanelCarga />;
 
@@ -227,6 +237,34 @@ export default function InstruccionesEvaluacion({
         );
     }
 
+    const paraleloSeleccionado = instrucciones.paralelos_rendicion.some(
+        (paralelo) => paralelo.paralelo_id === paraleloId,
+    )
+        ? paraleloId
+        : instrucciones.paralelos_rendicion.length === 1
+          ? instrucciones.paralelos_rendicion[0].paralelo_id
+          : null;
+
+    const continuarEvaluacion = async () => {
+        if (paraleloSeleccionado === null || iniciando) return;
+
+        setErrorNavegacion('');
+        const resultado = await iniciarORecuperar(
+            examenId,
+            paraleloSeleccionado,
+        );
+        if (!resultado) return;
+
+        if (!esRendicionValida(resultado, examenId)) {
+            setErrorNavegacion(
+                'El servidor no confirmó una rendición activa válida. Inténtalo nuevamente.',
+            );
+            return;
+        }
+
+        router.push(ROUTES.estudiante.rendicionEvaluacion(examenId));
+    };
+
     return (
         <main className="mx-auto w-full max-w-3xl space-y-4 p-4 sm:p-6">
             <ResumenEvaluacion instrucciones={instrucciones} />
@@ -234,21 +272,96 @@ export default function InstruccionesEvaluacion({
             <section className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div>
                     <h2 className="text-sm font-semibold text-blue-950">
-                        ¿Listo para comenzar?
+                        {rendicion
+                            ? 'Tu intento está activo'
+                            : '¿Listo para comenzar?'}
                     </h2>
                     <p className="mt-1 text-sm text-blue-800">
-                        El inicio de la rendición aún no está habilitado.
+                        {rendicion
+                            ? `Se fijaron ${rendicion.preguntas.length} preguntas para este intento.`
+                            : 'Al iniciar, se guardará tu intento y se mantendrán las preguntas asignadas.'}
                     </p>
                 </div>
+                {instrucciones.paralelos_rendicion.length > 0 && (
+                    <label className="text-sm text-blue-950">
+                        Paralelo de la rendición
+                        <select
+                            value={paraleloSeleccionado ?? ''}
+                            onChange={(evento) =>
+                                setParaleloId(
+                                    evento.target.value
+                                        ? Number(evento.target.value)
+                                        : null,
+                                )
+                            }
+                            disabled={iniciando || Boolean(rendicion)}
+                            className="mt-1 block min-h-9 w-full rounded-md border border-blue-300 bg-white px-2 text-sm"
+                        >
+                            <option value="" disabled>
+                                Selecciona un paralelo
+                            </option>
+                            {instrucciones.paralelos_rendicion.map(
+                                (paralelo) => (
+                                    <option
+                                        key={paralelo.paralelo_id}
+                                        value={paralelo.paralelo_id}
+                                    >
+                                        {paralelo.nombre_paralelo}
+                                    </option>
+                                ),
+                            )}
+                        </select>
+                    </label>
+                )}
                 <Button
                     type="button"
-                    disabled
-                    title="La rendición estará disponible cuando se implemente HU-40"
-                    className="bg-emerald-700 text-white"
+                    disabled={
+                        iniciando ||
+                        paraleloSeleccionado === null ||
+                        instrucciones.paralelos_rendicion.length === 0
+                    }
+                    onClick={() => void continuarEvaluacion()}
+                    className="bg-emerald-700 text-white hover:bg-emerald-800"
                 >
-                    Iniciar evaluación (próximamente)
+                    {iniciando
+                        ? 'Iniciando...'
+                        : rendicion
+                          ? 'Continuar evaluación'
+                          : 'Iniciar evaluación'}
                 </Button>
             </section>
+            {instrucciones.paralelos_rendicion.length === 0 && (
+                <p role="alert" className="text-sm text-amber-800">
+                    No hay un paralelo asociado disponible para registrar el
+                    intento.
+                </p>
+            )}
+            {errorInicio && (
+                <p role="alert" className="text-sm text-amber-800">
+                    {errorInicio}
+                </p>
+            )}
+            {errorNavegacion && (
+                <p role="alert" className="text-sm text-amber-800">
+                    {errorNavegacion}
+                </p>
+            )}
+            {iniciando && (
+                <p
+                    role="status"
+                    aria-live="polite"
+                    className="text-sm text-blue-800"
+                >
+                    Iniciando o recuperando tu evaluación...
+                </p>
+            )}
+            {rendicion && (
+                <p role="status" className="text-sm text-emerald-800">
+                    {rendicion.recuperada
+                        ? 'Se recuperó tu intento activo.'
+                        : 'La evaluación se inició correctamente.'}
+                </p>
+            )}
 
             <Link
                 href={ROUTES.estudiante.evaluaciones}
@@ -258,5 +371,17 @@ export default function InstruccionesEvaluacion({
                 Volver a mis evaluaciones
             </Link>
         </main>
+    );
+}
+
+function esRendicionValida(
+    rendicion: RendicionEstudiante,
+    examenId: number,
+): boolean {
+    return (
+        rendicion.examen_id === examenId &&
+        rendicion.estado === 'en_curso' &&
+        Array.isArray(rendicion.preguntas) &&
+        rendicion.preguntas.length > 0
     );
 }

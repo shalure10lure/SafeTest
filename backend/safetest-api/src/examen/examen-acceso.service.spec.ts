@@ -199,6 +199,57 @@ describe('ExamenAccesoService', () => {
     montaje.estudiante.count.mockResolvedValue(1);
   });
 
+  describe('validación previa al inicio de rendición', () => {
+    it('devuelve una evaluación publicada asignada dentro de la ventana', async () => {
+      montaje.examen.findOne.mockResolvedValue({
+        examen_id: 5,
+        estado: 'publicado',
+        modo_asignacion: 'estudiantes',
+        modo_seleccion: 'manual',
+        orden_preguntas: 'definido',
+        ...VENTANA,
+      });
+      montaje.examenEstudiante.count.mockResolvedValue(1);
+
+      const resultado =
+        await montaje.servicio.obtenerExamenParaRendicion(5, 9);
+
+      expect(resultado.examen_id).toBe(5);
+      expect(montaje.examenEstudiante.count).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9 },
+      });
+    });
+
+    it('rechaza a un estudiante no asignado', async () => {
+      montaje.examen.findOne.mockResolvedValue({
+        examen_id: 5,
+        estado: 'publicado',
+        modo_asignacion: 'estudiantes',
+        ...VENTANA,
+      });
+      montaje.examenEstudiante.count.mockResolvedValue(0);
+
+      await expect(
+        montaje.servicio.obtenerExamenParaRendicion(5, 9),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rechaza el inicio fuera de la ventana de disponibilidad', async () => {
+      montaje.examen.findOne.mockResolvedValue({
+        examen_id: 5,
+        estado: 'publicado',
+        modo_asignacion: 'estudiantes',
+        disponible_desde: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        disponible_hasta: new Date(Date.now() - 60 * 60 * 1000),
+      });
+      montaje.examenEstudiante.count.mockResolvedValue(1);
+
+      await expect(
+        montaje.servicio.obtenerExamenParaRendicion(5, 9),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
   function prepararVista(
     resultadosPublicadosEn: Date | null,
     filas: unknown[],
@@ -584,11 +635,16 @@ describe('ExamenAccesoService', () => {
         disponible_hasta: VENTANA.disponible_hasta,
         total_preguntas: 10,
         estado_disponibilidad: 'disponible',
+        paralelos_rendicion: [],
       });
       expect(montaje.examen.findOne).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { examen_id: 5 },
-          relations: { materia: true, docente: true },
+          relations: {
+            materia: true,
+            docente: true,
+            paralelos: { paralelo: true },
+          },
           select: expect.objectContaining({
             instrucciones: true,
             disponible_desde: true,
