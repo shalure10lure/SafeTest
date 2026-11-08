@@ -240,7 +240,6 @@ operaciones no existen.
 - No se ejecutaron migraciones.
 - No se modificó el esquema.
 - No se crearon tablas ni columnas.
-- No se implementó HU-40 ni HU-41.
 - No se alteró `resultados_publicados_en`.
 - No se duplicaron guards ni servicios.
 - No se expusieron secretos.
