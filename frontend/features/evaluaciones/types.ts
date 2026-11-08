@@ -11,6 +11,27 @@ export type ModoEntregaNota = 'al_publicar' | 'inmediata';
 /** `paralelos` = paralelos completos; `estudiantes` = estudiantes específicos. */
 export type ModoAsignacion = 'paralelos' | 'estudiantes';
 
+export type EstadoDisponibilidadEvaluacion =
+    | 'proxima'
+    | 'disponible'
+    | 'finalizada';
+
+/**
+ * Metadatos de una evaluación asignada al estudiante autenticado.
+ * Las fechas Date del DTO backend se reciben como strings ISO por JSON.
+ */
+export interface EvaluacionAsignada {
+    examen_id: number;
+    titulo: string | null;
+    materia: string | null;
+    docente: string | null;
+    disponible_desde: string | null;
+    disponible_hasta: string | null;
+    duracion_min: number | null;
+    total_preguntas: number;
+    estado_disponibilidad: EstadoDisponibilidadEvaluacion | null;
+}
+
 export interface Evaluacion {
     examen_id: number;
     titulo: string | null;

@@ -59,3 +59,46 @@ describe('ExamenController — respuestas del docente', () => {
     expect(acceso.obtenerRespuestasDocente).toHaveBeenCalledWith(5, 7);
   });
 });
+
+describe('ExamenController — ámbito del docente autenticado', () => {
+  function montarControlador() {
+    const servicio = {
+      obtenerAsignacion: jest.fn().mockResolvedValue({}),
+      guardarAsignacion: jest.fn().mockResolvedValue({}),
+      obtenerResumen: jest.fn().mockResolvedValue({}),
+      publicar: jest.fn().mockResolvedValue({}),
+      findOne: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
+    };
+
+    return {
+      servicio,
+      controller: new ExamenController(servicio as never, {} as never),
+    };
+  }
+
+  const requestManipulada = {
+    user: { id: 7 },
+    body: { docente_id: 99 },
+    query: { docente_id: 99 },
+  } as never;
+
+  it('usa el docente del JWT en consulta, asignación, resumen y publicación', async () => {
+    const { servicio, controller } = montarControlador();
+    const dto = { modo_asignacion: 'paralelos' as const, paralelo_ids: [10] };
+
+    await controller.obtenerAsignacion(5, requestManipulada);
+    await controller.guardarAsignacion(5, dto, requestManipulada);
+    await controller.obtenerResumen(5, requestManipulada);
+    await controller.publicar(5, requestManipulada);
+    await controller.findOne(5, requestManipulada);
+    await controller.update(5, { titulo: 'Nuevo' }, requestManipulada);
+
+    expect(servicio.obtenerAsignacion).toHaveBeenCalledWith(5, 7);
+    expect(servicio.guardarAsignacion).toHaveBeenCalledWith(5, dto, 7);
+    expect(servicio.obtenerResumen).toHaveBeenCalledWith(5, 7);
+    expect(servicio.publicar).toHaveBeenCalledWith(5, 7);
+    expect(servicio.findOne).toHaveBeenCalledWith(5, 7);
+    expect(servicio.update).toHaveBeenCalledWith(5, { titulo: 'Nuevo' }, 7);
+  });
+});

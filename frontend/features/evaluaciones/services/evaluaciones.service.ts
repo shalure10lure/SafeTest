@@ -6,6 +6,7 @@ import type {
     BancoEvaluacion,
     CreateEvaluacionDto,
     Evaluacion,
+    EvaluacionAsignada,
     EvaluacionActualizada,
     EvaluacionCreada,
     EvaluacionDetalle,
@@ -26,6 +27,10 @@ class EvaluacionesService extends BaseService {
 
     getAll() {
         return this.get<Evaluacion[]>('');
+    }
+
+    getAsignadasEstudiante() {
+        return this.get<EvaluacionAsignada[]>('/estudiante/evaluaciones');
     }
 
     getById(id: number) {

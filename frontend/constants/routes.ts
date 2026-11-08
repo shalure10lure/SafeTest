@@ -507,7 +507,12 @@ export const NAV_ESTUDIANTE: NavSection[] = [
                 label: 'Mis evaluaciones',
                 href: ROUTES.estudiante.evaluaciones,
                 icono: ClipboardList,
-                disponible: false,
+                disponible: true,
+                topbar: {
+                    seccion: 'Evaluaciones',
+                    titulo: 'Mis evaluaciones',
+                    subtitulo: 'Todas tus evaluaciones asignadas',
+                },
             },
             {
                 label: 'Resultados',

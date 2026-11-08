@@ -21,6 +21,7 @@ describe('ExamenEstudianteController', () => {
   it('usa el estudiante autenticado del JWT para consultar la evaluación', async () => {
     const acceso = {
       obtenerVistaEstudiante: jest.fn().mockResolvedValue({ examen_id: 5 }),
+      listarEvaluacionesAsignadas: jest.fn().mockResolvedValue([]),
     };
     const controller = new ExamenEstudianteController(acceso as never);
 
@@ -45,5 +46,41 @@ describe('ExamenEstudianteController', () => {
     } as never);
 
     expect(acceso.obtenerVistaEstudiante).toHaveBeenCalledWith(5, 9);
+  });
+
+  it('lista evaluaciones usando únicamente la identidad del JWT', async () => {
+    const acceso = {
+      obtenerVistaEstudiante: jest.fn(),
+      listarEvaluacionesAsignadas: jest
+        .fn()
+        .mockResolvedValue([{ examen_id: 5 }]),
+    };
+    const controller = new ExamenEstudianteController(acceso as never);
+
+    await controller.listarEvaluaciones({
+      user: { id: 9 },
+      body: { estudiante_id: 99 },
+      query: { estudiante_id: 99 },
+      params: { estudiante_id: 99 },
+    } as never);
+
+    expect(acceso.listarEvaluacionesAsignadas).toHaveBeenCalledWith(9);
+    expect(acceso.listarEvaluacionesAsignadas).toHaveBeenCalledTimes(1);
+  });
+
+  it('registra la ruta GET con las guardas JWT y de estudiante', () => {
+    const handler = ExamenEstudianteController.prototype.listarEvaluaciones;
+    const guardas = Reflect.getMetadata(
+      '__guards__',
+      ExamenEstudianteController,
+    ) as { name: string }[];
+
+    expect(Reflect.getMetadata('path', handler)).toBe(
+      'estudiante/evaluaciones',
+    );
+    expect(guardas.map((guardia) => guardia.name)).toEqual([
+      'JwtAuthGuard',
+      'EstudianteGuard',
+    ]);
   });
 });
