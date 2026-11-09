@@ -718,8 +718,14 @@ describe('RendicionService.iniciarORecuperar', () => {
 
       const consultaTexto = JSON.stringify(resultado);
       expect(consultaTexto).not.toMatch(
-        /correcta|explicacion|solucion|retroalimentacion|puntaje|calificacion|nota_final|Respuesta escrita/i,
+        /correcta|explicacion|solucion|retroalimentacion|puntaje|calificacion|nota_final/i,
       );
+      // La respuesta guardada es del propio estudiante y sí se devuelve.
+      const [primera, segunda] = resultado.preguntas;
+      expect(primera.incisos[0].respuesta).toEqual({
+        respuesta_texto: 'Respuesta escrita',
+      });
+      expect(segunda.incisos[0].respuesta).toEqual({ opciones: [1] });
       const selections = montaje.preguntaQueryBuilder.select.mock.calls
         .flat()
         .concat(montaje.preguntaQueryBuilder.addSelect.mock.calls.flat())
@@ -727,6 +733,29 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(selections).not.toMatch(
         /explicacion|solucion|correcta|puntaje|respuesta_texto/i,
       );
+    });
+
+    it('no incluye respuesta en los incisos que el estudiante aún no contestó', async () => {
+      const montaje = prepararServicio({
+        filasPreguntas: [
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'a',
+            enunciado_inciso: 'Inciso',
+            tipo_respuesta: 'desarrollo',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+        ],
+        respuestas: [{ pregunta_id: 21, letra: 'a', respuesta_texto: '   ' }],
+        opcionesMarcadas: [],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].incisos[0]).not.toHaveProperty('respuesta');
+      expect(resultado.preguntas[0].estado_respuesta).toBe('pendiente');
     });
 
     it('rechaza una rendición inexistente o perteneciente a otro estudiante', async () => {

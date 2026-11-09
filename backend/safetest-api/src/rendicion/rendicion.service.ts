@@ -252,6 +252,14 @@ export class RendicionService {
         examen_id: examenId,
         preguntas: preguntas.map((pregunta) => ({
           ...pregunta,
+          incisos: pregunta.incisos.map((inciso) =>
+            this.conRespuestaGuardada(
+              inciso,
+              pregunta.pregunta_id,
+              respuestasPorInciso,
+              opcionesPorInciso,
+            ),
+          ),
           estado_respuesta: this.preguntaRespondida(
             pregunta,
             respuestasPorInciso,
@@ -573,6 +581,31 @@ export class RendicionService {
         },
       ];
     });
+  }
+
+  /** Agrega al inciso la respuesta que el propio estudiante ya guardó. */
+  private conRespuestaGuardada(
+    inciso: IncisoRendicionEstudianteDto,
+    preguntaId: number,
+    respuestas: Map<string, string | null>,
+    opciones: Map<string, Set<number>>,
+  ): IncisoRendicionEstudianteDto {
+    const clave = this.claveInciso(preguntaId, inciso.letra);
+    const marcadas = opciones.get(clave);
+
+    if (marcadas && marcadas.size > 0) {
+      return {
+        ...inciso,
+        respuesta: { opciones: [...marcadas].sort((a, b) => a - b) },
+      };
+    }
+
+    const texto = respuestas.get(clave);
+    if (typeof texto === 'string' && texto.trim().length > 0) {
+      return { ...inciso, respuesta: { respuesta_texto: texto } };
+    }
+
+    return inciso;
   }
 
   private preguntaRespondida(
