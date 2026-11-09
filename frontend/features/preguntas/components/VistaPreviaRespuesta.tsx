@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -11,6 +11,8 @@ interface VistaPreviaRespuestaProps {
     enunciado?: string;
     /** Textos de las opciones (solo para opción única y múltiple). */
     opciones?: string[];
+    /** Contenido especializado (imágenes, tablas, fórmulas) que sigue al enunciado. */
+    recursos?: ReactNode;
 }
 
 const OPCIONES_VERDADERO_FALSO = ['Verdadero', 'Falso'];
@@ -34,6 +36,7 @@ export default function VistaPreviaRespuesta({
     tipo,
     enunciado = '',
     opciones = [],
+    recursos,
 }: VistaPreviaRespuestaProps) {
     const nombre = useId();
     const [seleccion, setSeleccion] = useState<number[]>([]);
@@ -80,6 +83,8 @@ export default function VistaPreviaRespuesta({
                 <p className="text-sm font-medium whitespace-pre-line text-slate-900">
                     {enunciado.trim() || 'El enunciado aparecerá aquí...'}
                 </p>
+
+                {recursos}
 
                 <p className="mt-1 text-xs text-slate-500">
                     {INSTRUCCION[tipo]}
