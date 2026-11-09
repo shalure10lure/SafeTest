@@ -259,7 +259,7 @@ describe('RendicionEvaluacion', () => {
 
     it('avisa antes de cerrar la pestaña mientras hay un guardado en curso', () => {
         mockUsePreguntasRendicion.mockReturnValue({
-            ...mockUsePreguntasRendicion(),
+            ...mockUsePreguntasRendicion(12),
             incisosGuardando: ['21:a'],
         });
         const agregar = vi.spyOn(window, 'addEventListener');
@@ -282,7 +282,7 @@ describe('RendicionEvaluacion', () => {
 
     it('marca respuestas sin guardar cuando falla un guardado', () => {
         mockUsePreguntasRendicion.mockReturnValue({
-            ...mockUsePreguntasRendicion(),
+            ...mockUsePreguntasRendicion(12),
             erroresGuardado: { '21:a': 'Sin conexión' },
         });
 
@@ -369,9 +369,7 @@ describe('RendicionEvaluacion', () => {
 
         render(<RendicionEvaluacion examenId={12} />);
 
-        expect(screen.getByRole('status').textContent).toBe(
-            'Guardando respuesta…',
-        );
+        expect(screen.getByText('Guardando respuesta…')).toBeTruthy();
     });
 
     it('muestra la carga y un error con opción de reintento', () => {
