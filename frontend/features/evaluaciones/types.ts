@@ -75,6 +75,8 @@ export interface IncisoRendicionEstudiante {
     enunciado_inciso: string;
     tipo_respuesta: string;
     opciones: OpcionRendicionEstudiante[];
+    /** Respuesta ya guardada por el estudiante; ausente si aún no responde. */
+    respuesta?: RespuestaRendicion;
 }
 
 export interface PreguntaRendicionEstudiante {

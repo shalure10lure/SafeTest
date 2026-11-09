@@ -118,6 +118,27 @@ export function usePreguntasRendicion(examenId: number) {
 
                 preguntasActuales.current = preguntasActualizadas;
                 setPreguntas(preguntasActualizadas);
+
+                // Precarga lo que el servidor ya tiene guardado; lo que se
+                // guardó en esta sesión es más reciente y prevalece.
+                const guardadasEnServidor: Record<string, RespuestaRendicion> =
+                    {};
+                for (const pregunta of resultado.preguntas) {
+                    for (const inciso of pregunta.incisos) {
+                        if (inciso.respuesta) {
+                            guardadasEnServidor[
+                                claveIncisoRendicion(
+                                    pregunta.pregunta_id,
+                                    inciso.letra,
+                                )
+                            ] = inciso.respuesta;
+                        }
+                    }
+                }
+                setRespuestasLocales((actuales) => ({
+                    ...guardadasEnServidor,
+                    ...actuales,
+                }));
                 examenCargado.current = examenId;
             } catch (errorConsulta) {
                 if (

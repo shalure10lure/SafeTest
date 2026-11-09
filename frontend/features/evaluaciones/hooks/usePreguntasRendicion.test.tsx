@@ -83,6 +83,45 @@ describe('usePreguntasRendicion', () => {
         expect(result.current.error).toBe('');
     });
 
+    it('precarga las respuestas que el servidor ya tiene guardadas', async () => {
+        const conRespuestas = crearPreguntas();
+        conRespuestas.preguntas[0].incisos[0].respuesta = {
+            respuesta_texto: 'Texto guardado',
+        };
+        mocks.getPreguntasRendicion.mockResolvedValue(conRespuestas);
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        expect(result.current.respuestasLocales).toEqual({
+            '21:a': { respuesta_texto: 'Texto guardado' },
+        });
+    });
+
+    it('no pisa con datos del servidor lo guardado en esta sesión al recargar', async () => {
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        await act(async () => {
+            await result.current.guardarRespuesta(21, 'a', {
+                respuesta_texto: 'Nuevo',
+            });
+        });
+
+        const antigua = crearPreguntas();
+        antigua.preguntas[0].incisos[0].respuesta = {
+            respuesta_texto: 'Viejo',
+        };
+        mocks.getPreguntasRendicion.mockResolvedValue(antigua);
+        await act(async () => {
+            await result.current.recargar();
+        });
+
+        expect(result.current.respuestasLocales['21:a']).toEqual({
+            respuesta_texto: 'Nuevo',
+        });
+    });
+
     it('expone el error de carga y permite reintentar', async () => {
         mocks.getPreguntasRendicion
             .mockRejectedValueOnce(new Error('fallo'))
