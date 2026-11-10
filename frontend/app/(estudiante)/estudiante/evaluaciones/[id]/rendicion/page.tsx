@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import RendicionEvaluacion from '@/features/evaluaciones/components/RendicionEvaluacion';
+import ControlTiempoRendicion from '@/features/evaluaciones/components/ControlTiempoRendicion';
 
 export default async function RendicionEvaluacionPage({
     params,
@@ -14,5 +15,9 @@ export default async function RendicionEvaluacionPage({
         notFound();
     }
 
-    return <RendicionEvaluacion examenId={examenId} />;
+    return (
+        <ControlTiempoRendicion examenId={examenId}>
+            <RendicionEvaluacion examenId={examenId} />
+        </ControlTiempoRendicion>
+    );
 }

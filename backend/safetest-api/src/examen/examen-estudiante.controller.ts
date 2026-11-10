@@ -34,7 +34,7 @@ export class ExamenEstudianteController {
   constructor(
     private readonly examenAccesoService: ExamenAccesoService,
     private readonly rendicionService: RendicionService,
-  ) {}
+  ) { }
 
   @Get('estudiante/evaluaciones')
   listarEvaluaciones(
@@ -96,5 +96,16 @@ export class ExamenEstudianteController {
     @Req() request: { user: { id: number } },
   ) {
     return this.examenAccesoService.obtenerVistaEstudiante(id, request.user.id);
+  }
+
+  @Get(':id/estudiante/rendicion/estado')
+  obtenerEstadoRendicion(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: { user: { id: number } },
+  ) {
+    return this.rendicionService.obtenerEstadoRendicion(
+      id,
+      request.user.id,
+    );
   }
 }

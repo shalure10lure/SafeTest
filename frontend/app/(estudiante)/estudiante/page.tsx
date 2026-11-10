@@ -10,6 +10,7 @@ import {
   Mail,
 } from "lucide-react";
 
+import { ROUTES } from "@/constants/routes";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export default function EstudiantePage() {
@@ -115,9 +116,13 @@ export default function EstudiantePage() {
             por tus docentes.
           </p>
 
-          <p className="mt-4 text-xs font-medium text-slate-500">
-            Funcionalidad de evaluaciones
-          </p>
+          <Link
+            href={ROUTES.estudiante.evaluaciones}
+            className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-violet-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+          >
+            Ver mis evaluaciones
+            <ArrowRight size={14} />
+          </Link>
         </div>
       </section>
 

@@ -20,6 +20,7 @@ import { ExamenEstudianteController } from './examen-estudiante.controller';
 import { ExamenService } from './examen.service';
 import { ExamenAccesoService } from './examen-acceso.service';
 import { RendicionService } from '../rendicion/rendicion.service';
+import { RendicionVencimientoWorker } from '../rendicion/rendicion-vencimiento.worker';
 
 @Module({
     imports: [
@@ -40,6 +41,6 @@ import { RendicionService } from '../rendicion/rendicion.service';
         ]),
     ],
     controllers: [ExamenController, ExamenEstudianteController],
-    providers: [ExamenService, ExamenAccesoService, RendicionService],
+    providers: [ExamenService, ExamenAccesoService, RendicionService, RendicionVencimientoWorker],
 })
 export class ExamenModule { }
