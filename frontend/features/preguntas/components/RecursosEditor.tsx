@@ -478,8 +478,7 @@ export default function RecursosEditor({
                         }}
                         rows={2}
                         maxLength={MAX_CARACTERES_FORMULA}
-                        placeholder="Ej. \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}"
-                        className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600"
+                        className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600"
                     />
 
                     <div

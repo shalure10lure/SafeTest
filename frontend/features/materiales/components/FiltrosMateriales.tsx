@@ -12,8 +12,6 @@ interface FiltrosMaterialesProps {
     materiaId: string;
     onMateria: (valor: string) => void;
     materias: Materia[];
-    estado: string;
-    onEstado: (valor: string) => void;
     autorizado: string;
     onAutorizado: (valor: string) => void;
     hayFiltros: boolean;
@@ -30,8 +28,6 @@ export default function FiltrosMateriales({
     materiaId,
     onMateria,
     materias,
-    estado,
-    onEstado,
     autorizado,
     onAutorizado,
     hayFiltros,
@@ -43,7 +39,7 @@ export default function FiltrosMateriales({
             aria-label="Filtros de materiales académicos"
             className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
         >
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="relative">
                     <label htmlFor="filtro-material-buscar" className="sr-only">
                         Buscar materiales
@@ -89,23 +85,6 @@ export default function FiltrosMateriales({
                                 {materia.nombre}
                             </option>
                         ))}
-                    </select>
-                </div>
-
-                <div>
-                    <label htmlFor="filtro-material-extraccion" className="sr-only">
-                        Estado de extracción
-                    </label>
-
-                    <select
-                        id="filtro-material-extraccion"
-                        value={estado}
-                        onChange={(evento) => onEstado(evento.target.value)}
-                        className={CONTROL}
-                    >
-                        <option value="">Estado del texto</option>
-                        <option value="completado">Texto extraído</option>
-                        <option value="sin_texto">Sin texto extraído</option>
                     </select>
                 </div>
 

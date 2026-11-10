@@ -14,7 +14,6 @@ import { useMaterias } from '@/features/materias/hooks/useMaterias';
 export default function MaterialesPage() {
     const [buscar, setBuscar] = useState('');
     const [materiaId, setMateriaId] = useState('');
-    const [estado, setEstado] = useState('');
     const [autorizado, setAutorizado] = useState('');
 
     const {
@@ -37,18 +36,11 @@ export default function MaterialesPage() {
 
     const { materiales, isLoading, error, cargar } = useMateriales(filtros);
 
-    // Búsqueda y filtros de estado se aplican sobre la lista ya cargada.
+    // Búsqueda y autorización IA se aplican sobre la lista ya cargada.
     const materialesFiltrados = useMemo(() => {
         const texto = buscar.trim().toLowerCase();
 
         return materiales.filter((material) => {
-            if (
-                estado &&
-                material.estado_extraccion.estado !== estado
-            ) {
-                return false;
-            }
-
             if (
                 autorizado &&
                 String(material.autorizado_ia) !== autorizado
@@ -65,16 +57,15 @@ export default function MaterialesPage() {
                 material.tema ?? '',
             ].some((valor) => valor.toLowerCase().includes(texto));
         });
-    }, [materiales, buscar, estado, autorizado]);
+    }, [materiales, buscar, autorizado]);
 
     const hayFiltros = Boolean(
-        buscar.trim() || materiaId || estado || autorizado,
+        buscar.trim() || materiaId || autorizado,
     );
 
     function limpiarFiltros() {
         setBuscar('');
         setMateriaId('');
-        setEstado('');
         setAutorizado('');
     }
 
@@ -125,8 +116,6 @@ export default function MaterialesPage() {
                     materiaId={materiaId}
                     onMateria={setMateriaId}
                     materias={materiasActivas}
-                    estado={estado}
-                    onEstado={setEstado}
                     autorizado={autorizado}
                     onAutorizado={setAutorizado}
                     hayFiltros={hayFiltros}
