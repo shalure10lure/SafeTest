@@ -31,6 +31,8 @@ import type {
 import type { RendicionEstudianteDto } from './dto/rendicion-estudiante.dto';
 import type { RespuestaGuardadaEstudianteDto } from './dto/respuesta-guardada-estudiante.dto';
 
+import { Examen } from '../examen/entity/examen.entity';
+
 interface FilaIncisoRendicion {
   pregunta_id: number | string;
   enunciado: string;
@@ -47,271 +49,366 @@ export class RendicionService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly examenAccesoService: ExamenAccesoService,
-  ) {}
+  ) { }
+
 
   async iniciarORecuperar(
     examenId: number,
     estudianteId: number,
     dto: IniciarRendicionDto,
   ): Promise<RendicionEstudianteDto> {
-    const examen = await this.examenAccesoService.obtenerExamenParaRendicion(
-      examenId,
-      estudianteId,
-    );
-
-    return this.dataSource.transaction(async (manager) => {
-      const rendicionRepository = manager.getRepository(Rendicion);
-      const clave = { estudiante_id: estudianteId, examen_id: examenId };
-      const existente = await rendicionRepository.findOneBy(clave);
-
-      if (existente) {
-        return this.recuperarExistente(
-          manager,
-          existente,
-          examenId,
-          estudianteId,
-        );
-      }
-
-      await this.validarParalelo(
-        manager,
-        examen.modo_asignacion,
+    await this.finalizarSiVencida(examenId, estudianteId);
+    const examen =
+      await this.examenAccesoService.obtenerExamenParaRendicion(
         examenId,
         estudianteId,
-        dto.paralelo_id,
       );
 
-      const insercion = await rendicionRepository
-        .createQueryBuilder()
-        .insert()
-        .values({
-          ...clave,
-          paralelo_id: dto.paralelo_id,
-          estado: 'en_curso',
-          fecha_inicio: new Date(),
-        })
-        .orIgnore()
-        .returning(['estudiante_id', 'examen_id'])
-        .execute();
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const rendicionRepository = manager.getRepository(Rendicion);
+        const clave = {
+          estudiante_id: estudianteId,
+          examen_id: examenId,
+        };
 
-      const creada = Array.isArray(insercion.raw) && insercion.raw.length > 0;
-      const rendicion = await rendicionRepository.findOneBy(clave);
+        const existente = await rendicionRepository.findOne({
+          where: clave,
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!rendicion) {
-        throw new ConflictException(
-          'No se pudo iniciar la evaluación. Inténtalo nuevamente.',
+        if (existente) {
+          await this.verificarTiempoActivo(
+            manager,
+            existente,
+            examenId,
+          );
+
+          return this.recuperarExistente(
+            manager,
+            existente,
+            examenId,
+            estudianteId,
+          );
+        }
+
+        await this.validarParalelo(
+          manager,
+          examen.modo_asignacion,
+          examenId,
+          estudianteId,
+          dto.paralelo_id,
         );
-      }
 
-      if (!creada) {
-        return this.recuperarExistente(
+        const insercion = await rendicionRepository
+          .createQueryBuilder()
+          .insert()
+          .values({
+            ...clave,
+            paralelo_id: dto.paralelo_id,
+            estado: 'en_curso',
+            fecha_inicio: new Date(),
+          })
+          .orIgnore()
+          .returning(['estudiante_id', 'examen_id'])
+          .execute();
+
+        const creada =
+          Array.isArray(insercion.raw) &&
+          insercion.raw.length > 0;
+
+        const rendicion = await rendicionRepository.findOne({
+          where: clave,
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!rendicion) {
+          throw new ConflictException(
+            'No se pudo iniciar la evaluación. Inténtalo nuevamente.',
+          );
+        }
+
+        if (!creada) {
+          await this.verificarTiempoActivo(
+            manager,
+            rendicion,
+            examenId,
+          );
+
+          return this.recuperarExistente(
+            manager,
+            rendicion,
+            examenId,
+            estudianteId,
+          );
+        }
+
+        await this.verificarTiempoActivo(
           manager,
           rendicion,
           examenId,
-          estudianteId,
         );
-      }
 
-      const preguntas = await this.seleccionarPreguntas(
-        manager,
-        examenId,
-        examen,
-      );
-
-      if (preguntas.length === 0) {
-        throw new BadRequestException(
-          'La evaluación no tiene preguntas disponibles para rendir.',
+        const preguntas = await this.seleccionarPreguntas(
+          manager,
+          examenId,
+          examen,
         );
-      }
 
-      await manager.getRepository(AsignacionPregunta).insert(
-        preguntas.map((pregunta_id, indice) => ({
-          estudiante_id: estudianteId,
+        if (preguntas.length === 0) {
+          throw new BadRequestException(
+            'La evaluación no tiene preguntas disponibles para rendir.',
+          );
+        }
+
+        await manager.getRepository(AsignacionPregunta).insert(
+          preguntas.map((pregunta_id, indice) => ({
+            estudiante_id: estudianteId,
+            examen_id: examenId,
+            pregunta_id,
+            orden: indice + 1,
+          })),
+        );
+
+        return {
           examen_id: examenId,
-          pregunta_id,
-          orden: indice + 1,
-        })),
+          paralelo_id: rendicion.paralelo_id,
+          estado: 'en_curso',
+          fecha_inicio: rendicion.fecha_inicio,
+          preguntas: preguntas.map((pregunta_id, indice) => ({
+            pregunta_id,
+            orden: indice + 1,
+          })),
+          recuperada: false,
+        };
+      });
+    } catch (error) {
+      return this.finalizarTrasErrorDeTiempo(
+        error,
+        examenId,
+        estudianteId,
       );
-
-      return {
-        examen_id: examenId,
-        paralelo_id: rendicion.paralelo_id,
-        estado: 'en_curso',
-        fecha_inicio: rendicion.fecha_inicio,
-        preguntas: preguntas.map((pregunta_id, indice) => ({
-          pregunta_id,
-          orden: indice + 1,
-        })),
-        recuperada: false,
-      };
-    });
+    }
   }
+
 
   async consultarPreguntasActivas(
     examenId: number,
     estudianteId: number,
   ): Promise<PreguntasRendicionEstudianteDto> {
-    return this.dataSource.transaction(async (manager) => {
-      const rendicion = await manager.getRepository(Rendicion).findOne({
-        where: {
-          examen_id: examenId,
-          estudiante_id: estudianteId,
-          estado: 'en_curso',
-        },
-        select: {
-          examen_id: true,
-          estudiante_id: true,
-        },
-      });
-
-      if (!rendicion) {
-        throw new NotFoundException('La rendición activa no está disponible.');
-      }
-
-      const asignaciones = await manager
-        .getRepository(AsignacionPregunta)
-        .find({
-          where: { examen_id: examenId, estudiante_id: estudianteId },
-          select: { pregunta_id: true, orden: true },
-          order: { orden: 'ASC' },
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const rendicion = await manager.getRepository(Rendicion).findOne({
+          where: {
+            examen_id: examenId,
+            estudiante_id: estudianteId,
+          },
+          lock: { mode: 'pessimistic_write' },
         });
 
-      if (asignaciones.length === 0) {
-        throw new ConflictException(
-          'La rendición activa no tiene preguntas asignadas.',
+        if (!rendicion) {
+          throw new NotFoundException(
+            'La rendición activa no está disponible.',
+          );
+        }
+
+        await this.verificarTiempoActivo(
+          manager,
+          rendicion,
+          examenId,
         );
-      }
 
-      const ids = asignaciones.map((asignacion) => asignacion.pregunta_id);
-      const filas = await manager
-        .getRepository(Pregunta)
-        .createQueryBuilder('pregunta')
-        .innerJoin('pregunta.incisos', 'inciso')
-        .leftJoin('inciso.opciones', 'opcion')
-        .select('pregunta.pregunta_id', 'pregunta_id')
-        .addSelect('pregunta.enunciado', 'enunciado')
-        .addSelect('inciso.letra', 'letra')
-        .addSelect('inciso.enunciado_inciso', 'enunciado_inciso')
-        .addSelect('inciso.tipo_respuesta', 'tipo_respuesta')
-        .addSelect('opcion.nro_opcion', 'nro_opcion')
-        .addSelect('opcion.texto_opcion', 'texto_opcion')
-        .where('pregunta.pregunta_id IN (:...ids)', { ids })
-        .orderBy('pregunta.pregunta_id', 'ASC')
-        .addOrderBy('inciso.letra', 'ASC')
-        .addOrderBy('opcion.nro_opcion', 'ASC')
-        .getRawMany<FilaIncisoRendicion>();
+        const asignaciones = await manager
+          .getRepository(AsignacionPregunta)
+          .find({
+            where: {
+              examen_id: examenId,
+              estudiante_id: estudianteId,
+            },
+            select: {
+              pregunta_id: true,
+              orden: true,
+            },
+            order: { orden: 'ASC' },
+          });
 
-      const preguntas = this.construirPreguntasRendicion(filas, asignaciones);
-      if (preguntas.length !== asignaciones.length) {
-        throw new ConflictException(
-          'No se pudieron recuperar todas las preguntas asignadas a la rendición.',
+        if (asignaciones.length === 0) {
+          throw new ConflictException(
+            'La rendición activa no tiene preguntas asignadas.',
+          );
+        }
+
+        const ids = asignaciones.map(
+          (asignacion) => asignacion.pregunta_id,
         );
-      }
 
-      const [respuestas, opcionesMarcadas] = await Promise.all([
-        manager.getRepository(RespuestaInciso).find({
-          where: {
-            estudiante_id: estudianteId,
-            examen_id: examenId,
-            pregunta_id: In(ids),
-          },
-          select: {
-            pregunta_id: true,
-            letra: true,
-            respuesta_texto: true,
-          },
-        }),
-        manager.getRepository(OpcionMarcada).find({
-          where: {
-            estudiante_id: estudianteId,
-            examen_id: examenId,
-            pregunta_id: In(ids),
-          },
-          select: {
-            pregunta_id: true,
-            letra: true,
-            nro_opcion: true,
-          },
-        }),
-      ]);
+        const filas = await manager
+          .getRepository(Pregunta)
+          .createQueryBuilder('pregunta')
+          .innerJoin('pregunta.incisos', 'inciso')
+          .leftJoin('inciso.opciones', 'opcion')
+          .select('pregunta.pregunta_id', 'pregunta_id')
+          .addSelect('pregunta.enunciado', 'enunciado')
+          .addSelect('inciso.letra', 'letra')
+          .addSelect('inciso.enunciado_inciso', 'enunciado_inciso')
+          .addSelect('inciso.tipo_respuesta', 'tipo_respuesta')
+          .addSelect('opcion.nro_opcion', 'nro_opcion')
+          .addSelect('opcion.texto_opcion', 'texto_opcion')
+          .where('pregunta.pregunta_id IN (:...ids)', { ids })
+          .orderBy('pregunta.pregunta_id', 'ASC')
+          .addOrderBy('inciso.letra', 'ASC')
+          .addOrderBy('opcion.nro_opcion', 'ASC')
+          .getRawMany<FilaIncisoRendicion>();
 
-      const respuestasPorInciso = new Map(
-        respuestas.map((respuesta) => [
-          this.claveInciso(respuesta.pregunta_id, respuesta.letra),
-          respuesta.respuesta_texto,
-        ]),
-      );
-      const opcionesPorInciso = new Map<string, Set<number>>();
-      for (const opcion of opcionesMarcadas) {
-        const clave = this.claveInciso(opcion.pregunta_id, opcion.letra);
-        const seleccionadas = opcionesPorInciso.get(clave) ?? new Set<number>();
-        seleccionadas.add(opcion.nro_opcion);
-        opcionesPorInciso.set(clave, seleccionadas);
-      }
-      return {
-        examen_id: examenId,
-        preguntas: preguntas.map((pregunta) => ({
-          ...pregunta,
-          incisos: pregunta.incisos.map((inciso) =>
-            this.conRespuestaGuardada(
-              inciso,
-              pregunta.pregunta_id,
+        const preguntas = this.construirPreguntasRendicion(
+          filas,
+          asignaciones,
+        );
+
+        if (preguntas.length !== asignaciones.length) {
+          throw new ConflictException(
+            'No se pudieron recuperar todas las preguntas asignadas a la rendición.',
+          );
+        }
+
+        const [respuestas, opcionesMarcadas] = await Promise.all([
+          manager.getRepository(RespuestaInciso).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: In(ids),
+            },
+            select: {
+              pregunta_id: true,
+              letra: true,
+              respuesta_texto: true,
+            },
+          }),
+          manager.getRepository(OpcionMarcada).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: In(ids),
+            },
+            select: {
+              pregunta_id: true,
+              letra: true,
+              nro_opcion: true,
+            },
+          }),
+        ]);
+
+        const respuestasPorInciso = new Map(
+          respuestas.map((respuesta) => [
+            this.claveInciso(
+              respuesta.pregunta_id,
+              respuesta.letra,
+            ),
+            respuesta.respuesta_texto,
+          ]),
+        );
+
+        const opcionesPorInciso = new Map<string, Set<number>>();
+
+        for (const opcion of opcionesMarcadas) {
+          const clave = this.claveInciso(
+            opcion.pregunta_id,
+            opcion.letra,
+          );
+
+          const seleccionadas =
+            opcionesPorInciso.get(clave) ?? new Set<number>();
+
+          seleccionadas.add(opcion.nro_opcion);
+          opcionesPorInciso.set(clave, seleccionadas);
+        }
+
+        // Volvemos a comprobar el tiempo antes de responder.
+        await this.verificarTiempoActivo(
+          manager,
+          rendicion,
+          examenId,
+        );
+
+        return {
+          examen_id: examenId,
+          preguntas: preguntas.map((pregunta) => ({
+            ...pregunta,
+            incisos: pregunta.incisos.map((inciso) =>
+              this.conRespuestaGuardada(
+                inciso,
+                pregunta.pregunta_id,
+                respuestasPorInciso,
+                opcionesPorInciso,
+              ),
+            ),
+            estado_respuesta: this.preguntaRespondida(
+              pregunta,
               respuestasPorInciso,
               opcionesPorInciso,
-            ),
-          ),
-          estado_respuesta: this.preguntaRespondida(
-            pregunta,
-            respuestasPorInciso,
-            opcionesPorInciso,
-          )
-            ? 'respondida'
-            : 'pendiente',
-        })),
-      };
-    });
+            )
+              ? 'respondida'
+              : 'pendiente',
+          })),
+        };
+      });
+    } catch (error) {
+      return this.finalizarTrasErrorDeTiempo(
+        error,
+        examenId,
+        estudianteId,
+      );
+    }
   }
 
+
   /**
-   * Comprueba que la pregunta pertenece a la rendición en curso del estudiante.
-   * Lo usan los endpoints que entregan contenido de una pregunta (recursos).
+   * Comprueba que la pregunta pertenece a la rendición en curso del estudiante
+   * y que su tiempo no terminó. Lo usan los endpoints que entregan contenido de
+   * una pregunta (recursos).
    */
   async verificarPreguntaDeRendicionActiva(
     examenId: number,
     estudianteId: number,
     preguntaId: number,
   ): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      const rendicion = await manager.getRepository(Rendicion).findOne({
-        where: {
-          examen_id: examenId,
-          estudiante_id: estudianteId,
-          estado: 'en_curso',
-        },
-        select: { examen_id: true, estudiante_id: true },
-      });
-
-      if (!rendicion) {
-        throw new NotFoundException('La rendición activa no está disponible.');
-      }
-
-      const asignacion = await manager
-        .getRepository(AsignacionPregunta)
-        .findOne({
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const rendicion = await manager.getRepository(Rendicion).findOne({
           where: {
             examen_id: examenId,
             estudiante_id: estudianteId,
-            pregunta_id: preguntaId,
           },
-          select: { pregunta_id: true },
         });
 
-      if (!asignacion) {
-        throw new NotFoundException(
-          'La pregunta no pertenece a esta rendición.',
-        );
-      }
-    });
+        if (!rendicion) {
+          throw new NotFoundException(
+            'La rendición activa no está disponible.',
+          );
+        }
+
+        await this.verificarTiempoActivo(manager, rendicion, examenId);
+
+        const asignacion = await manager
+          .getRepository(AsignacionPregunta)
+          .findOne({
+            where: {
+              examen_id: examenId,
+              estudiante_id: estudianteId,
+              pregunta_id: preguntaId,
+            },
+            select: { pregunta_id: true },
+          });
+
+        if (!asignacion) {
+          throw new NotFoundException(
+            'La pregunta no pertenece a esta rendición.',
+          );
+        }
+      });
+    } catch (error) {
+      await this.finalizarTrasErrorDeTiempo(error, examenId, estudianteId);
+    }
   }
 
   async guardarRespuesta(
@@ -321,110 +418,148 @@ export class RendicionService {
     letra: string,
     dto: GuardarRespuestaEstudianteDto,
   ): Promise<RespuestaGuardadaEstudianteDto> {
-    return this.dataSource.transaction(async (manager) => {
-      const rendicion = await manager.getRepository(Rendicion).findOne({
-        where: {
-          examen_id: examenId,
-          estudiante_id: estudianteId,
-        },
-        select: {
-          examen_id: true,
-          estudiante_id: true,
-          estado: true,
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!rendicion || rendicion.estado !== 'en_curso') {
-        throw new NotFoundException('La rendición activa no está disponible.');
-      }
-
-      const asignacion = await manager
-        .getRepository(AsignacionPregunta)
-        .findOne({
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const rendicion = await manager.getRepository(Rendicion).findOne({
           where: {
             examen_id: examenId,
             estudiante_id: estudianteId,
-            pregunta_id: preguntaId,
           },
-          select: { pregunta_id: true },
+          lock: { mode: 'pessimistic_write' },
         });
 
-      if (!asignacion) {
-        throw new NotFoundException(
-          'La pregunta no pertenece a esta rendición.',
-        );
-      }
-
-      const inciso = await manager.getRepository(Inciso).findOne({
-        where: { pregunta_id: preguntaId, letra },
-        select: { pregunta_id: true, letra: true, tipo_respuesta: true },
-      });
-
-      if (!inciso) {
-        throw new NotFoundException('El inciso no pertenece a la pregunta.');
-      }
-
-      const tipo = inciso.tipo_respuesta;
-      const esTipoDeOpciones =
-        tipo === 'opcion_unica' ||
-        tipo === 'opcion_multiple' ||
-        tipo === 'verdadero_falso';
-      const usaRespuestaTexto = tipo === 'desarrollo' || tipo === 'numerica';
-
-      if (esTipoDeOpciones) {
-        if (dto.opciones === undefined || dto.respuesta_texto !== undefined) {
-          throw new BadRequestException(
-            'Envía únicamente la lista de opciones seleccionadas.',
+        if (!rendicion) {
+          throw new NotFoundException(
+            'La rendición activa no está disponible.',
           );
         }
 
-        await this.validarOpciones(
+        await this.verificarTiempoActivo(
           manager,
-          preguntaId,
-          letra,
-          tipo,
-          dto.opciones,
+          rendicion,
+          examenId,
         );
-      } else if (usaRespuestaTexto) {
-        if (dto.respuesta_texto === undefined || dto.opciones !== undefined) {
-          throw new BadRequestException(
-            'Envía únicamente la respuesta en texto.',
+
+        const asignacion = await manager
+          .getRepository(AsignacionPregunta)
+          .findOne({
+            where: {
+              examen_id: examenId,
+              estudiante_id: estudianteId,
+              pregunta_id: preguntaId,
+            },
+            select: { pregunta_id: true },
+          });
+
+        if (!asignacion) {
+          throw new NotFoundException(
+            'La pregunta no pertenece a esta rendición.',
           );
         }
 
-        this.validarRespuestaTexto(tipo, dto.respuesta_texto);
-      } else {
-        throw new BadRequestException(
-          'El tipo de respuesta de este inciso no está habilitado.',
+        const inciso = await manager.getRepository(Inciso).findOne({
+          where: {
+            pregunta_id: preguntaId,
+            letra,
+          },
+          select: {
+            pregunta_id: true,
+            letra: true,
+            tipo_respuesta: true,
+          },
+        });
+
+        if (!inciso) {
+          throw new NotFoundException(
+            'El inciso no pertenece a la pregunta.',
+          );
+        }
+
+        const tipo = inciso.tipo_respuesta;
+
+        const esTipoDeOpciones =
+          tipo === 'opcion_unica' ||
+          tipo === 'opcion_multiple' ||
+          tipo === 'verdadero_falso';
+
+        const usaRespuestaTexto =
+          tipo === 'desarrollo' ||
+          tipo === 'numerica';
+
+        if (esTipoDeOpciones) {
+          if (
+            dto.opciones === undefined ||
+            dto.respuesta_texto !== undefined
+          ) {
+            throw new BadRequestException(
+              'Envía únicamente la lista de opciones seleccionadas.',
+            );
+          }
+
+          await this.validarOpciones(
+            manager,
+            preguntaId,
+            letra,
+            tipo,
+            dto.opciones,
+          );
+        } else if (usaRespuestaTexto) {
+          if (
+            dto.respuesta_texto === undefined ||
+            dto.opciones !== undefined
+          ) {
+            throw new BadRequestException(
+              'Envía únicamente la respuesta en texto.',
+            );
+          }
+
+          this.validarRespuestaTexto(
+            tipo,
+            dto.respuesta_texto,
+          );
+        } else {
+          throw new BadRequestException(
+            'El tipo de respuesta de este inciso no está habilitado.',
+          );
+        }
+
+        const respuestaTexto = usaRespuestaTexto
+          ? dto.respuesta_texto?.trim() || null
+          : null;
+
+        const claveRespuesta = {
+          estudiante_id: estudianteId,
+          examen_id: examenId,
+          pregunta_id: preguntaId,
+          letra,
+        };
+
+        const guardadoEn = new Date();
+
+        await manager.getRepository(RespuestaInciso).upsert(
+          {
+            ...claveRespuesta,
+            respuesta_texto: respuestaTexto,
+            guardado_en: guardadoEn,
+          },
+          [
+            'estudiante_id',
+            'examen_id',
+            'pregunta_id',
+            'letra',
+          ],
         );
-      }
 
-      const respuestaTexto = usaRespuestaTexto
-        ? dto.respuesta_texto?.trim() || null
-        : null;
-      const guardadoEn = new Date();
-      const claveRespuesta = {
-        estudiante_id: estudianteId,
-        examen_id: examenId,
-        pregunta_id: preguntaId,
-        letra,
-      };
+        const opcionMarcadaRepository =
+          manager.getRepository(OpcionMarcada);
 
-      await manager.getRepository(RespuestaInciso).upsert(
-        {
-          ...claveRespuesta,
-          respuesta_texto: respuestaTexto,
-          guardado_en: guardadoEn,
-        },
-        ['estudiante_id', 'examen_id', 'pregunta_id', 'letra'],
-      );
-
-      if (esTipoDeOpciones) {
-        const opcionMarcadaRepository = manager.getRepository(OpcionMarcada);
         await opcionMarcadaRepository.delete(claveRespuesta);
 
-        if (dto.opciones && dto.opciones.length > 0) {
+        if (
+          esTipoDeOpciones &&
+          dto.opciones &&
+          dto.opciones.length > 0
+        ) {
           await opcionMarcadaRepository.insert(
             dto.opciones.map((nro_opcion) => ({
               ...claveRespuesta,
@@ -432,64 +567,105 @@ export class RendicionService {
             })),
           );
         }
-      } else {
-        await manager.getRepository(OpcionMarcada).delete(claveRespuesta);
-      }
 
-      const incisosPregunta = await manager.getRepository(Inciso).find({
-        where: { pregunta_id: preguntaId },
-        select: { letra: true, tipo_respuesta: true },
-      });
-      const [respuestasPregunta, opcionesPregunta] = await Promise.all([
-        manager.getRepository(RespuestaInciso).find({
-          where: {
-            estudiante_id: estudianteId,
-            examen_id: examenId,
+        const incisosPregunta = await manager
+          .getRepository(Inciso)
+          .find({
+            where: { pregunta_id: preguntaId },
+            select: {
+              letra: true,
+              tipo_respuesta: true,
+            },
+          });
+
+        const [respuestasPregunta, opcionesPregunta] =
+          await Promise.all([
+            manager.getRepository(RespuestaInciso).find({
+              where: {
+                estudiante_id: estudianteId,
+                examen_id: examenId,
+                pregunta_id: preguntaId,
+              },
+              select: {
+                pregunta_id: true,
+                letra: true,
+                respuesta_texto: true,
+              },
+            }),
+            manager.getRepository(OpcionMarcada).find({
+              where: {
+                estudiante_id: estudianteId,
+                examen_id: examenId,
+                pregunta_id: preguntaId,
+              },
+              select: {
+                pregunta_id: true,
+                letra: true,
+                nro_opcion: true,
+              },
+            }),
+          ]);
+
+        const respuestasPorInciso = new Map(
+          respuestasPregunta.map((respuesta) => [
+            this.claveInciso(
+              respuesta.pregunta_id,
+              respuesta.letra,
+            ),
+            respuesta.respuesta_texto,
+          ]),
+        );
+
+        const opcionesPorInciso = new Map<string, Set<number>>();
+
+        for (const opcion of opcionesPregunta) {
+          const clave = this.claveInciso(
+            opcion.pregunta_id,
+            opcion.letra,
+          );
+
+          const seleccionadas =
+            opcionesPorInciso.get(clave) ?? new Set<number>();
+
+          seleccionadas.add(opcion.nro_opcion);
+          opcionesPorInciso.set(clave, seleccionadas);
+        }
+
+        const preguntaRespondida = this.preguntaRespondida(
+          {
             pregunta_id: preguntaId,
+            incisos: incisosPregunta,
           },
-          select: { pregunta_id: true, letra: true, respuesta_texto: true },
-        }),
-        manager.getRepository(OpcionMarcada).find({
-          where: {
-            estudiante_id: estudianteId,
-            examen_id: examenId,
-            pregunta_id: preguntaId,
-          },
-          select: { pregunta_id: true, letra: true, nro_opcion: true },
-        }),
-      ]);
-      const respuestasPorInciso = new Map(
-        respuestasPregunta.map((respuesta) => [
-          this.claveInciso(respuesta.pregunta_id, respuesta.letra),
-          respuesta.respuesta_texto,
-        ]),
-      );
-      const opcionesPorInciso = new Map<string, Set<number>>();
-      for (const opcion of opcionesPregunta) {
-        const clave = this.claveInciso(opcion.pregunta_id, opcion.letra);
-        const seleccionadas = opcionesPorInciso.get(clave) ?? new Set<number>();
-        seleccionadas.add(opcion.nro_opcion);
-        opcionesPorInciso.set(clave, seleccionadas);
-      }
-      const preguntaRespondida = this.preguntaRespondida(
-        {
+          respuestasPorInciso,
+          opcionesPorInciso,
+        );
+
+        // Si el tiempo terminó durante el guardado,
+        // la transacción se revierte completamente.
+        await this.verificarTiempoActivo(
+          manager,
+          rendicion,
+          examenId,
+        );
+
+        return {
+          examen_id: examenId,
           pregunta_id: preguntaId,
-          incisos: incisosPregunta,
-        },
-        respuestasPorInciso,
-        opcionesPorInciso,
+          letra,
+          estado_respuesta: preguntaRespondida
+            ? 'respondida'
+            : 'pendiente',
+          guardado_en: guardadoEn,
+        };
+      });
+    } catch (error) {
+      return this.finalizarTrasErrorDeTiempo(
+        error,
+        examenId,
+        estudianteId,
       );
-
-      return {
-        examen_id: examenId,
-        pregunta_id: preguntaId,
-        letra,
-        estado_respuesta: preguntaRespondida ? 'respondida' : 'pendiente',
-        guardado_en: guardadoEn,
-      };
-    });
+    }
   }
-
   private async validarOpciones(
     manager: EntityManager,
     preguntaId: number,
@@ -764,6 +940,259 @@ export class RendicionService {
         );
       }
     }
+  }
+
+  private async verificarTiempoActivo(
+    manager: EntityManager,
+    rendicion: Rendicion,
+    examenId: number,
+  ): Promise<void> {
+    if (rendicion.estado !== 'en_curso') {
+      throw new ConflictException(
+        'La rendición ya no está en curso.',
+      );
+    }
+
+    if (!rendicion.fecha_inicio) {
+      throw new ConflictException(
+        'La rendición no tiene una fecha de inicio válida.',
+      );
+    }
+
+    const examen = await manager.getRepository(Examen).findOne({
+      where: { examen_id: examenId },
+      select: {
+        duracion_min: true,
+        disponible_hasta: true,
+      },
+    });
+
+    if (!examen) {
+      throw new NotFoundException(
+        'No se encontró la evaluación.',
+      );
+    }
+
+    const fechaLimite = this.calcularFechaLimite(
+      rendicion.fecha_inicio,
+      examen.duracion_min,
+      examen.disponible_hasta,
+    );
+
+    if (fechaLimite && Date.now() >= fechaLimite.getTime()) {
+      throw new ConflictException(
+        'El tiempo de la evaluación terminó.',
+      );
+    }
+  }
+
+  private async finalizarTrasErrorDeTiempo(
+    error: unknown,
+    examenId: number,
+    estudianteId: number,
+  ): Promise<never> {
+    if (
+      error instanceof ConflictException &&
+      error.message === 'El tiempo de la evaluación terminó.'
+    ) {
+      await this.finalizarSiVencida(examenId, estudianteId);
+
+      throw new ConflictException(
+        'El tiempo de la evaluación terminó. No se pueden realizar más cambios.',
+      );
+    }
+
+    throw error;
+  }
+
+
+  private calcularFechaLimite(
+    fechaInicio: Date,
+    duracionMin: number | null,
+    disponibleHasta: Date | null,
+  ): Date | null {
+    const limites: number[] = [];
+
+    if (duracionMin !== null) {
+      limites.push(
+        fechaInicio.getTime() + duracionMin * 60_000,
+      );
+    }
+
+    if (disponibleHasta !== null) {
+      limites.push(disponibleHasta.getTime());
+    }
+
+    if (limites.length === 0) {
+      return null;
+    }
+
+    return new Date(Math.min(...limites));
+  }
+
+
+
+  async finalizarSiVencida(
+    examenId: number,
+    estudianteId: number,
+  ): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const rendicionRepository =
+        manager.getRepository(Rendicion);
+
+      const rendicion = await rendicionRepository.findOne({
+        where: {
+          examen_id: examenId,
+          estudiante_id: estudianteId,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      // Puede no existir si falló el primer intento de inicio.
+      if (!rendicion) {
+        return false;
+      }
+
+      // Evita enviar dos veces la misma rendición.
+      if (rendicion.estado !== 'en_curso') {
+        return false;
+      }
+
+      const examen = await manager.getRepository(Examen).findOne({
+        where: { examen_id: examenId },
+        select: {
+          duracion_min: true,
+          disponible_hasta: true,
+          al_terminar_tiempo: true,
+        },
+      });
+
+      if (!examen) {
+        throw new NotFoundException(
+          'No se encontró la evaluación.',
+        );
+      }
+
+      if (!rendicion.fecha_inicio) {
+        throw new ConflictException(
+          'La rendición no tiene una fecha de inicio válida.',
+        );
+      }
+
+      const fechaLimite = this.calcularFechaLimite(
+        rendicion.fecha_inicio,
+        examen.duracion_min,
+        examen.disponible_hasta,
+      );
+
+      if (!fechaLimite) {
+        return false;
+      }
+
+      const ahora = new Date();
+
+      if (ahora.getTime() < fechaLimite.getTime()) {
+        return false;
+      }
+
+      // El envío automático es la política definida para SafeTest.
+      if (examen.al_terminar_tiempo !== 'enviar_automatico') {
+        return false;
+      }
+
+      rendicion.estado = 'enviada';
+      rendicion.fecha_envio = ahora;
+
+      await rendicionRepository.save(rendicion);
+
+      // No se eliminan ni modifican RespuestaInciso
+      // ni OpcionMarcada. Se conservan las respuestas.
+      return true;
+    });
+  }
+
+
+  async obtenerEstadoRendicion(
+    examenId: number,
+    estudianteId: number,
+  ): Promise<{
+    examen_id: number;
+    estado: string;
+    fecha_inicio: Date | null;
+    fecha_limite: Date | null;
+    fecha_envio: Date | null;
+    tiempo_servidor: Date;
+    vencida: boolean;
+    puede_responder: boolean;
+  }> {
+    // Actualizar primero el estado si venció el tiempo.
+    await this.finalizarSiVencida(examenId, estudianteId);
+
+    const rendicion = await this.dataSource
+      .getRepository(Rendicion)
+      .findOne({
+        where: {
+          examen_id: examenId,
+          estudiante_id: estudianteId,
+        },
+        select: {
+          examen_id: true,
+          estudiante_id: true,
+          estado: true,
+          fecha_inicio: true,
+          fecha_envio: true,
+        },
+      });
+
+    if (!rendicion) {
+      throw new NotFoundException(
+        'No se encontró la rendición del estudiante.',
+      );
+    }
+
+    const examen = await this.dataSource
+      .getRepository(Examen)
+      .findOne({
+        where: { examen_id: examenId },
+        select: {
+          duracion_min: true,
+          disponible_hasta: true,
+        },
+      });
+
+    if (!examen) {
+      throw new NotFoundException(
+        'No se encontró la evaluación.',
+      );
+    }
+
+    const fechaLimite = rendicion.fecha_inicio
+      ? this.calcularFechaLimite(
+        rendicion.fecha_inicio,
+        examen.duracion_min,
+        examen.disponible_hasta,
+      )
+      : null;
+
+    const ahora = new Date();
+
+    const vencida =
+      fechaLimite !== null &&
+      ahora.getTime() >= fechaLimite.getTime();
+
+    const puedeResponder =
+      rendicion.estado === 'en_curso' && !vencida;
+
+    return {
+      examen_id: examenId,
+      estado: rendicion.estado,
+      fecha_inicio: rendicion.fecha_inicio ?? null,
+      fecha_limite: fechaLimite,
+      fecha_envio: rendicion.fecha_envio ?? null,
+      tiempo_servidor: ahora,
+      vencida,
+      puede_responder: puedeResponder,
+    };
   }
 
   private async seleccionarPreguntas(
