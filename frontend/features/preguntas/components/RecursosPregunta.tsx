@@ -12,6 +12,8 @@ interface RecursosPreguntaProps {
     preguntaId?: number;
     guardados?: RecursoPregunta[];
     pendientes?: RecursoPendiente[];
+    /** Descarga de imágenes guardadas; por defecto, la del docente. */
+    cargarImagen?: (recurso: string) => Promise<Blob>;
 }
 
 /**
@@ -25,6 +27,7 @@ export default function RecursosPregunta({
     preguntaId,
     guardados = [],
     pendientes = [],
+    cargarImagen,
 }: RecursosPreguntaProps) {
     if (guardados.length === 0 && pendientes.length === 0) {
         return null;
@@ -42,6 +45,11 @@ export default function RecursosPregunta({
                             }
                             preguntaId={preguntaId}
                             recurso={item.recurso}
+                            cargarImagen={
+                                cargarImagen
+                                    ? () => cargarImagen(item.recurso)
+                                    : undefined
+                            }
                         />
                     );
                 }

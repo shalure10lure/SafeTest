@@ -8,6 +8,7 @@ import type { DataSource, EntityManager } from 'typeorm';
 
 let RendicionService: typeof import('./rendicion.service').RendicionService;
 let Rendicion: typeof import('./entity/rendicion.entity').Rendicion;
+let Examen: typeof import('../examen/entity/examen.entity').Examen;
 let AsignacionPregunta: typeof import('../asignacionpregunta/entity/asignacionpregunta.entity').AsignacionPregunta;
 let ExamenPregunta: typeof import('../examenpregunta/entity/examenpregunta.entity').ExamenPregunta;
 let ExamenTema: typeof import('../examentema/entity/examentema.entity').ExamenTema;
@@ -22,6 +23,9 @@ let RespuestaInciso: typeof import('../respuestainciso/entity/respuestainciso.en
 beforeAll(async () => {
   jest.unstable_mockModule('./entity/rendicion.entity', () => ({
     Rendicion: class Rendicion {},
+  }));
+  jest.unstable_mockModule('../examen/entity/examen.entity', () => ({
+    Examen: class Examen {},
   }));
   jest.unstable_mockModule(
     '../asignacionpregunta/entity/asignacionpregunta.entity',
@@ -64,6 +68,7 @@ beforeAll(async () => {
 
   ({ RendicionService } = await import('./rendicion.service'));
   ({ Rendicion } = await import('./entity/rendicion.entity'));
+  ({ Examen } = await import('../examen/entity/examen.entity'));
   ({ AsignacionPregunta } =
     await import('../asignacionpregunta/entity/asignacionpregunta.entity'));
   ({ ExamenPregunta } =
@@ -82,7 +87,11 @@ beforeAll(async () => {
 });
 
 function prepararServicio({
-  existente = null,
+  examen = {
+    duracion_min: null,
+    disponible_hasta: null,
+    al_terminar_tiempo: 'enviar_automatico',
+  },
   paraleloRelacionado = 1,
   inscripcion = 1,
   preguntasManual = [{ pregunta_id: 21, orden: 1 }],
@@ -117,7 +126,7 @@ function prepararServicio({
   incisos = inciso ? [inciso] : [],
   opcionesDisponibles = [{ nro_opcion: 1, texto_opcion: 'Alternativa' }],
 }: {
-  existente?: Record<string, unknown> | null;
+  examen?: Record<string, unknown> | null;
   paraleloRelacionado?: number;
   inscripcion?: number;
   preguntasManual?: { pregunta_id: number; orden: number }[];
@@ -146,18 +155,12 @@ function prepararServicio({
   builder.execute.mockResolvedValue({ raw: [{ estudiante_id: 9 }] });
 
   const rendicionRepository = {
-    findOneBy: jest
-      .fn()
-      .mockResolvedValueOnce(existente)
-      .mockResolvedValue({
-        estudiante_id: 9,
-        examen_id: 5,
-        paralelo_id: 7,
-        estado: 'en_curso',
-        fecha_inicio: new Date('2026-11-08T14:00:00.000Z'),
-      }),
     findOne: jest.fn().mockResolvedValue(rendicionActiva),
+    save: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue(builder),
+  };
+  const examenRepository = {
+    findOne: jest.fn().mockResolvedValue(examen),
   };
   const asignacionRepository = {
     insert: jest.fn(),
@@ -263,6 +266,7 @@ function prepararServicio({
   };
   const repositorios = new Map([
     [Rendicion, rendicionRepository],
+    [Examen, examenRepository],
     [AsignacionPregunta, asignacionRepository],
     [ExamenPregunta, examenPreguntaRepository],
     [ExamenTema, examenTemaRepository],
@@ -303,6 +307,7 @@ function prepararServicio({
     manager,
     builder,
     rendicionRepository,
+    examenRepository,
     asignacionRepository,
     examenPreguntaRepository,
     examenTemaRepository,
@@ -317,9 +322,34 @@ function prepararServicio({
   };
 }
 
+const RENDICION_NUEVA = {
+  estudiante_id: 9,
+  examen_id: 5,
+  paralelo_id: 7,
+  estado: 'en_curso',
+  fecha_inicio: new Date('2026-11-08T14:00:00.000Z'),
+};
+
+/**
+ * iniciarORecuperar lee la rendición tres veces (HU-17):
+ * 1) finalizarSiVencida, 2) lectura con bloqueo, 3) lectura tras el INSERT.
+ */
+function secuenciaIniciar(
+  montaje: ReturnType<typeof prepararServicio>,
+  existente: Record<string, unknown> | null,
+  creada: Record<string, unknown> | null = RENDICION_NUEVA,
+) {
+  montaje.rendicionRepository.findOne.mockReset();
+  montaje.rendicionRepository.findOne
+    .mockResolvedValueOnce(existente)
+    .mockResolvedValueOnce(existente)
+    .mockResolvedValueOnce(creada);
+}
+
 describe('RendicionService.iniciarORecuperar', () => {
   it('inicia un intento asignado y devuelve solo el contexto de preguntas', async () => {
     const montaje = prepararServicio();
+    secuenciaIniciar(montaje, null);
 
     const resultado = await montaje.service.iniciarORecuperar(5, 9, {
       paralelo_id: 7,
@@ -368,7 +398,6 @@ describe('RendicionService.iniciarORecuperar', () => {
 
       expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith({
         where: { examen_id: 5, estudiante_id: 9 },
-        select: { examen_id: true, estudiante_id: true, estado: true },
         lock: { mode: 'pessimistic_write' },
       });
       expect(montaje.asignacionRepository.findOne).toHaveBeenCalledWith({
@@ -573,7 +602,7 @@ describe('RendicionService.iniciarORecuperar', () => {
       });
       await expect(
         cerrada.service.guardarRespuesta(5, 9, 21, 'a', { opciones: [1] }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      ).rejects.toBeInstanceOf(ConflictException);
 
       const preguntaNoAsignada = prepararServicio();
       preguntaNoAsignada.asignacionRepository.findOne.mockResolvedValue(null);
@@ -627,14 +656,8 @@ describe('RendicionService.iniciarORecuperar', () => {
   });
 
   it('recupera un intento activo sin insertar otra rendición', async () => {
-    const existente = {
-      estudiante_id: 9,
-      examen_id: 5,
-      paralelo_id: 7,
-      estado: 'en_curso',
-      fecha_inicio: new Date('2026-11-08T14:00:00.000Z'),
-    };
-    const montaje = prepararServicio({ existente });
+    const montaje = prepararServicio();
+    secuenciaIniciar(montaje, { ...RENDICION_NUEVA });
     montaje.asignacionRepository.find.mockResolvedValue([
       { pregunta_id: 31, orden: 1 },
     ]);
@@ -700,8 +723,8 @@ describe('RendicionService.iniciarORecuperar', () => {
       const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
 
       expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith({
-        where: { examen_id: 5, estudiante_id: 9, estado: 'en_curso' },
-        select: { examen_id: true, estudiante_id: true },
+        where: { examen_id: 5, estudiante_id: 9 },
+        lock: { mode: 'pessimistic_write' },
       });
       expect(montaje.asignacionRepository.find).toHaveBeenCalledWith({
         where: { examen_id: 5, estudiante_id: 9 },
@@ -718,8 +741,14 @@ describe('RendicionService.iniciarORecuperar', () => {
 
       const consultaTexto = JSON.stringify(resultado);
       expect(consultaTexto).not.toMatch(
-        /correcta|explicacion|solucion|retroalimentacion|puntaje|calificacion|nota_final|Respuesta escrita/i,
+        /correcta|explicacion|solucion|retroalimentacion|puntaje|calificacion|nota_final/i,
       );
+      // La respuesta guardada es del propio estudiante y sí se devuelve.
+      const [primera, segunda] = resultado.preguntas;
+      expect(primera.incisos[0].respuesta).toEqual({
+        respuesta_texto: 'Respuesta escrita',
+      });
+      expect(segunda.incisos[0].respuesta).toEqual({ opciones: [1] });
       const selections = montaje.preguntaQueryBuilder.select.mock.calls
         .flat()
         .concat(montaje.preguntaQueryBuilder.addSelect.mock.calls.flat())
@@ -727,6 +756,29 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(selections).not.toMatch(
         /explicacion|solucion|correcta|puntaje|respuesta_texto/i,
       );
+    });
+
+    it('no incluye respuesta en los incisos que el estudiante aún no contestó', async () => {
+      const montaje = prepararServicio({
+        filasPreguntas: [
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'a',
+            enunciado_inciso: 'Inciso',
+            tipo_respuesta: 'desarrollo',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+        ],
+        respuestas: [{ pregunta_id: 21, letra: 'a', respuesta_texto: '   ' }],
+        opcionesMarcadas: [],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].incisos[0]).not.toHaveProperty('respuesta');
+      expect(resultado.preguntas[0].estado_respuesta).toBe('pendiente');
     });
 
     it('rechaza una rendición inexistente o perteneciente a otro estudiante', async () => {
@@ -737,7 +789,7 @@ describe('RendicionService.iniciarORecuperar', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { examen_id: 5, estudiante_id: 99, estado: 'en_curso' },
+          where: { examen_id: 5, estudiante_id: 99 },
         }),
       );
       expect(montaje.asignacionRepository.find).not.toHaveBeenCalled();
@@ -745,12 +797,13 @@ describe('RendicionService.iniciarORecuperar', () => {
 
     it('rechaza las rendiciones que no están en curso', async () => {
       const montaje = prepararServicio({
-        rendicionActiva: null,
+        rendicionActiva: { ...RENDICION_NUEVA, estado: 'enviada' },
       });
 
       await expect(
         montaje.service.consultarPreguntasActivas(5, 9),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(montaje.asignacionRepository.find).not.toHaveBeenCalled();
     });
 
     it('no recurre a ExamenPregunta si faltan asignaciones para la rendición', async () => {
@@ -799,20 +852,75 @@ describe('RendicionService.iniciarORecuperar', () => {
     });
   });
 
+  describe('RendicionService.verificarPreguntaDeRendicionActiva', () => {
+    it('acepta una pregunta asignada a la rendición propia en curso', async () => {
+      const montaje = prepararServicio();
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 9, 21),
+      ).resolves.toBeUndefined();
+      expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9 },
+      });
+      expect(montaje.asignacionRepository.findOne).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9, pregunta_id: 21 },
+        select: { pregunta_id: true },
+      });
+    });
+
+    it('rechaza si el estudiante no tiene una rendición en curso', async () => {
+      const montaje = prepararServicio({ rendicionActiva: null });
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 99, 21),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(montaje.asignacionRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una pregunta que no fue asignada al estudiante', async () => {
+      const montaje = prepararServicio();
+      montaje.asignacionRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 9, 77),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rechaza una rendición que ya no está en curso', async () => {
+      const montaje = prepararServicio({
+        rendicionActiva: { ...RENDICION_NUEVA, estado: 'enviada' },
+      });
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 9, 21),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(montaje.asignacionRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('si el tiempo terminó, envía la rendición y rechaza el acceso a los recursos', async () => {
+      const montaje = prepararServicio({
+        examen: {
+          duracion_min: 1,
+          disponible_hasta: null,
+          al_terminar_tiempo: 'enviar_automatico',
+        },
+        rendicionActiva: { ...RENDICION_NUEVA },
+      });
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 9, 21),
+      ).rejects.toThrow('No se pueden realizar más cambios');
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ estado: 'enviada' }),
+      );
+      expect(montaje.asignacionRepository.findOne).not.toHaveBeenCalled();
+    });
+  });
+
   it('recupera la rendición ganadora cuando otra solicitud ya creó la clave única', async () => {
-    const existente = {
-      estudiante_id: 9,
-      examen_id: 5,
-      paralelo_id: 7,
-      estado: 'en_curso',
-      fecha_inicio: new Date('2026-11-08T14:00:00.000Z'),
-    };
     const montaje = prepararServicio();
     montaje.builder.execute.mockResolvedValueOnce({ raw: [] });
-    montaje.rendicionRepository.findOneBy.mockReset();
-    montaje.rendicionRepository.findOneBy
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(existente);
+    secuenciaIniciar(montaje, null, { ...RENDICION_NUEVA });
     montaje.asignacionRepository.find.mockResolvedValue([
       { pregunta_id: 21, orden: 1 },
     ]);
@@ -828,6 +936,7 @@ describe('RendicionService.iniciarORecuperar', () => {
 
   it('rechaza un paralelo que no pertenece a la evaluación', async () => {
     const montaje = prepararServicio({ paraleloRelacionado: 0 });
+    secuenciaIniciar(montaje, null);
 
     await expect(
       montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 77 }),
@@ -844,6 +953,7 @@ describe('RendicionService.iniciarORecuperar', () => {
         { pregunta_id: 12 },
       ],
     });
+    secuenciaIniciar(montaje, null);
     const asignadas: { pregunta_id: number; orden: number }[] = [];
     montaje.asignacionRepository.insert.mockImplementation(
       async (filas: { pregunta_id: number; orden: number }[]) => {
@@ -854,11 +964,8 @@ describe('RendicionService.iniciarORecuperar', () => {
     const primera = await montaje.service.iniciarORecuperar(5, 9, {
       paralelo_id: 7,
     });
-    montaje.rendicionRepository.findOneBy.mockResolvedValueOnce({
-      estudiante_id: 9,
-      examen_id: 5,
-      paralelo_id: 7,
-      estado: 'en_curso',
+    secuenciaIniciar(montaje, {
+      ...RENDICION_NUEVA,
       fecha_inicio: primera.fecha_inicio,
     });
     montaje.asignacionRepository.find.mockResolvedValue(
@@ -875,14 +982,11 @@ describe('RendicionService.iniciarORecuperar', () => {
   });
 
   it('no recupera rendiciones que ya no están en curso', async () => {
-    const montaje = prepararServicio({
-      existente: {
-        estudiante_id: 9,
-        examen_id: 5,
-        paralelo_id: 7,
-        estado: 'enviada',
-        fecha_inicio: new Date(),
-      },
+    const montaje = prepararServicio();
+    secuenciaIniciar(montaje, {
+      ...RENDICION_NUEVA,
+      estado: 'enviada',
+      fecha_inicio: new Date(),
     });
 
     await expect(

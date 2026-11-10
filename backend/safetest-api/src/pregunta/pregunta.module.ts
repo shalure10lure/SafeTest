@@ -44,6 +44,6 @@ import { PreguntaRecursosService } from './recursos/recursos.service';
     AlmacenImagenesPregunta,
     RecursosTamanoFilter,
   ],
-  exports: [PreguntaService],
+  exports: [PreguntaService, PreguntaRecursosService],
 })
 export class PreguntaModule {}

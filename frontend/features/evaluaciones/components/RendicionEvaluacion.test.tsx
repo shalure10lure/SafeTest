@@ -11,6 +11,15 @@ vi.mock('../hooks/usePreguntasRendicion', () => ({
     usePreguntasRendicion: vi.fn(),
 }));
 
+vi.mock('../hooks/useRecursosRendicion', () => ({
+    useRecursosRendicion: () => ({
+        recursos: [],
+        cargando: false,
+        error: false,
+        cargarImagen: vi.fn(),
+    }),
+}));
+
 const preguntas: PreguntaRendicionEstudiante[] = [
     {
         pregunta_id: 21,

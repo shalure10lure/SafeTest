@@ -334,6 +334,14 @@ export class RendicionService {
           examen_id: examenId,
           preguntas: preguntas.map((pregunta) => ({
             ...pregunta,
+            incisos: pregunta.incisos.map((inciso) =>
+              this.conRespuestaGuardada(
+                inciso,
+                pregunta.pregunta_id,
+                respuestasPorInciso,
+                opcionesPorInciso,
+              ),
+            ),
             estado_respuesta: this.preguntaRespondida(
               pregunta,
               respuestasPorInciso,
@@ -353,6 +361,55 @@ export class RendicionService {
     }
   }
 
+
+  /**
+   * Comprueba que la pregunta pertenece a la rendición en curso del estudiante
+   * y que su tiempo no terminó. Lo usan los endpoints que entregan contenido de
+   * una pregunta (recursos).
+   */
+  async verificarPreguntaDeRendicionActiva(
+    examenId: number,
+    estudianteId: number,
+    preguntaId: number,
+  ): Promise<void> {
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const rendicion = await manager.getRepository(Rendicion).findOne({
+          where: {
+            examen_id: examenId,
+            estudiante_id: estudianteId,
+          },
+        });
+
+        if (!rendicion) {
+          throw new NotFoundException(
+            'La rendición activa no está disponible.',
+          );
+        }
+
+        await this.verificarTiempoActivo(manager, rendicion, examenId);
+
+        const asignacion = await manager
+          .getRepository(AsignacionPregunta)
+          .findOne({
+            where: {
+              examen_id: examenId,
+              estudiante_id: estudianteId,
+              pregunta_id: preguntaId,
+            },
+            select: { pregunta_id: true },
+          });
+
+        if (!asignacion) {
+          throw new NotFoundException(
+            'La pregunta no pertenece a esta rendición.',
+          );
+        }
+      });
+    } catch (error) {
+      await this.finalizarTrasErrorDeTiempo(error, examenId, estudianteId);
+    }
+  }
 
   async guardarRespuesta(
     examenId: number,
@@ -742,6 +799,31 @@ export class RendicionService {
         },
       ];
     });
+  }
+
+  /** Agrega al inciso la respuesta que el propio estudiante ya guardó. */
+  private conRespuestaGuardada(
+    inciso: IncisoRendicionEstudianteDto,
+    preguntaId: number,
+    respuestas: Map<string, string | null>,
+    opciones: Map<string, Set<number>>,
+  ): IncisoRendicionEstudianteDto {
+    const clave = this.claveInciso(preguntaId, inciso.letra);
+    const marcadas = opciones.get(clave);
+
+    if (marcadas && marcadas.size > 0) {
+      return {
+        ...inciso,
+        respuesta: { opciones: [...marcadas].sort((a, b) => a - b) },
+      };
+    }
+
+    const texto = respuestas.get(clave);
+    if (typeof texto === 'string' && texto.trim().length > 0) {
+      return { ...inciso, respuesta: { respuesta_texto: texto } };
+    }
+
+    return inciso;
   }
 
   private preguntaRespondida(

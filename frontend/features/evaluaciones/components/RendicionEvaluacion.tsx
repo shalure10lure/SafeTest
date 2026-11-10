@@ -18,6 +18,7 @@ import type {
     RespuestaRendicion,
 } from '../types';
 import { infoTipoPregunta } from '../tipos-pregunta';
+import RecursosRendicion from './RecursosRendicion';
 
 function EstadoCarga() {
     return (
@@ -339,6 +340,7 @@ function ControlRespuestaInciso({
 }
 
 function PreguntaActiva({
+    examenId,
     pregunta,
     indice,
     total,
@@ -348,6 +350,7 @@ function PreguntaActiva({
     erroresGuardado,
     cambiarRespuesta,
 }: {
+    examenId: number;
     pregunta: PreguntaRendicionEstudiante;
     indice: number;
     total: number;
@@ -374,6 +377,10 @@ function PreguntaActiva({
             <h1 className="mt-5 whitespace-pre-wrap text-lg font-semibold leading-7 text-slate-900">
                 {pregunta.enunciado}
             </h1>
+            <RecursosRendicion
+                examenId={examenId}
+                preguntaId={pregunta.pregunta_id}
+            />
             {pregunta.incisos.length > 0 && (
                 <div className="mt-5 space-y-4">
                     {pregunta.incisos.map((inciso) => {
@@ -581,6 +588,7 @@ export default function RendicionEvaluacion({
             <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
                 <section className="min-w-0">
                     <PreguntaActiva
+                        examenId={examenId}
                         pregunta={preguntaActual}
                         indice={indiceSeguro}
                         total={preguntas.length}

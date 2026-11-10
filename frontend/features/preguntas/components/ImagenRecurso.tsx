@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { preguntasService } from '../services/preguntas.service';
 
@@ -12,6 +12,11 @@ interface ImagenRecursoProps {
     /** Imagen ya guardada: se descarga con la sesión del docente. */
     preguntaId?: number;
     recurso?: string;
+    /**
+     * Cómo descargar la imagen guardada. Por defecto usa el endpoint del
+     * docente; la rendición del estudiante entrega el suyo.
+     */
+    cargarImagen?: () => Promise<Blob>;
     /** Clases de la imagen (por defecto, tamaño completo). */
     claseImagen?: string;
 }
@@ -26,19 +31,37 @@ export default function ImagenRecurso({
     urlLocal,
     preguntaId,
     recurso,
+    cargarImagen,
     claseImagen = 'max-h-72 max-w-full',
 }: ImagenRecursoProps) {
     const [urlRemota, setUrlRemota] = useState('');
     const [fallo, setFallo] = useState(false);
 
+    // El cargador suele recrearse en cada render del padre; se guarda en una
+    // referencia para no volver a descargar la imagen por eso.
+    const cargadorRef = useRef(cargarImagen);
+    const usaCargador = cargarImagen !== undefined;
+
     useEffect(() => {
-        if (preguntaId === undefined || recurso === undefined) return;
+        cargadorRef.current = cargarImagen;
+    }, [cargarImagen]);
+
+    useEffect(() => {
+        if (
+            !usaCargador &&
+            (preguntaId === undefined || recurso === undefined)
+        ) {
+            return;
+        }
 
         let vigente = true;
         let url = '';
 
-        preguntasService
-            .getImagen(preguntaId, recurso)
+        const descarga =
+            cargadorRef.current?.() ??
+            preguntasService.getImagen(preguntaId as number, recurso as string);
+
+        descarga
             .then((blob) => {
                 if (!vigente) return;
 
@@ -54,7 +77,7 @@ export default function ImagenRecurso({
 
             if (url) URL.revokeObjectURL(url);
         };
-    }, [preguntaId, recurso]);
+    }, [preguntaId, recurso, usaCargador]);
 
     const origen = urlLocal ?? urlRemota;
 

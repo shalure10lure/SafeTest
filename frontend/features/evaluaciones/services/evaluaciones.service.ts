@@ -1,4 +1,5 @@
 import { BaseService } from '@/services/api/base.service';
+import type { RecursoPregunta } from '@/features/preguntas/types';
 
 import type {
     AsignacionDisponible,
@@ -54,6 +55,21 @@ class EvaluacionesService extends BaseService {
     getPreguntasRendicion(id: number) {
         return this.get<PreguntasRendicionEstudiante>(
             `/${id}/estudiante/rendicion/preguntas`,
+        );
+    }
+
+    /** Fórmulas, tablas e imágenes de una pregunta de la rendición en curso. */
+    getRecursosPreguntaRendicion(id: number, preguntaId: number) {
+        return this.get<RecursoPregunta[]>(
+            `/${id}/estudiante/rendicion/preguntas/${preguntaId}/recursos`,
+        );
+    }
+
+    /** Descarga la imagen como Blob: el endpoint exige el token de sesión. */
+    getImagenRecursoRendicion(id: number, preguntaId: number, recurso: string) {
+        return this.get<Blob>(
+            `/${id}/estudiante/rendicion/preguntas/${preguntaId}/recursos/${encodeURIComponent(recurso)}/archivo`,
+            { responseType: 'blob' },
         );
     }
 
