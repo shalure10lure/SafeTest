@@ -253,6 +253,57 @@ describe('RendicionEvaluacion', () => {
         expect(screen.getByText('Respuesta guardada.')).toBeTruthy();
     });
 
+    it('indica que todo está guardado y no avisa al cerrar la pestaña', () => {
+        const agregar = vi.spyOn(window, 'addEventListener');
+        render(<RendicionEvaluacion examenId={12} />);
+
+        expect(
+            screen.getByText('Todas tus respuestas están guardadas.'),
+        ).toBeTruthy();
+        expect(
+            agregar.mock.calls.some(([tipo]) => tipo === 'beforeunload'),
+        ).toBe(false);
+        agregar.mockRestore();
+    });
+
+    it('avisa antes de cerrar la pestaña mientras hay un guardado en curso', () => {
+        mockUsePreguntasRendicion.mockReturnValue({
+            ...mockUsePreguntasRendicion(12),
+            incisosGuardando: ['21:a'],
+        });
+        const agregar = vi.spyOn(window, 'addEventListener');
+        const quitar = vi.spyOn(window, 'removeEventListener');
+
+        const { unmount } = render(<RendicionEvaluacion examenId={12} />);
+
+        expect(screen.getByText('Guardando respuestas…')).toBeTruthy();
+        expect(
+            agregar.mock.calls.some(([tipo]) => tipo === 'beforeunload'),
+        ).toBe(true);
+
+        unmount();
+        expect(
+            quitar.mock.calls.some(([tipo]) => tipo === 'beforeunload'),
+        ).toBe(true);
+        agregar.mockRestore();
+        quitar.mockRestore();
+    });
+
+    it('marca respuestas sin guardar cuando falla un guardado', () => {
+        mockUsePreguntasRendicion.mockReturnValue({
+            ...mockUsePreguntasRendicion(12),
+            erroresGuardado: { '21:a': 'Sin conexión' },
+        });
+
+        render(<RendicionEvaluacion examenId={12} />);
+
+        expect(
+            screen.getByText(
+                'Hay respuestas sin guardar. Usa «Reintentar guardado».',
+            ),
+        ).toBeTruthy();
+    });
+
     it('muestra errores de guardado sin ocultar el control', () => {
         mockUsePreguntasRendicion.mockReturnValueOnce({
             preguntas,
@@ -327,9 +378,7 @@ describe('RendicionEvaluacion', () => {
 
         render(<RendicionEvaluacion examenId={12} />);
 
-        expect(screen.getByRole('status').textContent).toBe(
-            'Guardando respuesta…',
-        );
+        expect(screen.getByText('Guardando respuesta…')).toBeTruthy();
     });
 
     it('muestra la carga y un error con opción de reintento', () => {

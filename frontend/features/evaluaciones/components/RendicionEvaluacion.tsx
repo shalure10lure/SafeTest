@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge, Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -103,16 +103,41 @@ function EstadoVacio({ examenId }: { examenId: number }) {
     );
 }
 
+type EstadoGuardado = 'guardado' | 'guardando' | 'sin_guardar';
+
+function IndicadorGuardado({ estado }: { estado: EstadoGuardado }) {
+    const texto =
+        estado === 'guardando'
+            ? 'Guardando respuestas…'
+            : estado === 'sin_guardar'
+              ? 'Hay respuestas sin guardar. Usa «Reintentar guardado».'
+              : 'Todas tus respuestas están guardadas.';
+    const color =
+        estado === 'sin_guardar'
+            ? 'text-red-700'
+            : estado === 'guardando'
+              ? 'text-slate-500'
+              : 'text-emerald-700';
+
+    return (
+        <p role="status" aria-live="polite" className={`text-xs ${color}`}>
+            {texto}
+        </p>
+    );
+}
+
 function CabeceraRendicion({
     preguntaActual,
     indiceActual,
     total,
     respondidas,
+    estadoGuardado,
 }: {
     preguntaActual: PreguntaRendicionEstudiante;
     indiceActual: number;
     total: number;
     respondidas: number;
+    estadoGuardado: EstadoGuardado;
 }) {
     const progreso = total === 0 ? 0 : Math.round((respondidas / total) * 100);
 
@@ -132,6 +157,7 @@ function CabeceraRendicion({
                     <p className="text-xs text-slate-500">
                         Pregunta {indiceActual + 1} de {total}
                     </p>
+                    <IndicadorGuardado estado={estadoGuardado} />
                 </div>
                 <Badge tono="blue" className="hidden sm:inline-flex">
                     <span
@@ -545,6 +571,25 @@ export default function RendicionEvaluacion({
         Record<string, RespuestaRendicion>
     >({});
 
+    const estadoGuardado: EstadoGuardado =
+        Object.keys(erroresGuardado).length > 0
+            ? 'sin_guardar'
+            : incisosGuardando.length > 0
+              ? 'guardando'
+              : 'guardado';
+
+    // Avisa antes de cerrar o recargar la pestaña si algo aún no se guardó.
+    useEffect(() => {
+        if (estadoGuardado === 'guardado') return;
+
+        const avisar = (evento: BeforeUnloadEvent) => {
+            evento.preventDefault();
+            evento.returnValue = '';
+        };
+        window.addEventListener('beforeunload', avisar);
+        return () => window.removeEventListener('beforeunload', avisar);
+    }, [estadoGuardado]);
+
     if (cargando) return <EstadoCarga />;
     if (error) {
         return (
@@ -578,6 +623,7 @@ export default function RendicionEvaluacion({
                 preguntaActual={preguntaActual}
                 indiceActual={indiceSeguro}
                 total={preguntas.length}
+                estadoGuardado={estadoGuardado}
                 respondidas={
                     preguntas.filter(
                         (pregunta) =>
