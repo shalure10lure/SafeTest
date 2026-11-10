@@ -117,17 +117,25 @@ export default function EvaluacionesTabla({
                                             Editar
                                         </LinkButton>
 
-                                        {evaluacion.estado === 'borrador' && (
-                                            <LinkButton
-                                                href={ROUTES.docente.evaluacionResumen(
-                                                    evaluacion.examen_id,
-                                                )}
-                                                variante="primaria"
-                                                className="h-8 px-3 text-xs"
-                                            >
-                                                Publicar
-                                            </LinkButton>
-                                        )}
+
+
+                                        <LinkButton
+                                            href={ROUTES.docente.evaluacionResumen(
+                                                evaluacion.examen_id,
+                                            )}
+                                            variante={
+                                                evaluacion.estado === 'borrador'
+                                                    ? 'primaria'
+                                                    : 'suave'
+                                            }
+                                            className="h-8 px-3 text-xs"
+                                        >
+                                            {evaluacion.estado === 'borrador'
+                                                ? 'Publicar'
+                                                : 'Ver resumen'}
+                                        </LinkButton>
+
+
                                     </div>
                                 </td>
                             </tr>

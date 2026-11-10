@@ -58,7 +58,8 @@ function EnlaceEditar({ href }: { href: string }) {
 
 function Contenido({ datos }: { datos: ResumenEvaluacion }) {
     const router = useRouter();
-
+    
+    const [mostrarTodos, setMostrarTodos] = useState(false);
     const [publicando, setPublicando] = useState(false);
     const [error, setError] = useState('');
     const [problemas, setProblemas] = useState<ProblemaPublicacion[]>([]);
@@ -69,13 +70,16 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
     );
 
     const examenId = datos.examen_id;
+
+    const estudiantesVisibles = mostrarTodos
+        ? datos.estudiantes_asignados
+        : datos.estudiantes_asignados.slice(0, MAX_CHIPS);
     const publicada = datos.estado === 'publicado';
     const respuestasPublicadas = respuestasPublicadasEn !== null;
     const totalCriterios = datos.criterios.reduce(
         (suma, criterio) => suma + criterio.cantidad,
         0,
     );
-
     async function publicar() {
         setError('');
         setProblemas([]);
@@ -229,11 +233,10 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                             />
                             <FilaResumen
                                 etiqueta="Cantidad de preguntas"
-                                valor={`${datos.total_preguntas} ${
-                                    datos.total_preguntas === 1
+                                valor={`${datos.total_preguntas} ${datos.total_preguntas === 1
                                         ? 'pregunta'
                                         : 'preguntas'
-                                }`}
+                                    }`}
                             />
                         </dl>
                     </SeccionConfiguracion>
@@ -288,8 +291,8 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                     valor={
                                         respuestasPublicadas
                                             ? `Publicadas el ${formatearFechaHora(
-                                                  respuestasPublicadasEn,
-                                              )}`
+                                                respuestasPublicadasEn,
+                                            )}`
                                             : 'Aún no publicadas'
                                     }
                                 />
@@ -321,11 +324,10 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                             />
                             <FilaResumen
                                 etiqueta="Estudiantes asignados"
-                                valor={`${datos.total_estudiantes} ${
-                                    datos.total_estudiantes === 1
+                                valor={`${datos.total_estudiantes} ${datos.total_estudiantes === 1
                                         ? 'estudiante'
                                         : 'estudiantes'
-                                }`}
+                                    }`}
                             />
                         </dl>
                     </SeccionConfiguracion>
@@ -367,6 +369,7 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                         </section>
                     )}
 
+
                     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <h3 className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
                             Estudiantes asignados
@@ -377,10 +380,9 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                 Ningún estudiante asignado.
                             </p>
                         ) : (
-                            <ul className="mt-3 flex flex-wrap gap-1.5">
-                                {datos.estudiantes_asignados
-                                    .slice(0, MAX_CHIPS)
-                                    .map((estudiante) => (
+                            <>
+                                <ul className="mt-3 flex flex-wrap gap-1.5">
+                                    {estudiantesVisibles.map((estudiante) => (
                                         <li
                                             key={estudiante.estudiante_id}
                                             className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700"
@@ -388,16 +390,24 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                             {estudiante.nombre_completo}
                                         </li>
                                     ))}
+                                </ul>
 
                                 {datos.estudiantes_asignados.length > MAX_CHIPS && (
-                                    <li className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                                        +{datos.estudiantes_asignados.length - MAX_CHIPS}{' '}
-                                        más
-                                    </li>
+                                    <button
+                                        type="button"
+                                        onClick={() => setMostrarTodos((actual) => !actual)}
+                                        aria-expanded={mostrarTodos}
+                                        className="mt-3 text-xs font-medium text-violet-700 hover:underline focus-visible:outline-2 focus-visible:outline-violet-600"
+                                    >
+                                        {mostrarTodos
+                                            ? 'Ver menos'
+                                            : `Ver todos (+${datos.estudiantes_asignados.length - MAX_CHIPS} más)`}
+                                    </button>
                                 )}
-                            </ul>
+                            </>
                         )}
                     </section>
+
 
                     {publicada && (
                         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
