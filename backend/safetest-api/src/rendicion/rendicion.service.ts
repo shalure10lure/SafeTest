@@ -272,6 +272,48 @@ export class RendicionService {
     });
   }
 
+  /**
+   * Comprueba que la pregunta pertenece a la rendición en curso del estudiante.
+   * Lo usan los endpoints que entregan contenido de una pregunta (recursos).
+   */
+  async verificarPreguntaDeRendicionActiva(
+    examenId: number,
+    estudianteId: number,
+    preguntaId: number,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const rendicion = await manager.getRepository(Rendicion).findOne({
+        where: {
+          examen_id: examenId,
+          estudiante_id: estudianteId,
+          estado: 'en_curso',
+        },
+        select: { examen_id: true, estudiante_id: true },
+      });
+
+      if (!rendicion) {
+        throw new NotFoundException('La rendición activa no está disponible.');
+      }
+
+      const asignacion = await manager
+        .getRepository(AsignacionPregunta)
+        .findOne({
+          where: {
+            examen_id: examenId,
+            estudiante_id: estudianteId,
+            pregunta_id: preguntaId,
+          },
+          select: { pregunta_id: true },
+        });
+
+      if (!asignacion) {
+        throw new NotFoundException(
+          'La pregunta no pertenece a esta rendición.',
+        );
+      }
+    });
+  }
+
   async guardarRespuesta(
     examenId: number,
     estudianteId: number,

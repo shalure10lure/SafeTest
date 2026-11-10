@@ -828,6 +828,42 @@ describe('RendicionService.iniciarORecuperar', () => {
     });
   });
 
+  describe('RendicionService.verificarPreguntaDeRendicionActiva', () => {
+    it('acepta una pregunta asignada a la rendición propia en curso', async () => {
+      const montaje = prepararServicio();
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 9, 21),
+      ).resolves.toBeUndefined();
+      expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9, estado: 'en_curso' },
+        select: { examen_id: true, estudiante_id: true },
+      });
+      expect(montaje.asignacionRepository.findOne).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9, pregunta_id: 21 },
+        select: { pregunta_id: true },
+      });
+    });
+
+    it('rechaza si el estudiante no tiene una rendición en curso', async () => {
+      const montaje = prepararServicio({ rendicionActiva: null });
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 99, 21),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(montaje.asignacionRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una pregunta que no fue asignada al estudiante', async () => {
+      const montaje = prepararServicio();
+      montaje.asignacionRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        montaje.service.verificarPreguntaDeRendicionActiva(5, 9, 77),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   it('recupera la rendición ganadora cuando otra solicitud ya creó la clave única', async () => {
     const existente = {
       estudiante_id: 9,

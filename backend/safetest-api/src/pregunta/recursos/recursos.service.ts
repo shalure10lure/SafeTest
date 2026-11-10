@@ -72,6 +72,58 @@ export class PreguntaRecursosService {
     return filas.map((fila) => this.aRespuesta(fila));
   }
 
+  /**
+   * Recursos de una pregunta para el estudiante que la está rindiendo.
+   * No comprueba propiedad: quien llama debe haber validado antes que la
+   * pregunta pertenece a la rendición en curso del estudiante.
+   */
+  async listarParaRendicion(preguntaId: number): Promise<RecursoPregunta[]> {
+    const filas = await this.recursoRepository.find({
+      where: { pregunta_id: preguntaId },
+      order: { creado_en: 'ASC', recurso: 'ASC' },
+    });
+
+    return filas.map((fila) => this.aRespuesta(fila));
+  }
+
+  /** Bytes de una imagen para el estudiante; misma precondición que arriba. */
+  async obtenerImagenParaRendicion(
+    preguntaId: number,
+    recurso: string,
+  ): Promise<{ contenido: Buffer; mime: string }> {
+    const fila = await this.buscar(preguntaId, recurso);
+
+    if (fila.tipo !== 'imagen' || !fila.mime_type) {
+      throw new NotFoundException('Recurso no encontrado');
+    }
+
+    // Las imágenes se guardan bajo la carpeta del docente dueño de la pregunta.
+    const duenos = await this.recursoRepository.manager.query<
+      { docente_id: number }[]
+    >(
+      `SELECT m.docente_id
+         FROM pregunta p
+         JOIN tema t ON t.tema_id = p.tema_id
+         JOIN materia m ON m.materia_id = t.materia_id
+        WHERE p.pregunta_id = $1`,
+      [preguntaId],
+    );
+
+    if (duenos.length === 0) {
+      throw new NotFoundException('La imagen no está disponible');
+    }
+
+    try {
+      const contenido = await this.almacen.leer(
+        this.claveDe(duenos[0].docente_id, recurso),
+      );
+
+      return { contenido, mime: fila.mime_type };
+    } catch {
+      throw new NotFoundException('La imagen no está disponible');
+    }
+  }
+
   // Adjuntar una imagen (PNG, JPG o WebP) a la pregunta.
   async agregarImagen(
     preguntaId: number,

@@ -17,6 +17,8 @@ import { ExamenTema } from '../examentema/entity/examentema.entity';
 
 import { ExamenController } from './examen.controller';
 import { ExamenEstudianteController } from './examen-estudiante.controller';
+import { ExamenEstudianteRecursosController } from './examen-estudiante-recursos.controller';
+import { PreguntaModule } from '../pregunta/pregunta.module';
 import { ExamenService } from './examen.service';
 import { ExamenAccesoService } from './examen-acceso.service';
 import { RendicionService } from '../rendicion/rendicion.service';
@@ -38,8 +40,13 @@ import { RendicionService } from '../rendicion/rendicion.service';
             ExamenTema,
             AsignacionPregunta,
         ]),
+        PreguntaModule,
     ],
-    controllers: [ExamenController, ExamenEstudianteController],
+    controllers: [
+        ExamenController,
+        ExamenEstudianteController,
+        ExamenEstudianteRecursosController,
+    ],
     providers: [ExamenService, ExamenAccesoService, RendicionService],
 })
 export class ExamenModule { }
