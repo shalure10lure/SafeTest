@@ -57,6 +57,35 @@ describe('evaluacionesService.getInstruccionesEstudiante', () => {
         });
     });
 
+    describe('evaluacionesService.recursos de la rendición', () => {
+        beforeEach(() => {
+            mocks.get.mockReset();
+            mocks.get.mockResolvedValue({ data: [] });
+        });
+
+        it('consulta los recursos de la pregunta con la ruta del estudiante', async () => {
+            await evaluacionesService.getRecursosPreguntaRendicion(12, 21);
+
+            expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
+                '/examenes/12/estudiante/rendicion/preguntas/21/recursos',
+                undefined,
+            );
+        });
+
+        it('descarga la imagen como Blob y codifica el recurso', async () => {
+            await evaluacionesService.getImagenRecursoRendicion(
+                12,
+                21,
+                'a b.png',
+            );
+
+            expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
+                '/examenes/12/estudiante/rendicion/preguntas/21/recursos/a%20b.png/archivo',
+                { responseType: 'blob' },
+            );
+        });
+    });
+
     describe('evaluacionesService.guardarRespuestaRendicion', () => {
         beforeEach(() => {
             mocks.patch.mockReset();
