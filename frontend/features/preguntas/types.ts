@@ -142,3 +142,30 @@ export interface PreguntaDetalle {
     tema?: TemaPregunta;
     materia?: MateriaPregunta;
 }
+
+
+/** Contenido especializado que puede llevar una pregunta (HU-12). */
+export type TipoRecurso = 'imagen' | 'tabla' | 'formula';
+
+export interface ContenidoTabla {
+    encabezado: boolean;
+    filas: string[][];
+}
+
+/** Recurso de una pregunta, tal como lo devuelve `GET /preguntas/:id/recursos`. */
+export interface RecursoPregunta {
+    /** Identificador del recurso dentro de la pregunta. */
+    recurso: string;
+    tipo: TipoRecurso;
+    /** Fórmula: LaTeX. Tabla: objeto. Imagen: null (se descarga aparte). */
+    contenido: ContenidoTabla | string | null;
+    mime_type: string | null;
+    nombre_original: string | null;
+    /** ISO 8601. */
+    creado_en: string;
+}
+
+/** Tabla o fórmula que se agrega a una pregunta; las imágenes van como archivo. */
+export type CrearRecursoEscritoDto =
+    | { tipo: 'formula'; contenido: string }
+    | { tipo: 'tabla'; contenido: ContenidoTabla };

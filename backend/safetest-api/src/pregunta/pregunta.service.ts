@@ -258,6 +258,16 @@ export class PreguntaService {
     };
   }
 
+    // Comprobar que la pregunta es del docente y puede modificarse (no está en
+  // una evaluación publicada). Lo usan los recursos de la pregunta.
+  async obtenerEditable(id: number, docenteId: number) {
+    const pregunta = await this.findOne(id, docenteId);
+
+    await this.validarNoVinculadaAExamen(id, true);
+
+    return pregunta;
+  }
+
   // Verificar que el tema pertenezca a una materia activa del docente.
   private async validarTemaDelDocente(
     temaId: number,
