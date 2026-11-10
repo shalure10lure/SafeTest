@@ -145,3 +145,20 @@ describe('evaluacionesService.getInstruccionesEstudiante', () => {
         );
     });
 });
+
+describe('evaluacionesService.finalizarRendicion', () => {
+    beforeEach(() => {
+        mocks.post.mockReset();
+        mocks.post.mockResolvedValue({ data: {} });
+    });
+
+    it('finaliza la rendición en la ruta del estudiante con cuerpo vacío', async () => {
+        await evaluacionesService.finalizarRendicion(12);
+
+        expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
+            '/examenes/12/estudiante/rendicion/finalizar',
+            {},
+            undefined,
+        );
+    });
+});

@@ -48,6 +48,9 @@ export function usePreguntasRendicion(examenId: number) {
         >(),
     );
     const pendientesPorInciso = useRef(new Map<string, number>());
+    // Copia sincrónica de los errores de guardado: permite consultarlos al
+    // finalizar justo después de esperar las colas, sin depender del estado.
+    const erroresGuardadoRef = useRef<Record<string, string>>({});
 
     const actualizarPreguntas = useCallback(
         (
@@ -186,6 +189,7 @@ export function usePreguntasRendicion(examenId: number) {
                 delete siguientes[claveInciso];
                 return siguientes;
             });
+            delete erroresGuardadoRef.current[claveInciso];
             pendientesPorInciso.current.set(
                 claveInciso,
                 (pendientesPorInciso.current.get(claveInciso) ?? 0) + 1,
@@ -237,6 +241,7 @@ export function usePreguntasRendicion(examenId: number) {
                             delete siguientes[claveInciso];
                             return siguientes;
                         });
+                        delete erroresGuardadoRef.current[claveInciso];
                     }
 
                     return resultado;
@@ -245,12 +250,14 @@ export function usePreguntasRendicion(examenId: number) {
                         montado.current &&
                         versionesInciso.current.get(claveInciso) === version
                     ) {
+                        const mensaje = mensajeDeError(
+                            errorRespuesta,
+                            'No se pudo guardar la respuesta.',
+                        );
+                        erroresGuardadoRef.current[claveInciso] = mensaje;
                         setErroresGuardado((actuales) => ({
                             ...actuales,
-                            [claveInciso]: mensajeDeError(
-                                errorRespuesta,
-                                'No se pudo guardar la respuesta.',
-                            ),
+                            [claveInciso]: mensaje,
                         }));
                     }
                     return null;
@@ -301,6 +308,21 @@ export function usePreguntasRendicion(examenId: number) {
         [actualizarPreguntas, examenId],
     );
 
+    /**
+     * Espera a que terminen todos los guardados en curso o encolados.
+     * Devuelve los incisos cuyo último guardado falló para que la pantalla
+     * no finalice la evaluación con respuestas sin guardar.
+     */
+    const esperarGuardadosPendientes = useCallback(async () => {
+        // Un guardado nuevo puede encadenarse mientras esperamos la cola
+        // anterior, por eso se repite hasta que no queden colas activas.
+        while (colasPorPregunta.current.size > 0) {
+            await Promise.allSettled([...colasPorPregunta.current.values()]);
+        }
+
+        return { fallidos: Object.keys(erroresGuardadoRef.current) };
+    }, []);
+
     useEffect(() => {
         montado.current = true;
         void recargar();
@@ -319,5 +341,6 @@ export function usePreguntasRendicion(examenId: number) {
         incisosGuardando,
         erroresGuardado,
         guardarRespuesta,
+        esperarGuardadosPendientes,
     };
 }

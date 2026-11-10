@@ -230,6 +230,46 @@ describe('ExamenEstudianteController', () => {
     ]);
   });
 
+  it('finaliza la rendición con la identidad del JWT y no con datos del cuerpo', async () => {
+    const rendicionService = {
+      finalizarRendicion: jest.fn().mockResolvedValue({
+        examen_id: 5,
+        estado: 'enviada',
+      }),
+    };
+    const controller = new ExamenEstudianteController(
+      {} as never,
+      rendicionService as never,
+    );
+
+    await controller.finalizarRendicion(5, {
+      user: { id: 9 },
+      body: { estudiante_id: 99 },
+      query: { estudiante_id: 99 },
+    } as never);
+
+    expect(rendicionService.finalizarRendicion).toHaveBeenCalledWith(5, 9);
+    expect(rendicionService.finalizarRendicion).toHaveBeenCalledTimes(1);
+  });
+
+  it('registra la ruta POST protegida para finalizar la rendición', () => {
+    const handler = ExamenEstudianteController.prototype.finalizarRendicion;
+
+    expect(Reflect.getMetadata('path', handler)).toBe(
+      ':id/estudiante/rendicion/finalizar',
+    );
+    expect(Reflect.getMetadata('method', handler)).toBe(1);
+    const guardas = Reflect.getMetadata(
+      '__guards__',
+      ExamenEstudianteController,
+    ) as { name: string }[];
+
+    expect(guardas.map((guardia) => guardia.name)).toEqual([
+      'JwtAuthGuard',
+      'EstudianteGuard',
+    ]);
+  });
+
   it('registra la ruta protegida para consultar preguntas de rendición', () => {
     const handler =
       ExamenEstudianteController.prototype.consultarPreguntasRendicion;

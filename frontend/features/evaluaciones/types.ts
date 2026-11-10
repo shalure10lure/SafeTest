@@ -105,6 +105,13 @@ export interface RespuestaGuardadaEstudiante {
     guardado_en: string;
 }
 
+/** Respuesta de finalizar manualmente una rendición (HU-26). */
+export interface RendicionFinalizadaEstudiante {
+    examen_id: number;
+    estado: 'enviada' | 'corregida';
+    fecha_envio: string | null;
+}
+
 export interface Evaluacion {
     examen_id: number;
     titulo: string | null;

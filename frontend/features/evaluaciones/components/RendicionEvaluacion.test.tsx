@@ -1,9 +1,30 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RendicionEvaluacion from './RendicionEvaluacion';
 import { usePreguntasRendicion } from '../hooks/usePreguntasRendicion';
 import type { PreguntaRendicionEstudiante } from '../types';
+
+const mocks = vi.hoisted(() => ({
+    replace: vi.fn(),
+    finalizarRendicion: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({ replace: mocks.replace }),
+}));
+
+vi.mock('../services/evaluaciones.service', () => ({
+    evaluacionesService: {
+        finalizarRendicion: mocks.finalizarRendicion,
+    },
+}));
 
 vi.mock('../hooks/usePreguntasRendicion', () => ({
     claveIncisoRendicion: (preguntaId: number, letra: string) =>
@@ -51,8 +72,11 @@ const preguntas: PreguntaRendicionEstudiante[] = [
 
 const mockUsePreguntasRendicion = vi.mocked(usePreguntasRendicion);
 
-beforeEach(() => {
-    mockUsePreguntasRendicion.mockReturnValue({
+/** Estado del hook con valores seguros por defecto; cada prueba ajusta lo suyo. */
+function crearEstado(
+    cambios: Partial<ReturnType<typeof usePreguntasRendicion>> = {},
+): ReturnType<typeof usePreguntasRendicion> {
+    return {
         preguntas,
         cargando: false,
         error: '',
@@ -60,8 +84,24 @@ beforeEach(() => {
         respuestasLocales: {},
         incisosGuardando: [],
         erroresGuardado: {},
-        guardarRespuesta: vi.fn(),
+        guardarRespuesta: vi.fn().mockResolvedValue(null),
+        esperarGuardadosPendientes: vi
+            .fn()
+            .mockResolvedValue({ fallidos: [] }),
+        ...cambios,
+    };
+}
+
+beforeEach(() => {
+    mocks.replace.mockReset();
+    mocks.finalizarRendicion.mockReset();
+    mocks.finalizarRendicion.mockResolvedValue({
+        examen_id: 12,
+        estado: 'enviada',
+        fecha_envio: '2026-11-08T15:00:00.000Z',
     });
+
+    mockUsePreguntasRendicion.mockReturnValue(crearEstado());
 });
 
 afterEach(() => cleanup());
@@ -121,16 +161,9 @@ describe('RendicionEvaluacion', () => {
 
     it('guarda una selección exclusiva y muestra el estado de guardado', () => {
         const guardarRespuesta = vi.fn().mockResolvedValue(null);
-        mockUsePreguntasRendicion.mockReturnValue({
-            preguntas,
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta,
-        });
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ guardarRespuesta }),
+        );
 
         render(<RendicionEvaluacion examenId={12} />);
         fireEvent.click(screen.getByRole('radio', { name: 'Alternativa uno' }));
@@ -189,14 +222,8 @@ describe('RendicionEvaluacion', () => {
             ],
         };
         mockUsePreguntasRendicion.mockReturnValue({
+            ...crearEstado({ guardarRespuesta }),
             preguntas: [preguntaConTipos],
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta,
         });
 
         render(<RendicionEvaluacion examenId={12} />);
@@ -230,16 +257,11 @@ describe('RendicionEvaluacion', () => {
     });
 
     it('recupera en pantalla respuestas guardadas durante la sesión y presenta su estado', () => {
-        mockUsePreguntasRendicion.mockReturnValueOnce({
-            preguntas,
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: { '21:a': { opciones: [2] } },
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta: vi.fn(),
-        });
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({
+                respuestasLocales: { '21:a': { opciones: [2] } },
+            }),
+        );
 
         render(<RendicionEvaluacion examenId={12} />);
 
@@ -305,16 +327,11 @@ describe('RendicionEvaluacion', () => {
     });
 
     it('muestra errores de guardado sin ocultar el control', () => {
-        mockUsePreguntasRendicion.mockReturnValueOnce({
-            preguntas,
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: { '21:a': 'Verifica tu conexión.' },
-            guardarRespuesta: vi.fn(),
-        });
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({
+                erroresGuardado: { '21:a': 'Verifica tu conexión.' },
+            }),
+        );
 
         render(<RendicionEvaluacion examenId={12} />);
 
@@ -328,16 +345,7 @@ describe('RendicionEvaluacion', () => {
 
     it('reintenta el último valor escrito sin que el estudiante lo cambie otra vez', () => {
         const guardarRespuesta = vi.fn().mockResolvedValue(null);
-        const estadoInicial = {
-            preguntas,
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta,
-        };
+        const estadoInicial = crearEstado({ guardarRespuesta });
         mockUsePreguntasRendicion.mockReturnValue(estadoInicial);
 
         const vista = render(<RendicionEvaluacion examenId={12} />);
@@ -365,16 +373,9 @@ describe('RendicionEvaluacion', () => {
     });
 
     it('indica cuando una respuesta se está guardando', () => {
-        mockUsePreguntasRendicion.mockReturnValueOnce({
-            preguntas,
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: ['21:a'],
-            erroresGuardado: {},
-            guardarRespuesta: vi.fn(),
-        });
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({ incisosGuardando: ['21:a'] }),
+        );
 
         render(<RendicionEvaluacion examenId={12} />);
 
@@ -382,30 +383,20 @@ describe('RendicionEvaluacion', () => {
     });
 
     it('muestra la carga y un error con opción de reintento', () => {
-        mockUsePreguntasRendicion.mockReturnValueOnce({
-            preguntas: [],
-            cargando: true,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta: vi.fn(),
-        });
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({ preguntas: [], cargando: true }),
+        );
         const { rerender } = render(<RendicionEvaluacion examenId={12} />);
         expect(screen.getByLabelText('Cargando rendición')).toBeTruthy();
 
         const recargar = vi.fn();
-        mockUsePreguntasRendicion.mockReturnValueOnce({
-            preguntas: [],
-            cargando: false,
-            error: 'No se pudo consultar la rendición.',
-            recargar,
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta: vi.fn(),
-        });
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({
+                preguntas: [],
+                error: 'No se pudo consultar la rendición.',
+                recargar,
+            }),
+        );
         rerender(<RendicionEvaluacion examenId={12} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
@@ -416,16 +407,9 @@ describe('RendicionEvaluacion', () => {
     });
 
     it('muestra estado vacío cuando no hay preguntas asignadas', () => {
-        mockUsePreguntasRendicion.mockReturnValueOnce({
-            preguntas: [],
-            cargando: false,
-            error: '',
-            recargar: vi.fn(),
-            respuestasLocales: {},
-            incisosGuardando: [],
-            erroresGuardado: {},
-            guardarRespuesta: vi.fn(),
-        });
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({ preguntas: [] }),
+        );
 
         render(<RendicionEvaluacion examenId={12} />);
 
@@ -439,5 +423,195 @@ describe('RendicionEvaluacion', () => {
                 .getByRole('link', { name: 'Volver a instrucciones' })
                 .getAttribute('href'),
         ).toBe('/estudiante/evaluaciones/12/instrucciones');
+    });
+
+    it('pide confirmación y cancelar mantiene al estudiante en la evaluación', () => {
+        render(<RendicionEvaluacion examenId={12} />);
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Finalizar evaluación' }),
+        );
+
+        expect(screen.getByRole('dialog')).toBeTruthy();
+        expect(
+            screen.getByRole('heading', { name: '¿Finalizar evaluación?' }),
+        ).toBeTruthy();
+        expect(mocks.finalizarRendicion).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(mocks.finalizarRendicion).not.toHaveBeenCalled();
+        expect(mocks.replace).not.toHaveBeenCalled();
+        expect(
+            screen.getByRole('heading', {
+                name: 'Enunciado de la primera pregunta',
+            }),
+        ).toBeTruthy();
+    });
+
+    it('espera los guardados pendientes y redirige solo tras confirmar el backend', async () => {
+        let resolverGuardados!: (valor: { fallidos: string[] }) => void;
+        const esperarGuardadosPendientes = vi.fn(
+            () =>
+                new Promise<{ fallidos: string[] }>((resolve) => {
+                    resolverGuardados = resolve;
+                }),
+        );
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ esperarGuardadosPendientes }),
+        );
+
+        let resolverFinalizar!: (valor: {
+            examen_id: number;
+            estado: string;
+            fecha_envio: string | null;
+        }) => void;
+        mocks.finalizarRendicion.mockReturnValue(
+            new Promise((resolve) => {
+                resolverFinalizar = resolve;
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Finalizar evaluación' }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Sí, finalizar' }),
+        );
+
+        expect(esperarGuardadosPendientes).toHaveBeenCalledTimes(1);
+        expect(mocks.finalizarRendicion).not.toHaveBeenCalled();
+        expect(mocks.replace).not.toHaveBeenCalled();
+        expect(
+            screen
+                .getByRole('button', { name: 'Finalizando…' })
+                .hasAttribute('disabled'),
+        ).toBe(true);
+
+        resolverGuardados({ fallidos: [] });
+
+        await waitFor(() =>
+            expect(mocks.finalizarRendicion).toHaveBeenCalledWith(12),
+        );
+        expect(mocks.replace).not.toHaveBeenCalled();
+
+        resolverFinalizar({
+            examen_id: 12,
+            estado: 'enviada',
+            fecha_envio: null,
+        });
+
+        await waitFor(() =>
+            expect(mocks.replace).toHaveBeenCalledWith(
+                '/estudiante/evaluaciones',
+            ),
+        );
+    });
+
+    it('no finaliza si quedaron respuestas sin guardar', async () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                esperarGuardadosPendientes: vi
+                    .fn()
+                    .mockResolvedValue({ fallidos: ['21:a'] }),
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Finalizar evaluación' }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Sí, finalizar' }),
+        );
+
+        await waitFor(() =>
+            expect(screen.getByRole('alert').textContent).toContain(
+                'no se pudieron guardar',
+            ),
+        );
+        expect(mocks.finalizarRendicion).not.toHaveBeenCalled();
+        expect(mocks.replace).not.toHaveBeenCalled();
+        expect(
+            screen.getByRole('button', { name: 'Reintentar' }),
+        ).toBeTruthy();
+    });
+
+    it('un error del backend no redirige y permite reintentar', async () => {
+        mocks.finalizarRendicion.mockRejectedValueOnce(
+            new Error('fallo de red'),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Finalizar evaluación' }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Sí, finalizar' }),
+        );
+
+        await waitFor(() =>
+            expect(screen.getByRole('alert').textContent).toContain(
+                'No se pudo finalizar la evaluación.',
+            ),
+        );
+        expect(mocks.replace).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+        await waitFor(() =>
+            expect(mocks.replace).toHaveBeenCalledWith(
+                '/estudiante/evaluaciones',
+            ),
+        );
+        expect(mocks.finalizarRendicion).toHaveBeenCalledTimes(2);
+    });
+
+    it('evita solicitudes duplicadas mientras la finalización está en curso', async () => {
+        let resolverFinalizar!: (valor: {
+            examen_id: number;
+            estado: string;
+            fecha_envio: string | null;
+        }) => void;
+        mocks.finalizarRendicion.mockReturnValue(
+            new Promise((resolve) => {
+                resolverFinalizar = resolve;
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Finalizar evaluación' }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Sí, finalizar' }),
+        );
+
+        await waitFor(() =>
+            expect(mocks.finalizarRendicion).toHaveBeenCalledTimes(1),
+        );
+
+        const enProceso = screen.getByRole('button', {
+            name: 'Finalizando…',
+        });
+        expect(enProceso.hasAttribute('disabled')).toBe(true);
+
+        fireEvent.click(enProceso);
+
+        expect(mocks.finalizarRendicion).toHaveBeenCalledTimes(1);
+
+        resolverFinalizar({
+            examen_id: 12,
+            estado: 'enviada',
+            fecha_envio: null,
+        });
+
+        await waitFor(() =>
+            expect(mocks.replace).toHaveBeenCalledWith(
+                '/estudiante/evaluaciones',
+            ),
+        );
     });
 });

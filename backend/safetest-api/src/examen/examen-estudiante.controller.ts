@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { IniciarRendicionDto } from '../rendicion/dto/iniciar-rendicion.dto';
 import { GuardarRespuestaEstudianteDto } from '../rendicion/dto/guardar-respuesta-estudiante.dto';
 import type { RendicionEstudianteDto } from '../rendicion/dto/rendicion-estudiante.dto';
+import type { RendicionFinalizadaEstudianteDto } from '../rendicion/dto/rendicion-finalizada-estudiante.dto';
 import type { RespuestaGuardadaEstudianteDto } from '../rendicion/dto/respuesta-guardada-estudiante.dto';
 import { RendicionService } from '../rendicion/rendicion.service';
 import { ExamenAccesoService } from './examen-acceso.service';
@@ -88,6 +89,14 @@ export class ExamenEstudianteController {
     @Req() request: { user: { id: number } },
   ): Promise<RendicionEstudianteDto> {
     return this.rendicionService.iniciarORecuperar(id, request.user.id, dto);
+  }
+
+  @Post(':id/estudiante/rendicion/finalizar')
+  finalizarRendicion(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: { user: { id: number } },
+  ): Promise<RendicionFinalizadaEstudianteDto> {
+    return this.rendicionService.finalizarRendicion(id, request.user.id);
   }
 
   @Get(':id/estudiante')

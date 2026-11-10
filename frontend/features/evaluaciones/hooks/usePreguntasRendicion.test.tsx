@@ -695,4 +695,73 @@ describe('usePreguntasRendicion', () => {
         );
         expect(result.current.incisosGuardando).toEqual([]);
     });
+
+    it('espera los guardados en curso antes de finalizar', async () => {
+        let resolverGuardado!: (respuesta: RespuestaGuardadaEstudiante) => void;
+        mocks.guardarRespuestaRendicion.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolverGuardado = resolve;
+            }),
+        );
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        let guardado!: Promise<RespuestaGuardadaEstudiante | null>;
+        act(() => {
+            guardado = result.current.guardarRespuesta(21, 'a', {
+                respuesta_texto: 'Última respuesta',
+            });
+        });
+
+        let esperaResuelta = false;
+        let espera!: Promise<{ fallidos: string[] }>;
+        act(() => {
+            espera = result.current
+                .esperarGuardadosPendientes()
+                .then((resultado) => {
+                    esperaResuelta = true;
+                    return resultado;
+                });
+        });
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(esperaResuelta).toBe(false);
+
+        let resultado!: { fallidos: string[] };
+        await act(async () => {
+            resolverGuardado(
+                respuestaGuardada({ estado_respuesta: 'respondida' }),
+            );
+            resultado = await espera;
+            await guardado;
+        });
+
+        expect(resultado).toEqual({ fallidos: [] });
+        expect(result.current.respuestasLocales['21:a']).toEqual({
+            respuesta_texto: 'Última respuesta',
+        });
+    });
+
+    it('informa los incisos cuyo último guardado falló al finalizar', async () => {
+        mocks.guardarRespuestaRendicion.mockRejectedValueOnce(
+            new Error('fallo'),
+        );
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        await act(async () => {
+            await result.current.guardarRespuesta(21, 'a', {
+                respuesta_texto: 'No guardada',
+            });
+        });
+
+        const resultado = await result.current.esperarGuardadosPendientes();
+
+        expect(resultado.fallidos).toEqual(['21:a']);
+    });
 });

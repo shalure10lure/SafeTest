@@ -29,6 +29,7 @@ import type {
   PreguntasRendicionEstudianteDto,
 } from './dto/preguntas-rendicion-estudiante.dto';
 import type { RendicionEstudianteDto } from './dto/rendicion-estudiante.dto';
+import type { RendicionFinalizadaEstudianteDto } from './dto/rendicion-finalizada-estudiante.dto';
 import type { RespuestaGuardadaEstudianteDto } from './dto/respuesta-guardada-estudiante.dto';
 
 import { Examen } from '../examen/entity/examen.entity';
@@ -1108,6 +1109,49 @@ export class RendicionService {
       // No se eliminan ni modifican RespuestaInciso
       // ni OpcionMarcada. Se conservan las respuestas.
       return true;
+    });
+  }
+
+  /**
+   * Finaliza manualmente el intento del estudiante autenticado (HU-26).
+   *
+   * Es idempotente: si la rendición ya fue enviada o corregida devuelve su
+   * estado sin volver a escribir, de modo que un doble envío no falla. No
+   * elimina ni modifica las respuestas guardadas.
+   */
+  async finalizarRendicion(
+    examenId: number,
+    estudianteId: number,
+  ): Promise<RendicionFinalizadaEstudianteDto> {
+    return this.dataSource.transaction(async (manager) => {
+      const rendicionRepository = manager.getRepository(Rendicion);
+
+      const rendicion = await rendicionRepository.findOne({
+        where: {
+          examen_id: examenId,
+          estudiante_id: estudianteId,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!rendicion) {
+        throw new NotFoundException(
+          'No se encontró la rendición del estudiante.',
+        );
+      }
+
+      if (rendicion.estado === 'en_curso') {
+        rendicion.estado = 'enviada';
+        rendicion.fecha_envio = rendicion.fecha_envio ?? new Date();
+
+        await rendicionRepository.save(rendicion);
+      }
+
+      return {
+        examen_id: examenId,
+        estado: rendicion.estado as 'enviada' | 'corregida',
+        fecha_envio: rendicion.fecha_envio ?? null,
+      };
     });
   }
 

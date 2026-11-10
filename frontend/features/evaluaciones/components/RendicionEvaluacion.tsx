@@ -1,7 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+    ArrowLeft,
+    ArrowRight,
+    CheckCircle2,
+    ShieldCheck,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Badge, Card } from '@/components/ui/Card';
@@ -12,6 +18,8 @@ import {
     claveIncisoRendicion,
     usePreguntasRendicion,
 } from '../hooks/usePreguntasRendicion';
+import { mensajeDeError } from '../mensaje-error';
+import { evaluacionesService } from '../services/evaluaciones.service';
 import type {
     IncisoRendicionEstudiante,
     PreguntaRendicionEstudiante,
@@ -551,6 +559,86 @@ function NavegadorPreguntas({
     );
 }
 
+function DialogoFinalizacion({
+    finalizando,
+    error,
+    onCancelar,
+    onConfirmar,
+}: {
+    finalizando: boolean;
+    error: string;
+    onCancelar: () => void;
+    onConfirmar: () => void;
+}) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="finalizar-evaluacion-titulo"
+                aria-describedby="finalizar-evaluacion-descripcion"
+                className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
+            >
+                <div className="flex items-start gap-3">
+                    <span
+                        aria-hidden="true"
+                        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+                    >
+                        <CheckCircle2 className="size-5" />
+                    </span>
+                    <div>
+                        <h2
+                            id="finalizar-evaluacion-titulo"
+                            className="text-base font-semibold text-slate-900"
+                        >
+                            ¿Finalizar evaluación?
+                        </h2>
+                        <p
+                            id="finalizar-evaluacion-descripcion"
+                            className="mt-2 text-sm text-slate-600"
+                        >
+                            Se guardarán tus respuestas pendientes y ya no
+                            podrás modificarlas. ¿Deseas continuar?
+                        </p>
+                    </div>
+                </div>
+
+                {error && (
+                    <p
+                        role="alert"
+                        className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+                    >
+                        {error}
+                    </p>
+                )}
+
+                <div className="mt-5 flex justify-end gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onCancelar}
+                        disabled={finalizando}
+                    >
+                        Cancelar
+                    </Button>
+                    <Button
+                        type="button"
+                        onClick={onConfirmar}
+                        disabled={finalizando}
+                        className="bg-emerald-700 text-white hover:bg-emerald-800"
+                    >
+                        {finalizando
+                            ? 'Finalizando…'
+                            : error
+                              ? 'Reintentar'
+                              : 'Sí, finalizar'}
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function RendicionEvaluacion({
     examenId,
 }: {
@@ -565,11 +653,17 @@ export default function RendicionEvaluacion({
         incisosGuardando,
         erroresGuardado,
         guardarRespuesta,
+        esperarGuardadosPendientes,
     } = usePreguntasRendicion(examenId);
+    const router = useRouter();
     const [indiceActual, setIndiceActual] = useState(0);
     const [respuestasBorrador, setRespuestasBorrador] = useState<
         Record<string, RespuestaRendicion>
     >({});
+    const [confirmandoFinalizacion, setConfirmandoFinalizacion] =
+        useState(false);
+    const [finalizando, setFinalizando] = useState(false);
+    const [errorFinalizacion, setErrorFinalizacion] = useState('');
 
     const estadoGuardado: EstadoGuardado =
         Object.keys(erroresGuardado).length > 0
@@ -614,6 +708,51 @@ export default function RendicionEvaluacion({
         }));
         void guardarRespuesta(preguntaId, letra, respuesta);
     };
+
+    const abrirConfirmacion = () => {
+        setErrorFinalizacion('');
+        setConfirmandoFinalizacion(true);
+    };
+
+    const cancelarFinalizacion = () => {
+        if (finalizando) return;
+        setConfirmandoFinalizacion(false);
+        setErrorFinalizacion('');
+    };
+
+    const confirmarFinalizacion = async () => {
+        if (finalizando) return;
+
+        setFinalizando(true);
+        setErrorFinalizacion('');
+
+        try {
+            const { fallidos } = await esperarGuardadosPendientes();
+
+            if (fallidos.length > 0) {
+                setErrorFinalizacion(
+                    'Hay respuestas que no se pudieron guardar. Cancela, usa «Reintentar guardado» y vuelve a finalizar.',
+                );
+                return;
+            }
+
+            await evaluacionesService.finalizarRendicion(examenId);
+
+            // Solo se abandona la rendición cuando el backend confirmó.
+            setConfirmandoFinalizacion(false);
+            router.replace(ROUTES.estudiante.evaluaciones);
+        } catch (errorFinalizar) {
+            setErrorFinalizacion(
+                mensajeDeError(
+                    errorFinalizar,
+                    'No se pudo finalizar la evaluación. Inténtalo nuevamente.',
+                ),
+            );
+        } finally {
+            setFinalizando(false);
+        }
+    };
+
     const indiceSeguro = Math.min(indiceActual, preguntas.length - 1);
     const preguntaActual = preguntas[indiceSeguro];
 
@@ -687,6 +826,23 @@ export default function RendicionEvaluacion({
                         indiceActual={indiceSeguro}
                         seleccionar={setIndiceActual}
                     />
+                    <Card className="p-4">
+                        <p className="text-sm font-semibold text-slate-900">
+                            ¿Terminaste?
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Revisa tus respuestas antes de finalizar: después
+                            no podrás modificarlas.
+                        </p>
+                        <Button
+                            type="button"
+                            onClick={abrirConfirmacion}
+                            className="mt-3 min-h-10 w-full bg-[#203D89] text-white hover:bg-[#1a3270]"
+                        >
+                            <CheckCircle2 aria-hidden="true" />
+                            Finalizar evaluación
+                        </Button>
+                    </Card>
                     <Link
                         href={ROUTES.estudiante.instruccionesEvaluacion(
                             examenId,
@@ -698,6 +854,15 @@ export default function RendicionEvaluacion({
                     </Link>
                 </aside>
             </div>
+
+            {confirmandoFinalizacion && (
+                <DialogoFinalizacion
+                    finalizando={finalizando}
+                    error={errorFinalizacion}
+                    onCancelar={cancelarFinalizacion}
+                    onConfirmar={() => void confirmarFinalizacion()}
+                />
+            )}
         </main>
     );
 }

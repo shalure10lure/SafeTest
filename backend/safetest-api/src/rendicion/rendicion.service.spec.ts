@@ -993,4 +993,73 @@ describe('RendicionService.iniciarORecuperar', () => {
       montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  describe('RendicionService.finalizarRendicion', () => {
+    it('marca como enviada la rendición en curso y conserva las respuestas', async () => {
+      const montaje = prepararServicio();
+
+      const resultado = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 9 },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'enviada',
+          fecha_envio: expect.any(Date),
+        }),
+      );
+      expect(resultado).toMatchObject({
+        examen_id: 5,
+        estado: 'enviada',
+        fecha_envio: expect.any(Date),
+      });
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.respuestaRepository.find).not.toHaveBeenCalled();
+      expect(montaje.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
+      expect(montaje.opcionMarcadaRepository.insert).not.toHaveBeenCalled();
+    });
+
+    it('es idempotente si la rendición ya fue enviada o corregida', async () => {
+      const fechaEnvio = new Date('2026-11-08T15:00:00.000Z');
+
+      const enviada = prepararServicio({
+        rendicionActiva: {
+          ...RENDICION_NUEVA,
+          estado: 'enviada',
+          fecha_envio: fechaEnvio,
+        },
+      });
+      const primera = await enviada.service.finalizarRendicion(5, 9);
+
+      expect(enviada.rendicionRepository.save).not.toHaveBeenCalled();
+      expect(primera).toMatchObject({
+        examen_id: 5,
+        estado: 'enviada',
+        fecha_envio: fechaEnvio,
+      });
+
+      const corregida = prepararServicio({
+        rendicionActiva: {
+          ...RENDICION_NUEVA,
+          estado: 'corregida',
+          fecha_envio: fechaEnvio,
+        },
+      });
+      const segunda = await corregida.service.finalizarRendicion(5, 9);
+
+      expect(corregida.rendicionRepository.save).not.toHaveBeenCalled();
+      expect(segunda.estado).toBe('corregida');
+    });
+
+    it('rechaza una rendición inexistente sin escribir nada', async () => {
+      const montaje = prepararServicio({ rendicionActiva: null });
+
+      await expect(
+        montaje.service.finalizarRendicion(5, 99),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
+    });
+  });
 });

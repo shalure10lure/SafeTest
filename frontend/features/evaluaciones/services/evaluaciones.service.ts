@@ -19,6 +19,7 @@ import type {
     PublicacionRespuestas,
     PreguntasRendicionEstudiante,
     RendicionEstudiante,
+    RendicionFinalizadaEstudiante,
     RespuestaGuardadaEstudiante,
     RespuestaRendicion,
     ResumenEvaluacion,
@@ -82,6 +83,14 @@ class EvaluacionesService extends BaseService {
         return this.patch<RespuestaGuardadaEstudiante, RespuestaRendicion>(
             `/${id}/estudiante/rendicion/respuestas/${preguntaId}/${encodeURIComponent(letra)}`,
             respuesta,
+        );
+    }
+
+    /** Finaliza el intento en curso; el backend conserva las respuestas. */
+    finalizarRendicion(id: number) {
+        return this.post<RendicionFinalizadaEstudiante, Record<string, never>>(
+            `/${id}/estudiante/rendicion/finalizar`,
+            {},
         );
     }
 
