@@ -19,6 +19,7 @@ import { ExamenController } from './examen.controller';
 import { ExamenEstudianteController } from './examen-estudiante.controller';
 import { ExamenEstudianteRecursosController } from './examen-estudiante-recursos.controller';
 import { PreguntaModule } from '../pregunta/pregunta.module';
+import { ReglaCorreccionModule } from '../reglacorreccion/reglacorreccion.module';
 import { ExamenService } from './examen.service';
 import { ExamenAccesoService } from './examen-acceso.service';
 import { RendicionService } from '../rendicion/rendicion.service';
@@ -42,6 +43,7 @@ import { RendicionVencimientoWorker } from '../rendicion/rendicion-vencimiento.w
             AsignacionPregunta,
         ]),
         PreguntaModule,
+        ReglaCorreccionModule,
     ],
     controllers: [
         ExamenController,

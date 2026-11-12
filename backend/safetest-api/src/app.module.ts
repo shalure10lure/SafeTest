@@ -34,6 +34,7 @@ import { ParaleloPregunta } from './paralelopregunta/entity/paralelopregunta.ent
 import { Pregunta } from './pregunta/entity/pregunta.entity';
 import { PreguntaCompetencia } from './preguntacompetencia/entity/preguntacompetencia.entity';
 import { PreguntaRecurso } from './preguntarecurso/entity/preguntarecurso.entity';
+import { ReglaCorreccion } from './reglacorreccion/entity/reglacorreccion.entity';
 import { Rendicion } from './rendicion/entity/rendicion.entity';
 import { RespuestaInciso } from './respuestainciso/entity/respuestainciso.entity';
 import { Semestre } from './semestre/entity/semestre.entity';
@@ -54,6 +55,7 @@ import { IaPropuestaPregunta } from './iapropuestapregunta/entity/iapropuestapre
 import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionreferencia.entity';
 import { TemaModule } from './tema/tema.module';
 import { PreguntaModule } from './pregunta/pregunta.module';
+import { ReglaCorreccionModule } from './reglacorreccion/reglacorreccion.module';
 import { IaModule } from './ia/ia.module';
 import { IaGeneracionModule } from './iageneracion/iageneracion.module';
 import { MaterialAcademicoModule } from './materialacademico/materialacademico.module';
@@ -104,6 +106,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
           Pregunta,
           PreguntaCompetencia,
           PreguntaRecurso,
+          ReglaCorreccion,
           Rendicion,
           RespuestaInciso,
           Semestre,
@@ -137,6 +140,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     IaModule,
     IaGeneracionModule,
     MaterialAcademicoModule,
+    ReglaCorreccionModule,
   ],
 
   controllers: [AppController],

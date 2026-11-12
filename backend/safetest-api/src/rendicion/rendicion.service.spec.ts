@@ -6,85 +6,25 @@ import {
 } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
 
-let RendicionService: typeof import('./rendicion.service').RendicionService;
-let Rendicion: typeof import('./entity/rendicion.entity').Rendicion;
-let Examen: typeof import('../examen/entity/examen.entity').Examen;
-let AsignacionPregunta: typeof import('../asignacionpregunta/entity/asignacionpregunta.entity').AsignacionPregunta;
-let ExamenPregunta: typeof import('../examenpregunta/entity/examenpregunta.entity').ExamenPregunta;
-let ExamenTema: typeof import('../examentema/entity/examentema.entity').ExamenTema;
-let Inciso: typeof import('../inciso/entity/inciso.entity').Inciso;
-let Inscripcion: typeof import('../inscripcion/entity/inscripcion.entity').Inscripcion;
-let Opcion: typeof import('../opcion/entity/opcion.entity').Opcion;
-let OpcionMarcada: typeof import('../opcionmarcada/entity/opcionmarcada.entity').OpcionMarcada;
-let ParaleloExamen: typeof import('../paraleloexamen/entity/paraleloexamen.entity').ParaleloExamen;
-let Pregunta: typeof import('../pregunta/entity/pregunta.entity').Pregunta;
-let RespuestaInciso: typeof import('../respuestainciso/entity/respuestainciso.entity').RespuestaInciso;
+import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
+import { Examen } from '../examen/entity/examen.entity';
+import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
+import { ExamenTema } from '../examentema/entity/examentema.entity';
+import { Inciso } from '../inciso/entity/inciso.entity';
+import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
+import { Opcion } from '../opcion/entity/opcion.entity';
+import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
+import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
+import { Pregunta } from '../pregunta/entity/pregunta.entity';
+import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
+import type { GuardarRespuestaEstudianteDto } from './dto/guardar-respuesta-estudiante.dto';
+import { Rendicion } from './entity/rendicion.entity';
+import { RendicionService } from './rendicion.service';
 
-beforeAll(async () => {
-  jest.unstable_mockModule('./entity/rendicion.entity', () => ({
-    Rendicion: class Rendicion {},
-  }));
-  jest.unstable_mockModule('../examen/entity/examen.entity', () => ({
-    Examen: class Examen {},
-  }));
-  jest.unstable_mockModule(
-    '../asignacionpregunta/entity/asignacionpregunta.entity',
-    () => ({ AsignacionPregunta: class AsignacionPregunta {} }),
-  );
-  jest.unstable_mockModule(
-    '../examenpregunta/entity/examenpregunta.entity',
-    () => ({ ExamenPregunta: class ExamenPregunta {} }),
-  );
-  jest.unstable_mockModule('../examentema/entity/examentema.entity', () => ({
-    ExamenTema: class ExamenTema {},
-  }));
-  jest.unstable_mockModule('../inciso/entity/inciso.entity', () => ({
-    Inciso: class Inciso {},
-  }));
-  jest.unstable_mockModule('../inscripcion/entity/inscripcion.entity', () => ({
-    Inscripcion: class Inscripcion {},
-  }));
-  jest.unstable_mockModule(
-    '../paraleloexamen/entity/paraleloexamen.entity',
-    () => ({ ParaleloExamen: class ParaleloExamen {} }),
-  );
-  jest.unstable_mockModule(
-    '../opcionmarcada/entity/opcionmarcada.entity',
-    () => ({ OpcionMarcada: class OpcionMarcada {} }),
-  );
-  jest.unstable_mockModule('../opcion/entity/opcion.entity', () => ({
-    Opcion: class Opcion {},
-  }));
-  jest.unstable_mockModule('../pregunta/entity/pregunta.entity', () => ({
-    Pregunta: class Pregunta {},
-  }));
-  jest.unstable_mockModule(
-    '../respuestainciso/entity/respuestainciso.entity',
-    () => ({ RespuestaInciso: class RespuestaInciso {} }),
-  );
-  jest.unstable_mockModule('../examen/examen-acceso.service', () => ({
-    ExamenAccesoService: class ExamenAccesoService {},
-  }));
-
-  ({ RendicionService } = await import('./rendicion.service'));
-  ({ Rendicion } = await import('./entity/rendicion.entity'));
-  ({ Examen } = await import('../examen/entity/examen.entity'));
-  ({ AsignacionPregunta } =
-    await import('../asignacionpregunta/entity/asignacionpregunta.entity'));
-  ({ ExamenPregunta } =
-    await import('../examenpregunta/entity/examenpregunta.entity'));
-  ({ ExamenTema } = await import('../examentema/entity/examentema.entity'));
-  ({ Inciso } = await import('../inciso/entity/inciso.entity'));
-  ({ Inscripcion } = await import('../inscripcion/entity/inscripcion.entity'));
-  ({ Opcion } = await import('../opcion/entity/opcion.entity'));
-  ({ OpcionMarcada } =
-    await import('../opcionmarcada/entity/opcionmarcada.entity'));
-  ({ ParaleloExamen } =
-    await import('../paraleloexamen/entity/paraleloexamen.entity'));
-  ({ Pregunta } = await import('../pregunta/entity/pregunta.entity'));
-  ({ RespuestaInciso } =
-    await import('../respuestainciso/entity/respuestainciso.entity'));
-});
+/**
+ * Las entidades solo se usan como tokens de repositorio. Se trabaja con
+ * repositorios simulados; no se toca ninguna base de datos.
+ */
 
 function prepararServicio({
   examen = {
@@ -294,16 +234,26 @@ function prepararServicio({
       orden_preguntas: 'definido',
     }),
   };
+  const correccionRendicionService = {
+    corregirRendicion: jest.fn().mockResolvedValue({
+      respuestasAutomaticas: 0,
+      pendientesRevision: 0,
+      notaFinal: null,
+      completa: false,
+    }),
+  };
 
   const service = new RendicionService(
     dataSource as unknown as DataSource,
     examenAccesoService as never,
+    correccionRendicionService as never,
   );
 
   return {
     service,
     dataSource,
     examenAccesoService,
+    correccionRendicionService,
     manager,
     builder,
     rendicionRepository,
@@ -433,6 +383,23 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(JSON.stringify(resultado)).not.toMatch(
         /correcta|solucion|puntaje|retroalimentacion|calificacion|respuesta_texto/i,
       );
+    });
+
+    it('no copia calificaciones enviadas por el cliente al guardar una respuesta', async () => {
+      const montaje = prepararServicio();
+      const dto = {
+        opciones: [1],
+        puntaje_obtenido: '10.00',
+        estado_correccion: 'automatica',
+      } as unknown as GuardarRespuestaEstudianteDto;
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', dto);
+
+      const [datosGuardados] = montaje.respuestaRepository.upsert.mock
+        .calls[0] as [Record<string, unknown>];
+
+      expect(datosGuardados).not.toHaveProperty('puntaje_obtenido');
+      expect(datosGuardados).not.toHaveProperty('estado_correccion');
     });
 
     it('reemplaza las opciones marcadas en una modificación', async () => {
@@ -1019,6 +986,96 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(montaje.respuestaRepository.find).not.toHaveBeenCalled();
       expect(montaje.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
       expect(montaje.opcionMarcadaRepository.insert).not.toHaveBeenCalled();
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledWith(montaje.manager, 5, 9);
+    });
+
+    it('guarda la nota final cuando la corrección automática está completa', async () => {
+      const montaje = prepararServicio();
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 3,
+          pendientesRevision: 0,
+          notaFinal: '8.50',
+          completa: true,
+        },
+      );
+
+      const resultado = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'corregida',
+          nota_final: '8.50',
+        }),
+      );
+      expect(resultado.estado).toBe('corregida');
+    });
+
+    it('mantiene la rendición enviada cuando quedan incisos por revisar', async () => {
+      const montaje = prepararServicio({
+        rendicionActiva: {
+          ...RENDICION_NUEVA,
+          nota_final: null,
+        },
+      });
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 1,
+          pendientesRevision: 1,
+          notaFinal: null,
+          completa: false,
+        },
+      );
+
+      const resultado = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'enviada',
+          nota_final: null,
+        }),
+      );
+      expect(resultado.estado).toBe('enviada');
+    });
+
+    it('propaga el error de corrección sin guardar la rendición', async () => {
+      const montaje = prepararServicio();
+      const error = new Error('fallo durante la corrección');
+      montaje.correccionRendicionService.corregirRendicion.mockRejectedValueOnce(
+        error,
+      );
+
+      await expect(
+        montaje.service.finalizarRendicion(5, 9),
+      ).rejects.toBe(error);
+      expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('no vuelve a corregir una rendición ya enviada o corregida', async () => {
+      const montaje = prepararServicio();
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 2,
+          pendientesRevision: 0,
+          notaFinal: '9.00',
+          completa: true,
+        },
+      );
+
+      const primera = await montaje.service.finalizarRendicion(5, 9);
+      const segunda = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(primera.estado).toBe('corregida');
+      expect(segunda.estado).toBe('corregida');
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledTimes(1);
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledTimes(1);
     });
 
     it('es idempotente si la rendición ya fue enviada o corregida', async () => {
@@ -1060,6 +1117,51 @@ describe('RendicionService.iniciarORecuperar', () => {
         montaje.service.finalizarRendicion(5, 99),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('RendicionService.finalizarSiVencida', () => {
+    it('envía y corrige una sola vez cuando se agota el tiempo', async () => {
+      const montaje = prepararServicio({
+        rendicionActiva: {
+          ...RENDICION_NUEVA,
+          fecha_inicio: new Date(Date.now() - 60 * 60 * 1000),
+        },
+        examen: {
+          duracion_min: 30,
+          disponible_hasta: null,
+          al_terminar_tiempo: 'enviar_automatico',
+        },
+      });
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 2,
+          pendientesRevision: 0,
+          notaFinal: '7.00',
+          completa: true,
+        },
+      );
+
+      const enviada = await montaje.service.finalizarSiVencida(5, 9);
+
+      expect(enviada).toBe(true);
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledWith(montaje.manager, 5, 9);
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'corregida',
+          nota_final: '7.00',
+        }),
+      );
+
+      const segunda = await montaje.service.finalizarSiVencida(5, 9);
+
+      expect(segunda).toBe(false);
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledTimes(1);
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledTimes(1);
     });
   });
 });

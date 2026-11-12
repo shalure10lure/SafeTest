@@ -20,6 +20,7 @@ import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
 import { ExamenAccesoService } from '../examen/examen-acceso.service';
+import { CorreccionRendicionService } from '../reglacorreccion/correccion-rendicion.service';
 import { Rendicion } from './entity/rendicion.entity';
 import type { IniciarRendicionDto } from './dto/iniciar-rendicion.dto';
 import type { GuardarRespuestaEstudianteDto } from './dto/guardar-respuesta-estudiante.dto';
@@ -50,6 +51,7 @@ export class RendicionService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly examenAccesoService: ExamenAccesoService,
+    private readonly correccionRendicionService: CorreccionRendicionService,
   ) { }
 
 
@@ -1104,10 +1106,22 @@ export class RendicionService {
       rendicion.estado = 'enviada';
       rendicion.fecha_envio = ahora;
 
+      const correccion =
+        await this.correccionRendicionService.corregirRendicion(
+          manager,
+          examenId,
+          estudianteId,
+        );
+
+      if (correccion.completa) {
+        rendicion.estado = 'corregida';
+        rendicion.nota_final = correccion.notaFinal;
+      }
+
       await rendicionRepository.save(rendicion);
 
-      // No se eliminan ni modifican RespuestaInciso
-      // ni OpcionMarcada. Se conservan las respuestas.
+      // No se eliminan las respuestas: solo se agrega su resultado
+      // automático y, si corresponde, la nota final de la rendición.
       return true;
     });
   }
@@ -1116,8 +1130,9 @@ export class RendicionService {
    * Finaliza manualmente el intento del estudiante autenticado (HU-26).
    *
    * Es idempotente: si la rendición ya fue enviada o corregida devuelve su
-   * estado sin volver a escribir, de modo que un doble envío no falla. No
-   * elimina ni modifica las respuestas guardadas.
+   * estado sin volver a escribir ni volver a corregir, de modo que un doble
+   * envío no falla. La corrección automática (HU-29) se ejecuta una sola vez,
+   * en la misma transacción que marca la rendición como enviada.
    */
   async finalizarRendicion(
     examenId: number,
@@ -1143,6 +1158,18 @@ export class RendicionService {
       if (rendicion.estado === 'en_curso') {
         rendicion.estado = 'enviada';
         rendicion.fecha_envio = rendicion.fecha_envio ?? new Date();
+
+        const correccion =
+          await this.correccionRendicionService.corregirRendicion(
+            manager,
+            examenId,
+            estudianteId,
+          );
+
+        if (correccion.completa) {
+          rendicion.estado = 'corregida';
+          rendicion.nota_final = correccion.notaFinal;
+        }
 
         await rendicionRepository.save(rendicion);
       }
