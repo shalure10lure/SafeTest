@@ -1021,6 +1021,80 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(montaje.opcionMarcadaRepository.insert).not.toHaveBeenCalled();
     });
 
+    it('conserva respuestas de texto y opciones ya guardadas al finalizar', async () => {
+      const respuestas = [
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          respuesta_texto: 'Respuesta desarrollada',
+        },
+      ];
+      const opcionesMarcadas = [
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 22,
+          letra: 'b',
+          nro_opcion: 2,
+        },
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 22,
+          letra: 'b',
+          nro_opcion: 3,
+        },
+      ];
+      const montaje = prepararServicio({ respuestas, opcionesMarcadas });
+
+      const respuestasAntes = await montaje.respuestaRepository.find();
+      const opcionesAntes = await montaje.opcionMarcadaRepository.find();
+
+      await montaje.service.finalizarRendicion(5, 9);
+
+      expect(await montaje.respuestaRepository.find()).toEqual(respuestasAntes);
+      expect(await montaje.opcionMarcadaRepository.find()).toEqual(
+        opcionesAntes,
+      );
+      expect(respuestasAntes).toEqual(respuestas);
+      expect(opcionesAntes).toEqual(opcionesMarcadas);
+    });
+
+    it('rechaza finalizar una rendición perteneciente a otro estudiante', async () => {
+      const montaje = prepararServicio({
+        rendicionActiva: { ...RENDICION_NUEVA },
+      });
+      montaje.rendicionRepository.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        montaje.service.finalizarRendicion(5, 99),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(montaje.rendicionRepository.findOne).toHaveBeenCalledWith({
+        where: { examen_id: 5, estudiante_id: 99 },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('no modifica respuestas ni opciones al intentar guardar tras finalizar', async () => {
+      const montaje = prepararServicio();
+
+      await montaje.service.finalizarRendicion(5, 9);
+
+      await expect(
+        montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+          opciones: [1],
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.opcionMarcadaRepository.insert).not.toHaveBeenCalled();
+      expect(montaje.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
+    });
+
     it('es idempotente si la rendición ya fue enviada o corregida', async () => {
       const fechaEnvio = new Date('2026-11-08T15:00:00.000Z');
 
