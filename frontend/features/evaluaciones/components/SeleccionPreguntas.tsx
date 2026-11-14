@@ -10,6 +10,7 @@ import { ROUTES } from '@/constants/routes';
 import { useMaterias } from '@/features/materias/hooks/useMaterias';
 import { cn } from '@/lib/utils';
 
+import { formatearPuntos, parsearPuntaje, sumarPuntos } from '../formato';
 import { useBancoPreguntas } from '../hooks/useBancoPreguntas';
 import { useEvaluacion } from '../hooks/useEvaluacion';
 import { mensajeDeError } from '../mensaje-error';
@@ -18,6 +19,7 @@ import type {
     EvaluacionDetalle,
     GuardarSeleccionDto,
     ModoSeleccion,
+    PuntajePreguntaSeleccion,
 } from '../types';
 
 import CriteriosAleatorios, { type FilaCriterio } from './CriteriosAleatorios';
@@ -49,6 +51,11 @@ function FormularioSeleccion({
     const [seleccionIds, setSeleccionIds] = useState<number[]>(
         evaluacion.pregunta_ids,
     );
+    /**
+     * Ediciones del puntaje por pregunta. Si una pregunta no tiene entrada, se
+     * muestra su puntaje guardado o, al agregarla, el del banco.
+     */
+    const [puntajes, setPuntajes] = useState<Record<number, string>>({});
     const [materiaId, setMateriaId] = useState<number | null>(materiaEvaluacionId);
     const [temaId, setTemaId] = useState<number | null>(null);
     const [busqueda, setBusqueda] = useState('');
@@ -92,14 +99,46 @@ function FormularioSeleccion({
         );
     }, [banco, busqueda]);
 
-    const items = seleccionIds.map((id) => ({ id, pregunta: conocidas[id] }));
+    function textoPuntaje(id: number): string {
+        const editado = puntajes[id];
+
+        if (editado !== undefined) return editado;
+
+        const pregunta = conocidas[id];
+
+        if (!pregunta) return '';
+
+        // Puntaje guardado en la evaluación o, al agregarla, el del banco.
+        return String(pregunta.puntaje ?? pregunta.puntos);
+    }
+
+    const items = seleccionIds.map((id) => ({
+        id,
+        pregunta: conocidas[id],
+        puntaje: textoPuntaje(id),
+    }));
 
     function alternar(id: number) {
+        const quitar = seleccionIds.includes(id);
+
         setSeleccionIds((actual) =>
-            actual.includes(id)
+            quitar
                 ? actual.filter((existente) => existente !== id)
                 : [...actual, id],
         );
+
+        if (quitar) {
+            // Al volver a agregarla, el puntaje inicial vuelve a ser el del banco.
+            setPuntajes((actual) => {
+                const siguientes = { ...actual };
+                delete siguientes[id];
+                return siguientes;
+            });
+        }
+    }
+
+    function cambiarPuntaje(id: number, valor: string) {
+        setPuntajes((actual) => ({ ...actual, [id]: valor }));
     }
 
     function cambiarTema(clave: number, temaId: number | null) {
@@ -147,7 +186,38 @@ function FormularioSeleccion({
         let datos: GuardarSeleccionDto;
 
         if (modo === 'manual') {
-            datos = { modo_seleccion: 'manual', pregunta_ids: seleccionIds };
+            const puntajesSeleccionados: PuntajePreguntaSeleccion[] = [];
+
+            for (const id of seleccionIds) {
+                const puntaje = parsearPuntaje(textoPuntaje(id));
+
+                if (puntaje === null) {
+                    setErrorGuardar(
+                        'Cada pregunta debe tener un puntaje mayor que cero con un máximo de 2 decimales.',
+                    );
+                    return;
+                }
+
+                puntajesSeleccionados.push({ pregunta_id: id, puntaje });
+            }
+
+            const suma = sumarPuntos(
+                puntajesSeleccionados.map((puntaje) => puntaje.puntaje),
+            );
+            const totalConfigurado = evaluacion.puntaje_total ?? null;
+
+            if (totalConfigurado !== null && suma > totalConfigurado) {
+                setErrorGuardar(
+                    `La suma de los puntajes (${formatearPuntos(suma)} pts) no puede superar el puntaje total configurado (${formatearPuntos(totalConfigurado)} pts).`,
+                );
+                return;
+            }
+
+            datos = {
+                modo_seleccion: 'manual',
+                pregunta_ids: seleccionIds,
+                puntajes: puntajesSeleccionados,
+            };
         } else {
             const criterios = filas.flatMap((fila) =>
                 fila.tema_id === null
@@ -212,7 +282,8 @@ function FormularioSeleccion({
                             <p>
                                 <strong>Reutilización:</strong> las preguntas se agregan como
                                 referencia. Seguirán disponibles en el banco y podrás usarlas
-                                en otras evaluaciones.
+                                en otras evaluaciones. Cada pregunta inicia con el puntaje
+                                del banco y puedes ajustarlo en el panel.
                             </p>
                         </div>
 
@@ -316,7 +387,12 @@ function FormularioSeleccion({
             </div>
 
             {modo === 'manual' && (
-                <PanelSeleccionadas items={items} onQuitar={alternar} />
+                <PanelSeleccionadas
+                    items={items}
+                    onQuitar={alternar}
+                    onCambiarPuntaje={cambiarPuntaje}
+                    puntajeTotal={evaluacion.puntaje_total}
+                />
             )}
         </div>
     );

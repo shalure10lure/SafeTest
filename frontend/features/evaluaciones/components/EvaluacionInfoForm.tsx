@@ -190,6 +190,12 @@ export default function EvaluacionInfoForm({
                     instrucciones: instrucciones.trim() || undefined,
                 });
 
+                if (!creada?.examen_id) {
+                    throw new Error(
+                        'La evaluación se creó pero no devolvió un identificador válido.',
+                    );
+                }
+
                 router.push(ROUTES.docente.evaluacionPreguntas(creada.examen_id));
             }
         } catch (error) {

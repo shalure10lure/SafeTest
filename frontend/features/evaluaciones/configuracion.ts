@@ -1,4 +1,14 @@
+import { parsearPuntaje } from './formato';
+
 export const DURACIONES_RAPIDAS = [45, 60, 90, 120] as const;
+
+/**
+ * Texto del campo "puntaje total" -> número, o `null` si no cumple el
+ * contrato: número positivo con un máximo de 2 decimales.
+ */
+export function parsearPuntajeTotal(valor: string): number | null {
+    return parsearPuntaje(valor);
+}
 
 /** 90 -> "1 h 30 min", 60 -> "1 h", 45 -> "45 min" */
 export function formatearDuracion(minutos: number): string {

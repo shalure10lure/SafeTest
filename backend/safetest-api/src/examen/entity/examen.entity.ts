@@ -56,6 +56,11 @@ export class Examen {
   @Column({ name: 'duracion_min', type: 'int', nullable: true })
   duracion_min: number | null;
 
+  // Puntaje total definido por el docente en el paso 3 (Configuración).
+  // `numeric(12,2)` limita a 2 decimales y la migración exige un valor > 0.
+  @Column({ name: 'puntaje_total', type: 'numeric', precision: 12, scale: 2, nullable: true })
+  puntaje_total: string | null;
+
   @Column({ name: 'disponible_desde', type: 'timestamptz', nullable: true })
   disponible_desde: Date | null;
 

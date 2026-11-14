@@ -5,86 +5,96 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
+import type { GuardarRespuestaEstudianteDto } from './dto/guardar-respuesta-estudiante.dto';
+
+class AsignacionPregunta {}
+class Examen {}
+class ExamenPregunta {}
+class ExamenPoolSnapshot {}
+class ExamenPoolSnapshotPregunta {}
+class ExamenPoolSnapshotTema {}
+class ExamenTema {}
+class Inciso {}
+class Inscripcion {}
+class Opcion {}
+class OpcionMarcada {}
+class ParaleloExamen {}
+class Pregunta {}
+class RespuestaInciso {}
+class Rendicion {}
 
 let RendicionService: typeof import('./rendicion.service').RendicionService;
-let Rendicion: typeof import('./entity/rendicion.entity').Rendicion;
-let Examen: typeof import('../examen/entity/examen.entity').Examen;
-let AsignacionPregunta: typeof import('../asignacionpregunta/entity/asignacionpregunta.entity').AsignacionPregunta;
-let ExamenPregunta: typeof import('../examenpregunta/entity/examenpregunta.entity').ExamenPregunta;
-let ExamenTema: typeof import('../examentema/entity/examentema.entity').ExamenTema;
-let Inciso: typeof import('../inciso/entity/inciso.entity').Inciso;
-let Inscripcion: typeof import('../inscripcion/entity/inscripcion.entity').Inscripcion;
-let Opcion: typeof import('../opcion/entity/opcion.entity').Opcion;
-let OpcionMarcada: typeof import('../opcionmarcada/entity/opcionmarcada.entity').OpcionMarcada;
-let ParaleloExamen: typeof import('../paraleloexamen/entity/paraleloexamen.entity').ParaleloExamen;
-let Pregunta: typeof import('../pregunta/entity/pregunta.entity').Pregunta;
-let RespuestaInciso: typeof import('../respuestainciso/entity/respuestainciso.entity').RespuestaInciso;
 
 beforeAll(async () => {
-  jest.unstable_mockModule('./entity/rendicion.entity', () => ({
-    Rendicion: class Rendicion {},
-  }));
-  jest.unstable_mockModule('../examen/entity/examen.entity', () => ({
-    Examen: class Examen {},
-  }));
   jest.unstable_mockModule(
     '../asignacionpregunta/entity/asignacionpregunta.entity',
-    () => ({ AsignacionPregunta: class AsignacionPregunta {} }),
+    () => ({ AsignacionPregunta }),
+  );
+  jest.unstable_mockModule('../examen/entity/examen.entity', () => ({
+    Examen,
+  }));
+  jest.unstable_mockModule(
+    '../examen/examen-acceso.service',
+    () => ({ ExamenAccesoService: class ExamenAccesoService {} }),
   );
   jest.unstable_mockModule(
     '../examenpregunta/entity/examenpregunta.entity',
-    () => ({ ExamenPregunta: class ExamenPregunta {} }),
+    () => ({ ExamenPregunta }),
   );
   jest.unstable_mockModule('../examentema/entity/examentema.entity', () => ({
-    ExamenTema: class ExamenTema {},
+    ExamenTema,
   }));
   jest.unstable_mockModule('../inciso/entity/inciso.entity', () => ({
-    Inciso: class Inciso {},
+    Inciso,
   }));
+  jest.unstable_mockModule('../opcion/entity/opcion.entity', () => ({
+    Opcion,
+  }));
+  jest.unstable_mockModule(
+    '../opcionmarcada/entity/opcionmarcada.entity',
+    () => ({ OpcionMarcada }),
+  );
   jest.unstable_mockModule('../inscripcion/entity/inscripcion.entity', () => ({
-    Inscripcion: class Inscripcion {},
+    Inscripcion,
   }));
   jest.unstable_mockModule(
     '../paraleloexamen/entity/paraleloexamen.entity',
-    () => ({ ParaleloExamen: class ParaleloExamen {} }),
+    () => ({ ParaleloExamen }),
   );
-  jest.unstable_mockModule(
-    '../opcionmarcada/entity/opcionmarcada.entity',
-    () => ({ OpcionMarcada: class OpcionMarcada {} }),
-  );
-  jest.unstable_mockModule('../opcion/entity/opcion.entity', () => ({
-    Opcion: class Opcion {},
-  }));
   jest.unstable_mockModule('../pregunta/entity/pregunta.entity', () => ({
-    Pregunta: class Pregunta {},
+    Pregunta,
   }));
   jest.unstable_mockModule(
     '../respuestainciso/entity/respuestainciso.entity',
-    () => ({ RespuestaInciso: class RespuestaInciso {} }),
+    () => ({ RespuestaInciso }),
   );
-  jest.unstable_mockModule('../examen/examen-acceso.service', () => ({
-    ExamenAccesoService: class ExamenAccesoService {},
-  }));
+  jest.unstable_mockModule('./entity/rendicion.entity', () => ({ Rendicion }));
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot.entity',
+    () => ({ ExamenPoolSnapshot }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity',
+    () => ({ ExamenPoolSnapshotPregunta }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity',
+    () => ({ ExamenPoolSnapshotTema }),
+  );
+  jest.unstable_mockModule(
+    '../reglacorreccion/correccion-rendicion.service',
+    () => ({
+      CorreccionRendicionService: class CorreccionRendicionService {},
+    }),
+  );
 
   ({ RendicionService } = await import('./rendicion.service'));
-  ({ Rendicion } = await import('./entity/rendicion.entity'));
-  ({ Examen } = await import('../examen/entity/examen.entity'));
-  ({ AsignacionPregunta } =
-    await import('../asignacionpregunta/entity/asignacionpregunta.entity'));
-  ({ ExamenPregunta } =
-    await import('../examenpregunta/entity/examenpregunta.entity'));
-  ({ ExamenTema } = await import('../examentema/entity/examentema.entity'));
-  ({ Inciso } = await import('../inciso/entity/inciso.entity'));
-  ({ Inscripcion } = await import('../inscripcion/entity/inscripcion.entity'));
-  ({ Opcion } = await import('../opcion/entity/opcion.entity'));
-  ({ OpcionMarcada } =
-    await import('../opcionmarcada/entity/opcionmarcada.entity'));
-  ({ ParaleloExamen } =
-    await import('../paraleloexamen/entity/paraleloexamen.entity'));
-  ({ Pregunta } = await import('../pregunta/entity/pregunta.entity'));
-  ({ RespuestaInciso } =
-    await import('../respuestainciso/entity/respuestainciso.entity'));
 });
+
+/**
+ * Las entidades solo se usan como tokens de repositorio. Se trabaja con
+ * repositorios simulados; no se toca ninguna base de datos.
+ */
 
 function prepararServicio({
   examen = {
@@ -92,11 +102,13 @@ function prepararServicio({
     disponible_hasta: null,
     al_terminar_tiempo: 'enviar_automatico',
   },
+  modoSeleccion,
   paraleloRelacionado = 1,
   inscripcion = 1,
   preguntasManual = [{ pregunta_id: 21, orden: 1 }],
-  criterios = [],
-  preguntasTema = [],
+  snapshot = null,
+  temasSnapshot = [],
+  preguntasSnapshot = [],
   rendicionActiva = {
     estudiante_id: 9,
     examen_id: 5,
@@ -127,11 +139,22 @@ function prepararServicio({
   opcionesDisponibles = [{ nro_opcion: 1, texto_opcion: 'Alternativa' }],
 }: {
   examen?: Record<string, unknown> | null;
+  modoSeleccion?: 'manual' | 'aleatorio';
   paraleloRelacionado?: number;
   inscripcion?: number;
   preguntasManual?: { pregunta_id: number; orden: number }[];
-  criterios?: { tema_id: number; cantidad: number }[];
-  preguntasTema?: { pregunta_id: number }[];
+  snapshot?: Record<string, unknown> | null;
+  temasSnapshot?: {
+    examen_id: number;
+    tema_id: number;
+    cantidad_seleccionada: number;
+    cantidad_candidatas: number;
+  }[];
+  preguntasSnapshot?: {
+    examen_id: number;
+    tema_id: number;
+    pregunta_id: number;
+  }[];
   rendicionActiva?: Record<string, unknown> | null;
   asignacionesRendicion?: { pregunta_id: number; orden: number }[];
   filasPreguntas?: Record<string, unknown>[];
@@ -171,7 +194,16 @@ function prepararServicio({
     find: jest.fn().mockResolvedValue(preguntasManual),
   };
   const examenTemaRepository = {
-    find: jest.fn().mockResolvedValue(criterios),
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const snapshotRepository = {
+    findOne: jest.fn().mockResolvedValue(snapshot),
+  };
+  const snapshotTemaRepository = {
+    find: jest.fn().mockResolvedValue(temasSnapshot),
+  };
+  const snapshotPreguntaRepository = {
+    find: jest.fn().mockResolvedValue(preguntasSnapshot),
   };
   const paraleloExamenRepository = {
     count: jest.fn().mockResolvedValue(paraleloRelacionado),
@@ -201,7 +233,7 @@ function prepararServicio({
     preguntaQueryBuilder[metodo].mockReturnValue(preguntaQueryBuilder);
   }
   const preguntaRepository = {
-    find: jest.fn().mockResolvedValue(preguntasTema),
+    find: jest.fn().mockResolvedValue([]),
     createQueryBuilder: jest.fn().mockReturnValue(preguntaQueryBuilder),
   };
   const respuestasGuardadas = [...respuestas];
@@ -270,6 +302,9 @@ function prepararServicio({
     [AsignacionPregunta, asignacionRepository],
     [ExamenPregunta, examenPreguntaRepository],
     [ExamenTema, examenTemaRepository],
+    [ExamenPoolSnapshot, snapshotRepository],
+    [ExamenPoolSnapshotTema, snapshotTemaRepository],
+    [ExamenPoolSnapshotPregunta, snapshotPreguntaRepository],
     [ParaleloExamen, paraleloExamenRepository],
     [Inscripcion, inscripcionRepository],
     [Pregunta, preguntaRepository],
@@ -290,20 +325,30 @@ function prepararServicio({
   const examenAccesoService = {
     obtenerExamenParaRendicion: jest.fn().mockResolvedValue({
       modo_asignacion: 'estudiantes',
-      modo_seleccion: criterios.length ? 'aleatorio' : 'manual',
+      modo_seleccion: modoSeleccion ?? 'manual',
       orden_preguntas: 'definido',
+    }),
+  };
+  const correccionRendicionService = {
+    corregirRendicion: jest.fn().mockResolvedValue({
+      respuestasAutomaticas: 0,
+      pendientesRevision: 0,
+      notaFinal: null,
+      completa: false,
     }),
   };
 
   const service = new RendicionService(
     dataSource as unknown as DataSource,
     examenAccesoService as never,
+    correccionRendicionService as never,
   );
 
   return {
     service,
     dataSource,
     examenAccesoService,
+    correccionRendicionService,
     manager,
     builder,
     rendicionRepository,
@@ -311,6 +356,9 @@ function prepararServicio({
     asignacionRepository,
     examenPreguntaRepository,
     examenTemaRepository,
+    snapshotRepository,
+    snapshotTemaRepository,
+    snapshotPreguntaRepository,
     paraleloExamenRepository,
     inscripcionRepository,
     preguntaRepository,
@@ -375,6 +423,7 @@ describe('RendicionService.iniciarORecuperar', () => {
         orden: 1,
       },
     ]);
+    expect(montaje.snapshotRepository.findOne).not.toHaveBeenCalled();
     expect(resultado).toEqual({
       examen_id: 5,
       paralelo_id: 7,
@@ -433,6 +482,23 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(JSON.stringify(resultado)).not.toMatch(
         /correcta|solucion|puntaje|retroalimentacion|calificacion|respuesta_texto/i,
       );
+    });
+
+    it('no copia calificaciones enviadas por el cliente al guardar una respuesta', async () => {
+      const montaje = prepararServicio();
+      const dto = {
+        opciones: [1],
+        puntaje_obtenido: '10.00',
+        estado_correccion: 'automatica',
+      } as unknown as GuardarRespuestaEstudianteDto;
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', dto);
+
+      const [datosGuardados] = montaje.respuestaRepository.upsert.mock
+        .calls[0] as [Record<string, unknown>];
+
+      expect(datosGuardados).not.toHaveProperty('puntaje_obtenido');
+      expect(datosGuardados).not.toHaveProperty('estado_correccion');
     });
 
     it('reemplaza las opciones marcadas en una modificación', async () => {
@@ -946,11 +1012,28 @@ describe('RendicionService.iniciarORecuperar', () => {
 
   it('conserva las preguntas aleatorias materializadas al recuperar el intento', async () => {
     const montaje = prepararServicio({
-      criterios: [{ tema_id: 4, cantidad: 2 }],
-      preguntasTema: [
-        { pregunta_id: 10 },
-        { pregunta_id: 11 },
-        { pregunta_id: 12 },
+      modoSeleccion: 'aleatorio',
+      snapshot: { examen_id: 5 },
+      temasSnapshot: [
+        {
+          examen_id: 5,
+          tema_id: 4,
+          cantidad_seleccionada: 2,
+          cantidad_candidatas: 3,
+        },
+        {
+          examen_id: 5,
+          tema_id: 8,
+          cantidad_seleccionada: 1,
+          cantidad_candidatas: 2,
+        },
+      ],
+      preguntasSnapshot: [
+        { examen_id: 5, tema_id: 4, pregunta_id: 10 },
+        { examen_id: 5, tema_id: 4, pregunta_id: 11 },
+        { examen_id: 5, tema_id: 4, pregunta_id: 12 },
+        { examen_id: 5, tema_id: 8, pregunta_id: 21 },
+        { examen_id: 5, tema_id: 8, pregunta_id: 22 },
       ],
     });
     secuenciaIniciar(montaje, null);
@@ -964,6 +1047,21 @@ describe('RendicionService.iniciarORecuperar', () => {
     const primera = await montaje.service.iniciarORecuperar(5, 9, {
       paralelo_id: 7,
     });
+
+    expect(asignadas).toHaveLength(3);
+    expect(new Set(asignadas.map(({ pregunta_id }) => pregunta_id)).size).toBe(3);
+    expect(
+      asignadas.filter(({ pregunta_id }) => [10, 11, 12].includes(pregunta_id)),
+    ).toHaveLength(2);
+    expect(
+      asignadas.filter(({ pregunta_id }) => [21, 22].includes(pregunta_id)),
+    ).toHaveLength(1);
+    expect(
+      asignadas.every(({ pregunta_id }) =>
+        [10, 11, 12, 21, 22].includes(pregunta_id),
+      ),
+    ).toBe(true);
+
     secuenciaIniciar(montaje, {
       ...RENDICION_NUEVA,
       fecha_inicio: primera.fecha_inicio,
@@ -977,8 +1075,88 @@ describe('RendicionService.iniciarORecuperar', () => {
     });
 
     expect(primera.preguntas).toEqual(recuperada.preguntas);
-    expect(montaje.examenTemaRepository.find).toHaveBeenCalledTimes(1);
+    expect(montaje.snapshotRepository.findOne).toHaveBeenCalledTimes(1);
+    expect(montaje.snapshotTemaRepository.find).toHaveBeenCalledTimes(1);
+    expect(montaje.snapshotPreguntaRepository.find).toHaveBeenCalledTimes(1);
+    expect(montaje.examenTemaRepository.find).not.toHaveBeenCalled();
+    expect(montaje.preguntaRepository.find).not.toHaveBeenCalled();
     expect(recuperada.recuperada).toBe(true);
+  });
+
+  it('bloquea un nuevo inicio aleatorio de una evaluación antigua sin instantánea', async () => {
+    const montaje = prepararServicio({ modoSeleccion: 'aleatorio' });
+    secuenciaIniciar(montaje, null);
+
+    await expect(
+      montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
+    ).rejects.toThrow('requiere regularización');
+
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
+    expect(montaje.snapshotTemaRepository.find).not.toHaveBeenCalled();
+    expect(montaje.preguntaRepository.find).not.toHaveBeenCalled();
+  });
+
+  it('recupera asignaciones existentes aunque la evaluación no tenga instantánea', async () => {
+    const montaje = prepararServicio({ modoSeleccion: 'aleatorio' });
+    secuenciaIniciar(montaje, { ...RENDICION_NUEVA });
+    montaje.asignacionRepository.find.mockResolvedValue([
+      { pregunta_id: 31, orden: 1 },
+      { pregunta_id: 42, orden: 2 },
+    ]);
+
+    const resultado = await montaje.service.iniciarORecuperar(5, 9, {
+      paralelo_id: 7,
+    });
+
+    expect(resultado.preguntas).toEqual([
+      { pregunta_id: 31, orden: 1 },
+      { pregunta_id: 42, orden: 2 },
+    ]);
+    expect(resultado.recuperada).toBe(true);
+    expect(montaje.builder.insert).not.toHaveBeenCalled();
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
+    expect(montaje.snapshotRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('rechaza recuperar una rendición activa sin asignaciones', async () => {
+    const montaje = prepararServicio({
+      modoSeleccion: 'aleatorio',
+      asignacionesRendicion: [],
+    });
+    secuenciaIniciar(montaje, { ...RENDICION_NUEVA });
+
+    await expect(
+      montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
+    ).rejects.toThrow('no tiene preguntas asignadas');
+
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
+    expect(montaje.snapshotRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una instantánea con candidatas de otro tema o conteo inconsistente', async () => {
+    const montaje = prepararServicio({
+      modoSeleccion: 'aleatorio',
+      snapshot: { examen_id: 5 },
+      temasSnapshot: [
+        {
+          examen_id: 5,
+          tema_id: 4,
+          cantidad_seleccionada: 2,
+          cantidad_candidatas: 2,
+        },
+      ],
+      preguntasSnapshot: [
+        { examen_id: 5, tema_id: 8, pregunta_id: 10 },
+        { examen_id: 5, tema_id: 4, pregunta_id: 11 },
+      ],
+    });
+    secuenciaIniciar(montaje, null);
+
+    await expect(
+      montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
+    ).rejects.toThrow('instantánea del pool aleatorio está incompleta');
+
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
   });
 
   it('no recupera rendiciones que ya no están en curso', async () => {
@@ -1019,6 +1197,96 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(montaje.respuestaRepository.find).not.toHaveBeenCalled();
       expect(montaje.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
       expect(montaje.opcionMarcadaRepository.insert).not.toHaveBeenCalled();
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledWith(montaje.manager, 5, 9);
+    });
+
+    it('guarda la nota final cuando la corrección automática está completa', async () => {
+      const montaje = prepararServicio();
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 3,
+          pendientesRevision: 0,
+          notaFinal: '8.50',
+          completa: true,
+        },
+      );
+
+      const resultado = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'corregida',
+          nota_final: '8.50',
+        }),
+      );
+      expect(resultado.estado).toBe('corregida');
+    });
+
+    it('mantiene la rendición enviada cuando quedan incisos por revisar', async () => {
+      const montaje = prepararServicio({
+        rendicionActiva: {
+          ...RENDICION_NUEVA,
+          nota_final: null,
+        },
+      });
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 1,
+          pendientesRevision: 1,
+          notaFinal: null,
+          completa: false,
+        },
+      );
+
+      const resultado = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'enviada',
+          nota_final: null,
+        }),
+      );
+      expect(resultado.estado).toBe('enviada');
+    });
+
+    it('propaga el error de corrección sin guardar la rendición', async () => {
+      const montaje = prepararServicio();
+      const error = new Error('fallo durante la corrección');
+      montaje.correccionRendicionService.corregirRendicion.mockRejectedValueOnce(
+        error,
+      );
+
+      await expect(
+        montaje.service.finalizarRendicion(5, 9),
+      ).rejects.toBe(error);
+      expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('no vuelve a corregir una rendición ya enviada o corregida', async () => {
+      const montaje = prepararServicio();
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 2,
+          pendientesRevision: 0,
+          notaFinal: '9.00',
+          completa: true,
+        },
+      );
+
+      const primera = await montaje.service.finalizarRendicion(5, 9);
+      const segunda = await montaje.service.finalizarRendicion(5, 9);
+
+      expect(primera.estado).toBe('corregida');
+      expect(segunda.estado).toBe('corregida');
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledTimes(1);
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledTimes(1);
     });
 
     it('conserva respuestas de texto y opciones ya guardadas al finalizar', async () => {
@@ -1134,6 +1402,51 @@ describe('RendicionService.iniciarORecuperar', () => {
         montaje.service.finalizarRendicion(5, 99),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('RendicionService.finalizarSiVencida', () => {
+    it('envía y corrige una sola vez cuando se agota el tiempo', async () => {
+      const montaje = prepararServicio({
+        rendicionActiva: {
+          ...RENDICION_NUEVA,
+          fecha_inicio: new Date(Date.now() - 60 * 60 * 1000),
+        },
+        examen: {
+          duracion_min: 30,
+          disponible_hasta: null,
+          al_terminar_tiempo: 'enviar_automatico',
+        },
+      });
+      montaje.correccionRendicionService.corregirRendicion.mockResolvedValueOnce(
+        {
+          respuestasAutomaticas: 2,
+          pendientesRevision: 0,
+          notaFinal: '7.00',
+          completa: true,
+        },
+      );
+
+      const enviada = await montaje.service.finalizarSiVencida(5, 9);
+
+      expect(enviada).toBe(true);
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledWith(montaje.manager, 5, 9);
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estado: 'corregida',
+          nota_final: '7.00',
+        }),
+      );
+
+      const segunda = await montaje.service.finalizarSiVencida(5, 9);
+
+      expect(segunda).toBe(false);
+      expect(
+        montaje.correccionRendicionService.corregirRendicion,
+      ).toHaveBeenCalledTimes(1);
+      expect(montaje.rendicionRepository.save).toHaveBeenCalledTimes(1);
     });
   });
 });

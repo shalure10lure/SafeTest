@@ -98,17 +98,35 @@ class RepositorioFalso {
   }
 }
 
+class ManagerFalso {
+  constructor(private readonly repositorio: RepositorioFalso) {}
+
+  getRepository(): RepositorioFalso {
+    return this.repositorio;
+  }
+}
+
 class PreguntaServiceFalso {
   publicada = false;
 
-  obtenerEditable(): Promise<object> {
+  constructor(private readonly repositorio: RepositorioFalso) {}
+
+  findOne(): Promise<object> {
+    return Promise.resolve({});
+  }
+
+  ejecutarEdicion<T>(
+    _preguntaId: number,
+    _docenteId: number,
+    operacion: (manager: ManagerFalso) => Promise<T>,
+  ): Promise<T> {
     return this.publicada
       ? Promise.reject(
           new ConflictException(
             'No puedes modificar una pregunta que pertenece a una evaluación publicada',
           ),
         )
-      : Promise.resolve({});
+      : operacion(new ManagerFalso(this.repositorio));
   }
 }
 
@@ -142,8 +160,8 @@ describe('PreguntaRecursosService (edición de recursos)', () => {
 
   beforeEach(() => {
     repositorio = new RepositorioFalso();
-    preguntas = new PreguntaServiceFalso();
     almacen = new AlmacenFalso();
+    preguntas = new PreguntaServiceFalso(repositorio);
     servicio = new PreguntaRecursosService(
       repositorio as unknown as Repository<PreguntaRecurso>,
       preguntas as unknown as PreguntaService,

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { mensajeDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import type { Evaluacion } from '../types';
 
@@ -16,8 +17,13 @@ export function useEvaluaciones() {
 
         try {
             setEvaluaciones(await evaluacionesService.getAll());
-        } catch {
-            setError('No se pudieron cargar las evaluaciones.');
+        } catch (errorConsulta) {
+            setError(
+                mensajeDeError(
+                    errorConsulta,
+                    'No se pudieron cargar las evaluaciones.',
+                ),
+            );
         } finally {
             setCargando(false);
         }

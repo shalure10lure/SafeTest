@@ -39,7 +39,7 @@ export interface Pregunta {
     creado_en: string;
     /** Tipo calculado a partir de los incisos. */
     tipo_respuesta: TipoFiltroPregunta | null;
-    /** Suma de los puntajes de los incisos. */
+    /** Puntaje de la pregunta: suma de los puntajes máximos de sus incisos. */
     puntos: number;
     tema?: TemaPregunta;
     materia?: MateriaPregunta;
@@ -78,6 +78,10 @@ export interface CrearPreguntaDto {
     materia_id: number;
     tema_id: number;
     tipo_respuesta: TipoRespuestaPregunta;
+    /**
+     * Puntaje máximo del inciso que crea este formulario. `Pregunta` no
+     * almacena puntaje propio: el total de la pregunta se deriva de sus incisos.
+     */
     puntaje_max: number;
     dificultad?: DificultadPregunta;
     opciones?: OpcionPreguntaDto[];
@@ -93,6 +97,7 @@ export interface ActualizarPreguntaDto {
     dificultad?: DificultadPregunta;
     // Configuración de respuesta: si se envía el tipo, se reemplaza completa.
     tipo_respuesta?: TipoRespuestaPregunta;
+    /** Puntaje máximo del inciso configurado por este formulario. */
     puntaje_max?: number;
     opciones?: OpcionPreguntaDto[];
     valor_correcto?: number;
@@ -107,6 +112,7 @@ export interface PreguntaCreada {
     materia_id: number;
     tema_id: number;
     tipo_respuesta: TipoRespuestaPregunta;
+    /** Puntaje máximo del inciso que el formulario creó junto a la pregunta. */
     puntaje_max: number;
     opciones: {
         nro_opcion: number;
@@ -130,6 +136,10 @@ export interface PreguntaDetalle {
     creado_en: string;
     /** Puede ser null o un tipo heredado en preguntas antiguas. */
     tipo_respuesta: TipoFiltroPregunta | null;
+    /**
+     * Puntaje máximo del inciso `a`. `Pregunta` no tiene puntaje propio; el
+     * total de la pregunta se obtiene sumando sus incisos.
+     */
     puntaje_max: number | null;
     opciones: {
         nro_opcion: number;

@@ -21,6 +21,10 @@ import { ExamenModule } from './examen/examen.module';
 import { ExamenEstudiante } from './examenestudiante/entity/examenestudiante.entity';
 import { ExamenPregunta } from './examenpregunta/entity/examenpregunta.entity';
 import { ExamenTema } from './examentema/entity/examentema.entity';
+import { ExamenPoolSnapshot } from './examenpoolsnapshot/entity/examen-pool-snapshot.entity';
+import { ExamenPoolSnapshotTema } from './examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity';
+import { ExamenPoolSnapshotPregunta } from './examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
+import { ExamenPoolSnapshotInciso } from './examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity';
 import { Formula } from './formula/entity/formula.entity';
 import { FormulaElegida } from './formulaelegida/entity/formulaelegida.entity';
 import { Inciso } from './inciso/entity/inciso.entity';
@@ -34,6 +38,7 @@ import { ParaleloPregunta } from './paralelopregunta/entity/paralelopregunta.ent
 import { Pregunta } from './pregunta/entity/pregunta.entity';
 import { PreguntaCompetencia } from './preguntacompetencia/entity/preguntacompetencia.entity';
 import { PreguntaRecurso } from './preguntarecurso/entity/preguntarecurso.entity';
+import { ReglaCorreccion } from './reglacorreccion/entity/reglacorreccion.entity';
 import { Rendicion } from './rendicion/entity/rendicion.entity';
 import { RespuestaInciso } from './respuestainciso/entity/respuestainciso.entity';
 import { Semestre } from './semestre/entity/semestre.entity';
@@ -54,6 +59,7 @@ import { IaPropuestaPregunta } from './iapropuestapregunta/entity/iapropuestapre
 import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionreferencia.entity';
 import { TemaModule } from './tema/tema.module';
 import { PreguntaModule } from './pregunta/pregunta.module';
+import { ReglaCorreccionModule } from './reglacorreccion/reglacorreccion.module';
 import { IaModule } from './ia/ia.module';
 import { IaGeneracionModule } from './iageneracion/iageneracion.module';
 import { MaterialAcademicoModule } from './materialacademico/materialacademico.module';
@@ -91,6 +97,10 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
           ExamenEstudiante,
           ExamenPregunta,
           ExamenTema,
+          ExamenPoolSnapshot,
+          ExamenPoolSnapshotTema,
+          ExamenPoolSnapshotPregunta,
+          ExamenPoolSnapshotInciso,
           Formula,
           FormulaElegida,
           Inciso,
@@ -104,6 +114,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
           Pregunta,
           PreguntaCompetencia,
           PreguntaRecurso,
+          ReglaCorreccion,
           Rendicion,
           RespuestaInciso,
           Semestre,
@@ -137,6 +148,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     IaModule,
     IaGeneracionModule,
     MaterialAcademicoModule,
+    ReglaCorreccionModule,
   ],
 
   controllers: [AppController],

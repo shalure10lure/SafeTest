@@ -20,6 +20,7 @@ export interface OpcionPropuestaIa {
 interface ContenidoPropuestaBase {
     enunciado: string;
     dificultad: DificultadPregunta;
+    /** Puntaje máximo del inciso que se crea al insertar esta propuesta. */
     puntaje_max: number;
     explicacion?: string;
 }
@@ -75,6 +76,7 @@ export interface CreacionGeneracionIa {
 export interface ActualizarPropuestaIaDto {
     enunciado: string;
     dificultad: DificultadPregunta;
+    /** Puntaje máximo del inciso que se creará al insertar la propuesta. */
     puntaje_max: number;
     opciones?: OpcionPropuestaIa[];
     valor_correcto?: number;

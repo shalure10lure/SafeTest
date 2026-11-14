@@ -137,8 +137,14 @@ export default function PreguntaList({
                                             {pregunta.enunciado}
                                         </p>
                                         <p className="mt-1 text-xs text-slate-500">
-                                            {formatearPuntos(pregunta.puntos)}{' '}
-                                            pts
+                                            Puntaje de la pregunta:{' '}
+                                            <span
+                                                className="font-medium text-slate-700"
+                                                title="Suma de los puntajes máximos de sus incisos"
+                                            >
+                                                {formatearPuntos(pregunta.puntos)}{' '}
+                                                pts
+                                            </span>
                                         </p>
                                     </td>
 

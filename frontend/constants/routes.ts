@@ -451,7 +451,14 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Reglas y puntajes',
                 href: ROUTES.docente.reglas,
                 icono: ListChecks,
-                disponible: false,
+                disponible: true,
+                topbar: {
+                    seccion: 'Corrección',
+                    migaFinal: 'Reglas',
+                    titulo: 'Reglas de corrección',
+                    subtitulo:
+                        'Configura cómo se corrigen las preguntas de tus evaluaciones',
+                },
             },
         ],
     },

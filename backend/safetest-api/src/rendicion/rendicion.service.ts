@@ -11,7 +11,6 @@ import type { EntityManager } from 'typeorm';
 
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
-import { ExamenTema } from '../examentema/entity/examentema.entity';
 import { Inciso } from '../inciso/entity/inciso.entity';
 import { Opcion } from '../opcion/entity/opcion.entity';
 import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
@@ -20,6 +19,10 @@ import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
 import { ExamenAccesoService } from '../examen/examen-acceso.service';
+import { CorreccionRendicionService } from '../reglacorreccion/correccion-rendicion.service';
+import { ExamenPoolSnapshot } from '../examenpoolsnapshot/entity/examen-pool-snapshot.entity';
+import { ExamenPoolSnapshotPregunta } from '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
+import { ExamenPoolSnapshotTema } from '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity';
 import { Rendicion } from './entity/rendicion.entity';
 import type { IniciarRendicionDto } from './dto/iniciar-rendicion.dto';
 import type { GuardarRespuestaEstudianteDto } from './dto/guardar-respuesta-estudiante.dto';
@@ -50,6 +53,7 @@ export class RendicionService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly examenAccesoService: ExamenAccesoService,
+    private readonly correccionRendicionService: CorreccionRendicionService,
   ) { }
 
 
@@ -1104,10 +1108,22 @@ export class RendicionService {
       rendicion.estado = 'enviada';
       rendicion.fecha_envio = ahora;
 
+      const correccion =
+        await this.correccionRendicionService.corregirRendicion(
+          manager,
+          examenId,
+          estudianteId,
+        );
+
+      if (correccion.completa) {
+        rendicion.estado = 'corregida';
+        rendicion.nota_final = correccion.notaFinal;
+      }
+
       await rendicionRepository.save(rendicion);
 
-      // No se eliminan ni modifican RespuestaInciso
-      // ni OpcionMarcada. Se conservan las respuestas.
+      // No se eliminan las respuestas: solo se agrega su resultado
+      // automático y, si corresponde, la nota final de la rendición.
       return true;
     });
   }
@@ -1116,8 +1132,9 @@ export class RendicionService {
    * Finaliza manualmente el intento del estudiante autenticado (HU-26).
    *
    * Es idempotente: si la rendición ya fue enviada o corregida devuelve su
-   * estado sin volver a escribir, de modo que un doble envío no falla. No
-   * elimina ni modifica las respuestas guardadas.
+   * estado sin volver a escribir ni volver a corregir, de modo que un doble
+   * envío no falla. La corrección automática (HU-29) se ejecuta una sola vez,
+   * en la misma transacción que marca la rendición como enviada.
    */
   async finalizarRendicion(
     examenId: number,
@@ -1143,6 +1160,18 @@ export class RendicionService {
       if (rendicion.estado === 'en_curso') {
         rendicion.estado = 'enviada';
         rendicion.fecha_envio = rendicion.fecha_envio ?? new Date();
+
+        const correccion =
+          await this.correccionRendicionService.corregirRendicion(
+            manager,
+            examenId,
+            estudianteId,
+          );
+
+        if (correccion.completa) {
+          rendicion.estado = 'corregida';
+          rendicion.nota_final = correccion.notaFinal;
+        }
 
         await rendicionRepository.save(rendicion);
       }
@@ -1257,30 +1286,10 @@ export class RendicionService {
       });
       seleccionadas = filas.map((fila) => fila.pregunta_id);
     } else if (examen.modo_seleccion === 'aleatorio') {
-      const criterios = await manager.getRepository(ExamenTema).find({
-        where: { examen_id: examenId },
-        order: { tema_id: 'ASC' },
-      });
-
-      seleccionadas = [];
-      for (const criterio of criterios) {
-        const preguntas = await manager.getRepository(Pregunta).find({
-          where: { tema_id: criterio.tema_id, activo: true },
-          select: { pregunta_id: true },
-        });
-
-        if (preguntas.length < criterio.cantidad) {
-          throw new BadRequestException(
-            'No hay suficientes preguntas activas para iniciar la evaluación.',
-          );
-        }
-
-        seleccionadas.push(
-          ...this.barajar(
-            preguntas.map((pregunta) => pregunta.pregunta_id),
-          ).slice(0, criterio.cantidad),
-        );
-      }
+      seleccionadas = await this.seleccionarPreguntasDesdeInstantanea(
+        manager,
+        examenId,
+      );
     } else {
       throw new BadRequestException(
         'El modo de selección de preguntas no es válido.',
@@ -1290,6 +1299,89 @@ export class RendicionService {
     return examen.orden_preguntas === 'aleatorio'
       ? this.barajar(seleccionadas)
       : seleccionadas;
+  }
+
+  private async seleccionarPreguntasDesdeInstantanea(
+    manager: EntityManager,
+    examenId: number,
+  ): Promise<number[]> {
+    const snapshot = await manager
+      .getRepository(ExamenPoolSnapshot)
+      .findOne({ where: { examen_id: examenId } });
+
+    if (!snapshot) {
+      throw new ConflictException(
+        'La evaluación aleatoria publicada requiere regularización: no tiene una instantánea del pool de preguntas.',
+      );
+    }
+
+    const temas = await manager
+      .getRepository(ExamenPoolSnapshotTema)
+      .find({
+        where: { examen_id: examenId },
+        order: { tema_id: 'ASC' },
+      });
+
+    const candidatas = await manager
+      .getRepository(ExamenPoolSnapshotPregunta)
+      .find({
+        where: { examen_id: examenId },
+        select: { tema_id: true, pregunta_id: true },
+        order: { tema_id: 'ASC', pregunta_id: 'ASC' },
+      });
+
+    const temaIds = new Set(temas.map((tema) => Number(tema.tema_id)));
+    const preguntaIds = new Set<number>();
+    const preguntasPorTema = new Map<number, number[]>();
+
+    for (const candidata of candidatas) {
+      const temaId = Number(candidata.tema_id);
+      const preguntaId = Number(candidata.pregunta_id);
+
+      if (!temaIds.has(temaId) || preguntaIds.has(preguntaId)) {
+        throw new ConflictException(
+          'La instantánea del pool aleatorio está incompleta o es inconsistente; la evaluación requiere regularización.',
+        );
+      }
+
+      preguntaIds.add(preguntaId);
+      const preguntas = preguntasPorTema.get(temaId) ?? [];
+      preguntas.push(preguntaId);
+      preguntasPorTema.set(temaId, preguntas);
+    }
+
+    if (temas.length === 0) {
+      throw new ConflictException(
+        'La instantánea del pool aleatorio está incompleta o es inconsistente; la evaluación requiere regularización.',
+      );
+    }
+
+    const seleccionadas: number[] = [];
+
+    for (const tema of temas) {
+      const cantidadSeleccionada = Number(tema.cantidad_seleccionada);
+      const cantidadCandidatas = Number(tema.cantidad_candidatas);
+      const preguntas = preguntasPorTema.get(Number(tema.tema_id)) ?? [];
+
+      if (
+        !Number.isInteger(cantidadSeleccionada) ||
+        cantidadSeleccionada <= 0 ||
+        !Number.isInteger(cantidadCandidatas) ||
+        cantidadCandidatas <= 0 ||
+        preguntas.length !== cantidadCandidatas ||
+        cantidadSeleccionada > preguntas.length
+      ) {
+        throw new ConflictException(
+          'La instantánea del pool aleatorio está incompleta o es inconsistente; la evaluación requiere regularización.',
+        );
+      }
+
+      seleccionadas.push(
+        ...this.barajar(preguntas).slice(0, cantidadSeleccionada),
+      );
+    }
+
+    return seleccionadas;
   }
 
   private barajar<T>(elementos: T[]): T[] {

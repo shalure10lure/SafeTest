@@ -17,6 +17,7 @@ export class IncisoEstudianteDto {
   letra: string;
   enunciado_inciso: string;
   tipo_respuesta: string;
+  /** Puntaje máximo de este inciso, almacenado en `Inciso.puntaje_max`. */
   puntaje_max: number;
   opciones: OpcionEstudianteDto[];
 }
@@ -27,6 +28,11 @@ export class PreguntaEstudianteDto {
   orden: number;
   enunciado: string;
   tipo_respuesta: string | null;
+  /**
+   * Suma de los puntajes máximos de los incisos. Se conserva `puntaje_max`
+   * por compatibilidad con el contrato existente; no es una columna propia
+   * de `Pregunta`.
+   */
   puntaje_max: number;
   incisos: IncisoEstudianteDto[];
 }
