@@ -123,6 +123,7 @@ interface QueryBuilderMock {
   getMany: jest.Mock;
   getRawOne: jest.Mock;
   getRawMany: jest.Mock;
+  getCount: jest.Mock;
   execute: jest.Mock;
 }
 
@@ -132,6 +133,7 @@ function queryBuilderMock(): QueryBuilderMock {
     getMany: jest.fn().mockResolvedValue([]),
     getRawOne: jest.fn().mockResolvedValue(null),
     getRawMany: jest.fn().mockResolvedValue([]),
+    getCount: jest.fn().mockResolvedValue(0),
     execute: jest.fn().mockResolvedValue({ affected: 1, raw: [] }),
   } as QueryBuilderMock;
 
@@ -655,6 +657,7 @@ describe('ExamenService — asignación de evaluaciones', () => {
         modo_asignacion: 'paralelos',
         modo_seleccion: 'manual',
         duracion_min: 60,
+        puntaje_total: '10',
         disponible_desde: new Date(Date.now() + 60 * 60 * 1000),
         disponible_hasta: new Date(Date.now() + 3 * 60 * 60 * 1000),
         paralelos: [{ paralelo_id: 10 }],
@@ -817,6 +820,7 @@ describe('ExamenService — asignación de evaluaciones', () => {
         modo_asignacion: 'paralelos',
         modo_seleccion: 'manual',
         duracion_min: 60,
+        puntaje_total: '10',
         disponible_desde: new Date(Date.now() + 60 * 60 * 1000),
         disponible_hasta: new Date(Date.now() + 3 * 60 * 60 * 1000),
         paralelos: [{ paralelo_id: 10 }],
@@ -825,11 +829,15 @@ describe('ExamenService — asignación de evaluaciones', () => {
 
     function prepararPublicacion(
       filaPregunta: Record<string, unknown> | null,
+      puntajeTotal: string | null = '10',
     ) {
       const bloqueo = queryBuilderMock();
       bloqueo.getOne.mockResolvedValue(EXAMEN_BORRADOR);
       montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
-      montaje.examen.findOne.mockResolvedValue(examenPublicable());
+      montaje.examen.findOne.mockResolvedValue({
+        ...examenPublicable(),
+        puntaje_total: puntajeTotal,
+      });
 
       montaje.examenPregunta.count.mockResolvedValue(
         filaPregunta ? 1 : 0,
@@ -988,6 +996,59 @@ describe('ExamenService — asignación de evaluaciones', () => {
       expect(problemas[0].paso).toBe(2);
       expect(montaje.manager.update).not.toHaveBeenCalled();
     });
+
+    it('bloquea la publicación si la suma no coincide con el puntaje total configurado', async () => {
+      prepararPublicacion({
+        ...PREGUNTA_BASE,
+        puntos: '8',
+      });
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas).toEqual(
+        expect.arrayContaining([
+          {
+            paso: 2,
+            mensaje:
+              'La suma de los puntajes de las preguntas (8) no coincide con el puntaje total configurado (10).',
+          },
+        ]),
+      );
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('publica cuando la suma coincide con un total con decimales', async () => {
+      prepararPublicacion(
+        { ...PREGUNTA_BASE, puntaje: '12.5' },
+        '12.5',
+      );
+
+      const resultado = await montaje.servicio.publicar(5, 7);
+
+      expect(resultado).toEqual({ examen_id: 5, estado: 'publicado' });
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        Examen,
+        { examen_id: 5, estado: 'borrador' },
+        { estado: 'publicado' },
+      );
+    });
+
+    it('bloquea la publicación si no hay puntaje total configurado', async () => {
+      prepararPublicacion({ ...PREGUNTA_BASE }, null);
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas).toEqual(
+        expect.arrayContaining([
+          {
+            paso: 3,
+            mensaje:
+              'Define el puntaje total de la evaluación antes de publicarla.',
+          },
+        ]),
+      );
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('publicar — instantánea del pool aleatorio', () => {
@@ -1003,6 +1064,7 @@ describe('ExamenService — asignación de evaluaciones', () => {
       ],
       totalValidacion = preguntas.filter((pregunta) => pregunta.activo).length,
       snapshotExistente = false,
+      puntajeTotal = '2',
     }: {
       cantidad?: number;
       preguntas?: {
@@ -1018,12 +1080,14 @@ describe('ExamenService — asignación de evaluaciones', () => {
       }[];
       totalValidacion?: number;
       snapshotExistente?: boolean;
+      puntajeTotal?: string;
     } = {}) {
       const examen = {
         ...EXAMEN_BORRADOR,
         modo_asignacion: 'paralelos',
         modo_seleccion: 'aleatorio',
         duracion_min: 60,
+        puntaje_total: puntajeTotal,
         disponible_desde: new Date(Date.now() + 60 * 60 * 1000),
         disponible_hasta: new Date(Date.now() + 3 * 60 * 60 * 1000),
         paralelos: [{ paralelo_id: 10 }],
@@ -1188,8 +1252,26 @@ describe('ExamenService — asignación de evaluaciones', () => {
       );
     });
 
-    it('rechaza un pool parcial si sus preguntas tienen puntajes diferentes', async () => {
-      prepararPublicacionAleatoria({
+    it('rechaza publicar si el total garantizado no coincide con el configurado', async () => {
+      prepararPublicacionAleatoria({ puntajeTotal: '3' });
+
+      try {
+        await montaje.servicio.publicar(5, 7);
+        throw new Error('La publicación debía bloquearse.');
+      } catch (error) {
+        const respuesta = problemasDeError(error);
+        expect(respuesta.problemas[0]).toMatchObject({
+          paso: 2,
+          mensaje:
+            'La suma de los puntajes de las preguntas aleatorias (2) no coincide con el puntaje total configurado (3).',
+        });
+      }
+
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un pool parcial si sus preguntas tienen puntajes diferentes', async () => {      prepararPublicacionAleatoria({
         cantidad: 1,
         incisos: [
           { pregunta_id: 1, letra: 'a', puntaje_max: '2' },
@@ -1221,6 +1303,7 @@ describe('ExamenService — asignación de evaluaciones', () => {
           { pregunta_id: 1, letra: 'a', puntaje_max: '2' },
           { pregunta_id: 2, letra: 'a', puntaje_max: '3.5' },
         ],
+        puntajeTotal: '5.5',
       });
 
       await montaje.servicio.publicar(5, 7);
@@ -1483,6 +1566,295 @@ describe('ExamenService — asignación de evaluaciones', () => {
       expect(montaje.manager.insert).not.toHaveBeenCalled();
       expect(montaje.manager.update).not.toHaveBeenCalled();
     });
+
+    function prepararSeleccionManual(puntajesBanco: string[] = ['7.5', '3']) {
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue(EXAMEN_BORRADOR);
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+
+      const validacion = queryBuilderMock();
+      validacion.getCount.mockResolvedValue(puntajesBanco.length);
+      montaje.pregunta.createQueryBuilder.mockReturnValue(validacion);
+
+      const banco = queryBuilderMock();
+      banco.getRawMany.mockResolvedValue(
+        puntajesBanco.map((puntaje, indice) => ({
+          pregunta_id: String(indice + 1),
+          puntaje,
+        })),
+      );
+      montaje.inciso.createQueryBuilder.mockReturnValue(banco);
+    }
+
+    it('inicializa cada pregunta con el puntaje del banco', async () => {
+      prepararSeleccionManual();
+
+      const resultado = await montaje.servicio.guardarSeleccion(
+        5,
+        { modo_seleccion: 'manual', pregunta_ids: [1, 2] },
+        7,
+      );
+
+      expect(montaje.manager.insert).toHaveBeenCalledWith(ExamenPregunta, [
+        { examen_id: 5, pregunta_id: 1, orden: 1, puntaje: '7.5' },
+        { examen_id: 5, pregunta_id: 2, orden: 2, puntaje: '3' },
+      ]);
+      expect(resultado).toMatchObject({
+        modo_seleccion: 'manual',
+        pregunta_ids: [1, 2],
+        total_preguntas: 2,
+      });
+    });
+
+    it('respeta el puntaje propio enviado por el docente', async () => {
+      prepararSeleccionManual();
+
+      await montaje.servicio.guardarSeleccion(
+        5,
+        {
+          modo_seleccion: 'manual',
+          pregunta_ids: [1, 2],
+          puntajes: [{ pregunta_id: 2, puntaje: 9.25 }],
+        },
+        7,
+      );
+
+      expect(montaje.manager.insert).toHaveBeenCalledWith(ExamenPregunta, [
+        { examen_id: 5, pregunta_id: 1, orden: 1, puntaje: '7.5' },
+        { examen_id: 5, pregunta_id: 2, orden: 2, puntaje: '9.25' },
+      ]);
+    });
+
+    it('rechaza un puntaje para una pregunta que no está seleccionada', async () => {
+      prepararSeleccionManual();
+
+      await expect(
+        montaje.servicio.guardarSeleccion(
+          5,
+          {
+            modo_seleccion: 'manual',
+            pregunta_ids: [1],
+            puntajes: [{ pregunta_id: 99, puntaje: 2 }],
+          },
+          7,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('guardarPuntajes', () => {
+    type FilaPuntaje = {
+      examen_id: number;
+      pregunta_id: number;
+      orden: number;
+      puntaje: string | null;
+    };
+
+    function prepararGuardado({
+      puntajeTotal = '20',
+      estado = 'borrador',
+      filas = [
+        { examen_id: 5, pregunta_id: 1, orden: 1, puntaje: '4' },
+        { examen_id: 5, pregunta_id: 2, orden: 2, puntaje: '6' },
+      ],
+      banco = [] as { pregunta_id: string; puntaje: string }[],
+    }: {
+      puntajeTotal?: string | null;
+      estado?: string;
+      filas?: FilaPuntaje[];
+      banco?: { pregunta_id: string; puntaje: string }[];
+    } = {}) {
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        estado,
+        puntaje_total: puntajeTotal,
+      });
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+      montaje.examenPregunta.find.mockResolvedValue(filas);
+
+      const consultaBanco = queryBuilderMock();
+      consultaBanco.getRawMany.mockResolvedValue(banco);
+      montaje.inciso.createQueryBuilder.mockReturnValue(consultaBanco);
+
+      const detalle = { examen_id: 5, preguntas: [] };
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue(detalle as never);
+
+      return { bloqueo, detalle };
+    }
+
+    it('guarda los puntajes enviados y devuelve el detalle actualizado', async () => {
+      const { bloqueo, detalle } = prepararGuardado();
+
+      const resultado = await montaje.servicio.guardarPuntajes(
+        5,
+        {
+          puntajes: [
+            { pregunta_id: 1, puntaje: 5.5 },
+            { pregunta_id: 2, puntaje: 7.25 },
+          ],
+        },
+        7,
+      );
+
+      expect(bloqueo.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        ExamenPregunta,
+        { examen_id: 5, pregunta_id: 1 },
+        { puntaje: '5.5' },
+      );
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        ExamenPregunta,
+        { examen_id: 5, pregunta_id: 2 },
+        { puntaje: '7.25' },
+      );
+      expect(montaje.manager.update).toHaveBeenCalledTimes(2);
+      expect(montaje.servicio.findOne).toHaveBeenCalledWith(5, 7);
+      expect(resultado).toBe(detalle);
+    });
+
+    it('permite que la suma sea exactamente el puntaje total configurado', async () => {
+      prepararGuardado({ puntajeTotal: '10.5' });
+
+      await montaje.servicio.guardarPuntajes(
+        5,
+        { puntajes: [{ pregunta_id: 1, puntaje: 4.5 }] },
+        7,
+      );
+
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        ExamenPregunta,
+        { examen_id: 5, pregunta_id: 1 },
+        { puntaje: '4.5' },
+      );
+      expect(montaje.manager.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('rechaza la suma que supera el puntaje total configurado', async () => {
+      prepararGuardado({ puntajeTotal: '10' });
+
+      await expect(
+        montaje.servicio.guardarPuntajes(
+          5,
+          { puntajes: [{ pregunta_id: 1, puntaje: 4.5 }] },
+          7,
+        ),
+      ).rejects.toThrow(
+        'La suma de los puntajes de las preguntas (10.5) no puede superar el puntaje total configurado (10)',
+      );
+
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una pregunta que no pertenece a la evaluación', async () => {
+      prepararGuardado();
+
+      await expect(
+        montaje.servicio.guardarPuntajes(
+          5,
+          { puntajes: [{ pregunta_id: 99, puntaje: 2 }] },
+          7,
+        ),
+      ).rejects.toThrow('La pregunta #99 no pertenece a la evaluación.');
+
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza el guardado si la evaluación no tiene puntaje total configurado', async () => {
+      prepararGuardado({ puntajeTotal: null });
+
+      await expect(
+        montaje.servicio.guardarPuntajes(
+          5,
+          { puntajes: [{ pregunta_id: 1, puntaje: 2 }] },
+          7,
+        ),
+      ).rejects.toThrow(
+        'Configure el puntaje total de la evaluación antes de guardar los puntajes de las preguntas.',
+      );
+
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza el guardado si la evaluación dejó de ser borrador', async () => {
+      prepararGuardado({ estado: 'publicado' });
+
+      await expect(
+        montaje.servicio.guardarPuntajes(
+          5,
+          { puntajes: [{ pregunta_id: 1, puntaje: 2 }] },
+          7,
+        ),
+      ).rejects.toThrow(
+        'Solo se pueden modificar los puntajes de una evaluación en borrador.',
+      );
+
+      expect(montaje.servicio.findOne).not.toHaveBeenCalled();
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('solo permite al docente propietario modificar los puntajes', async () => {
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue(null);
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+
+      await expect(
+        montaje.servicio.guardarPuntajes(
+          5,
+          { puntajes: [{ pregunta_id: 1, puntaje: 2 }] },
+          99,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('valida la suma con el puntaje guardado o del banco de las preguntas omitidas', async () => {
+      prepararGuardado({
+        puntajeTotal: '10',
+        filas: [
+          { examen_id: 5, pregunta_id: 1, orden: 1, puntaje: '4' },
+          { examen_id: 5, pregunta_id: 2, orden: 2, puntaje: null },
+        ],
+        banco: [{ pregunta_id: '2', puntaje: '6' }],
+      });
+
+      await montaje.servicio.guardarPuntajes(
+        5,
+        { puntajes: [{ pregunta_id: 1, puntaje: 4 }] },
+        7,
+      );
+
+      expect(montaje.manager.update).toHaveBeenCalledTimes(1);
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        ExamenPregunta,
+        { examen_id: 5, pregunta_id: 1 },
+        { puntaje: '4' },
+      );
+    });
+
+    it('rechaza el guardado si una pregunta existente no tiene puntaje válido', async () => {
+      prepararGuardado({
+        filas: [
+          { examen_id: 5, pregunta_id: 1, orden: 1, puntaje: '4' },
+          { examen_id: 5, pregunta_id: 2, orden: 2, puntaje: null },
+        ],
+      });
+
+      await expect(
+        montaje.servicio.guardarPuntajes(
+          5,
+          { puntajes: [{ pregunta_id: 1, puntaje: 4 }] },
+          7,
+        ),
+      ).rejects.toThrow(
+        'La pregunta #2 no tiene un puntaje válido. Asigne uno mayor que cero.',
+      );
+
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('obtenerResumen', () => {
@@ -1645,6 +2017,46 @@ describe('ExamenService — asignación de evaluaciones', () => {
       expect(resultado.puntajes.preguntas_sin_puntaje).toEqual([]);
       expect(resultado.criterios).toEqual([
         { tema_id: 1, nombre_tema: 'Algebra', cantidad: 2 },
+      ]);
+    });
+
+    it('usa el puntaje propio de cada pregunta guardada en la evaluación', async () => {
+      prepararCriterios();
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        modo_seleccion: 'manual',
+        paralelos: [],
+        total_preguntas: 2,
+        preguntas: [
+          {
+            pregunta_id: 1,
+            enunciado: 'Pregunta del banco de 12',
+            puntos: 12,
+            puntaje: 4,
+            total_incisos: 3,
+            incisos_sin_puntaje: 0,
+            tema: { tema_id: 1, nombre_tema: 'Algebra' },
+          },
+          {
+            pregunta_id: 2,
+            enunciado: 'Pregunta del banco de 7.5',
+            puntos: 7.5,
+            puntaje: 10,
+            total_incisos: 2,
+            incisos_sin_puntaje: 0,
+            tema: { tema_id: 1, nombre_tema: 'Algebra' },
+          },
+        ],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes.puntaje_total).toBe(14);
+      expect(resultado.puntajes.temas[0].puntaje_maximo).toBe(14);
+      expect(resultado.puntajes.preguntas).toEqual([
+        expect.objectContaining({ pregunta_id: 1, puntaje_maximo: 4 }),
+        expect.objectContaining({ pregunta_id: 2, puntaje_maximo: 10 }),
       ]);
     });
 

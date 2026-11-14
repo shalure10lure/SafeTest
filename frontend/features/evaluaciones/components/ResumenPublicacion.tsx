@@ -9,7 +9,7 @@ import LinkButton from '@/components/ui/LinkButton';
 import { ROUTES } from '@/constants/routes';
 
 import { formatearDuracion, formatearFechaHora } from '../configuracion';
-import { formatearPuntos } from '../formato';
+import { formatearPuntos, puntajesIguales } from '../formato';
 import { mensajeDeError, problemasDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import type {
@@ -93,11 +93,17 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
     );
     const puntajes = datos.puntajes;
     const esAleatorio = datos.modo_seleccion === 'aleatorio';
+    const totalConfigurado = datos.puntaje_total;
+    const suma = puntajes.puntaje_total;
+    const coincideTotal =
+        puntajes.disponible && suma !== null && totalConfigurado !== null
+            ? puntajesIguales(suma, totalConfigurado)
+            : null;
     const etiquetaPuntajeTotal = esAleatorio
         ? publicada
             ? 'Puntaje máximo total'
             : 'Puntaje máximo garantizado'
-        : 'Puntaje total';
+        : 'Suma de puntajes';
     const valorPuntajeTotal =
         puntajes.disponible && puntajes.puntaje_total !== null
             ? `${formatearPuntos(puntajes.puntaje_total)} pts`
@@ -106,6 +112,10 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                 : puntajes.motivo === 'instantanea_invalida'
                     ? 'Instantánea inválida'
                     : 'No se puede garantizar';
+    const valorTotalConfigurado =
+        totalConfigurado === null
+            ? 'Sin configurar'
+            : `${formatearPuntos(totalConfigurado)} pts`;
     async function publicar() {
         setError('');
         setProblemas([]);
@@ -268,6 +278,28 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                 etiqueta={etiquetaPuntajeTotal}
                                 valor={valorPuntajeTotal}
                             />
+                            <FilaResumen
+                                etiqueta="Puntaje total configurado"
+                                valor={valorTotalConfigurado}
+                            />
+                            {coincideTotal !== null && (
+                                <FilaResumen
+                                    etiqueta="Coincidencia"
+                                    valor={
+                                        <span
+                                            className={
+                                                coincideTotal
+                                                    ? 'text-emerald-700'
+                                                    : 'text-red-600'
+                                            }
+                                        >
+                                            {coincideTotal
+                                                ? 'La suma coincide'
+                                                : 'La suma no coincide'}
+                                        </span>
+                                    }
+                                />
+                            )}
                             {puntajes.preguntas_sin_puntaje.length > 0 && (
                                 <FilaResumen
                                     etiqueta="Preguntas sin puntaje"
@@ -455,6 +487,42 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                     </strong>
                                 </p>
                             </>
+                        )}
+                    </section>
+
+                    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <h3 className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+                            Puntaje por pregunta
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                            {esAleatorio
+                                ? 'Puntajes de las preguntas candidatas.'
+                                : 'Puntaje asignado a cada pregunta seleccionada.'}
+                        </p>
+
+                        {puntajes.preguntas.length === 0 ? (
+                            <p className="mt-3 text-xs text-slate-500">
+                                No hay detalle de preguntas disponible.
+                            </p>
+                        ) : (
+                            <ul className="mt-3 max-h-60 space-y-2 overflow-y-auto">
+                                {puntajes.preguntas.map((pregunta) => (
+                                    <li
+                                        key={pregunta.pregunta_id}
+                                        className="flex items-baseline justify-between gap-3 text-sm"
+                                    >
+                                        <span className="min-w-0 truncate text-slate-800">
+                                            {pregunta.enunciado ??
+                                                `Pregunta #${pregunta.pregunta_id}`}
+                                        </span>
+                                        <span className="shrink-0 text-xs whitespace-nowrap text-violet-700 tabular-nums">
+                                            {pregunta.puntaje_maximo === null
+                                                ? 'Sin puntaje'
+                                                : `${formatearPuntos(pregunta.puntaje_maximo)} pts`}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
                         )}
                     </section>
 

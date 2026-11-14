@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { In, type EntityManager } from 'typeorm';
 
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
+import { ExamenPoolSnapshotPregunta } from '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
+import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
 import { Inciso } from '../inciso/entity/inciso.entity';
 import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
 import {
@@ -12,6 +14,7 @@ import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entit
 import { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
 import { SolucionOpcion } from '../solucionopcion/entity/solucionopcion.entity';
 import {
+  escalarPuntajeProporcional,
   formatearPuntaje,
   puntajeNumerico,
   puntajeSeleccionMultiple,
@@ -100,29 +103,72 @@ export class CorreccionRendicionService {
       return this.sinCorreccion();
     }
 
-    const [respuestas, opciones, solucionesInciso, solucionesOpcion] =
-      await Promise.all([
-        manager.getRepository(RespuestaInciso).find({
-          where: {
-            estudiante_id: estudianteId,
-            examen_id: examenId,
-            pregunta_id: In(preguntaIds),
-          },
-        }),
-        manager.getRepository(OpcionMarcada).find({
-          where: {
-            estudiante_id: estudianteId,
-            examen_id: examenId,
-            pregunta_id: In(preguntaIds),
-          },
-        }),
-        manager.getRepository(SolucionInciso).find({
-          where: { pregunta_id: In(preguntaIds) },
-        }),
-        manager.getRepository(SolucionOpcion).find({
-          where: { pregunta_id: In(preguntaIds) },
-        }),
-      ]);
+    const [
+      respuestas,
+      opciones,
+      solucionesInciso,
+      solucionesOpcion,
+      puntajesPreguntasEvaluacion,
+      puntajesPreguntasInstantanea,
+    ] = await Promise.all([
+      manager.getRepository(RespuestaInciso).find({
+        where: {
+          estudiante_id: estudianteId,
+          examen_id: examenId,
+          pregunta_id: In(preguntaIds),
+        },
+      }),
+      manager.getRepository(OpcionMarcada).find({
+        where: {
+          estudiante_id: estudianteId,
+          examen_id: examenId,
+          pregunta_id: In(preguntaIds),
+        },
+      }),
+      manager.getRepository(SolucionInciso).find({
+        where: { pregunta_id: In(preguntaIds) },
+      }),
+      manager.getRepository(SolucionOpcion).find({
+        where: { pregunta_id: In(preguntaIds) },
+      }),
+      manager.getRepository(ExamenPregunta).find({
+        where: {
+          examen_id: examenId,
+          pregunta_id: In(preguntaIds),
+        },
+        select: { pregunta_id: true, puntaje: true },
+      }),
+      manager.getRepository(ExamenPoolSnapshotPregunta).find({
+        where: {
+          examen_id: examenId,
+          pregunta_id: In(preguntaIds),
+        },
+        select: {
+          pregunta_id: true,
+          puntaje_maximo_pregunta: true,
+        },
+      }),
+    ]);
+
+    const puntajeEvaluacionPorPregunta = new Map<number, number>();
+
+    for (const fila of puntajesPreguntasInstantanea) {
+      const puntaje = Number(fila.puntaje_maximo_pregunta);
+
+      if (Number.isFinite(puntaje) && puntaje > 0) {
+        puntajeEvaluacionPorPregunta.set(fila.pregunta_id, puntaje);
+      }
+    }
+
+    for (const fila of puntajesPreguntasEvaluacion) {
+      if (fila.puntaje === null) continue;
+
+      const puntaje = Number(fila.puntaje);
+
+      if (Number.isFinite(puntaje) && puntaje > 0) {
+        puntajeEvaluacionPorPregunta.set(fila.pregunta_id, puntaje);
+      }
+    }
 
     const respuestasPorInciso = new Map(
       respuestas.map((respuesta) => [
@@ -164,7 +210,18 @@ export class CorreccionRendicionService {
     const cambios: RespuestaInciso[] = [];
     let respuestasAutomaticas = 0;
     let pendientesRevision = 0;
-    let nota = 0;
+    const puntajesMaximosIncisosPorPregunta = new Map<number, number>();
+    const puntajesObtenidosPorPregunta = new Map<number, number>();
+
+    for (const inciso of incisos) {
+      const puntajeMaximo = Number(inciso.puntaje_max);
+      const acumulado =
+        puntajesMaximosIncisosPorPregunta.get(inciso.pregunta_id) ?? 0;
+      puntajesMaximosIncisosPorPregunta.set(
+        inciso.pregunta_id,
+        acumulado + puntajeMaximo,
+      );
+    }
 
     for (const inciso of incisos) {
       const clave = claveInciso(inciso.pregunta_id, inciso.letra);
@@ -237,7 +294,11 @@ export class CorreccionRendicionService {
       }
 
       respuestasAutomaticas += 1;
-      nota += puntaje;
+      puntajesObtenidosPorPregunta.set(
+        inciso.pregunta_id,
+        (puntajesObtenidosPorPregunta.get(inciso.pregunta_id) ?? 0) +
+          puntaje,
+      );
       this.marcarAutomatica(respuesta, puntaje, cambios);
     }
 
@@ -246,6 +307,27 @@ export class CorreccionRendicionService {
     }
 
     const completa = incisos.length > 0 && pendientesRevision === 0;
+    let nota = 0;
+
+    if (completa) {
+      for (const [preguntaId, puntajeObtenido] of puntajesObtenidosPorPregunta) {
+        const puntajeMaximoEvaluacion =
+          puntajeEvaluacionPorPregunta.get(preguntaId);
+        const sumaPuntajesMaximosIncisos =
+          puntajesMaximosIncisosPorPregunta.get(preguntaId);
+
+        nota +=
+          puntajeMaximoEvaluacion !== undefined &&
+          sumaPuntajesMaximosIncisos !== undefined &&
+          puntajeMaximoEvaluacion !== sumaPuntajesMaximosIncisos
+            ? escalarPuntajeProporcional(
+                puntajeObtenido,
+                puntajeMaximoEvaluacion,
+                sumaPuntajesMaximosIncisos,
+              )
+            : puntajeObtenido;
+      }
+    }
 
     return {
       respuestasAutomaticas,

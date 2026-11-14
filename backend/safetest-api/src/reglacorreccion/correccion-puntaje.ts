@@ -20,6 +20,30 @@ export function formatearPuntaje(valor: number): string {
   return redondear(valor, DECIMALES_PUNTAJE).toFixed(DECIMALES_PUNTAJE);
 }
 
+/** Escala el puntaje obtenido desde el máximo de banco al de la evaluación. */
+export function escalarPuntajeProporcional(
+  puntajeObtenido: number,
+  puntajeMaximoEvaluacion: number,
+  sumaPuntajesMaximosIncisos: number,
+): number {
+  if (
+    !Number.isFinite(puntajeObtenido) ||
+    puntajeObtenido < 0 ||
+    !Number.isFinite(puntajeMaximoEvaluacion) ||
+    puntajeMaximoEvaluacion <= 0 ||
+    !Number.isFinite(sumaPuntajesMaximosIncisos) ||
+    sumaPuntajesMaximosIncisos <= 0
+  ) {
+    throw new RangeError('Los puntajes para escalar deben ser válidos.');
+  }
+
+  return redondear(
+    (puntajeObtenido * puntajeMaximoEvaluacion) /
+      sumaPuntajesMaximosIncisos,
+    DECIMALES_PUNTAJE,
+  );
+}
+
 function limitar(valor: number, minimo: number, maximo: number): number {
   return Math.min(Math.max(valor, minimo), maximo);
 }

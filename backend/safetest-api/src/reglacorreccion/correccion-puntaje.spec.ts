@@ -1,4 +1,5 @@
 import {
+  escalarPuntajeProporcional,
   formatearPuntaje,
   puntajeNumerico,
   puntajeSeleccionMultiple,
@@ -209,6 +210,15 @@ describe('correccion-puntaje', () => {
       expect(redondear(2.344, 2)).toBe(2.34);
       expect(formatearPuntaje(2.5)).toBe('2.50');
       expect(formatearPuntaje(0)).toBe('0.00');
+    });
+
+    it('escala el puntaje obtenido al máximo propio de la evaluación', () => {
+      expect(escalarPuntajeProporcional(4, 20, 10)).toBe(8);
+      expect(escalarPuntajeProporcional(1, 1, 3)).toBe(0.33);
+    });
+
+    it('rechaza máximos inválidos para el escalado', () => {
+      expect(() => escalarPuntajeProporcional(1, 5, 0)).toThrow(RangeError);
     });
   });
 });

@@ -3,14 +3,61 @@ import 'reflect-metadata';
 import { jest } from '@jest/globals';
 import type { EntityManager } from 'typeorm';
 
-import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
-import { Inciso } from '../inciso/entity/inciso.entity';
-import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
-import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
-import { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
-import { SolucionOpcion } from '../solucionopcion/entity/solucionopcion.entity';
-import { CorreccionRendicionService } from './correccion-rendicion.service';
-import { ReglaCorreccion } from './entity/reglacorreccion.entity';
+class AsignacionPregunta {}
+class ExamenPregunta {}
+class ExamenPoolSnapshotPregunta {}
+class Inciso {}
+class OpcionMarcada {}
+class RespuestaInciso {}
+class SolucionInciso {}
+class SolucionOpcion {}
+class ReglaCorreccion {}
+
+let CorreccionRendicionService: typeof import(
+  './correccion-rendicion.service'
+).CorreccionRendicionService;
+
+beforeAll(async () => {
+  jest.unstable_mockModule(
+    '../asignacionpregunta/entity/asignacionpregunta.entity',
+    () => ({ AsignacionPregunta }),
+  );
+  jest.unstable_mockModule(
+    '../examenpregunta/entity/examenpregunta.entity',
+    () => ({ ExamenPregunta }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity',
+    () => ({ ExamenPoolSnapshotPregunta }),
+  );
+  jest.unstable_mockModule('../inciso/entity/inciso.entity', () => ({
+    Inciso,
+  }));
+  jest.unstable_mockModule(
+    '../opcionmarcada/entity/opcionmarcada.entity',
+    () => ({ OpcionMarcada }),
+  );
+  jest.unstable_mockModule(
+    '../respuestainciso/entity/respuestainciso.entity',
+    () => ({ RespuestaInciso }),
+  );
+  jest.unstable_mockModule(
+    '../solucioninciso/entity/solucioninciso.entity',
+    () => ({ SolucionInciso }),
+  );
+  jest.unstable_mockModule(
+    '../solucionopcion/entity/solucionopcion.entity',
+    () => ({ SolucionOpcion }),
+  );
+  jest.unstable_mockModule(
+    './entity/reglacorreccion.entity',
+    () => ({ ReglaCorreccion }),
+  );
+
+  ({ CorreccionRendicionService } = await import(
+    './correccion-rendicion.service'
+  ));
+});
 
 /**
  * Las entidades solo se usan como tokens de repositorio. Se trabaja con
@@ -78,6 +125,16 @@ interface FilaRegla {
   activo: boolean;
 }
 
+interface FilaPuntajePreguntaEvaluacion {
+  pregunta_id: number;
+  puntaje: string | null;
+}
+
+interface FilaPuntajePreguntaInstantanea {
+  pregunta_id: number;
+  puntaje_maximo_pregunta: string;
+}
+
 interface Escenario {
   asignaciones?: { pregunta_id: number }[];
   incisos?: FilaInciso[];
@@ -86,6 +143,8 @@ interface Escenario {
   solucionesInciso?: FilaSolucionInciso[];
   solucionesOpcion?: FilaSolucionOpcion[];
   reglas?: FilaRegla[];
+  puntajesEvaluacion?: FilaPuntajePreguntaEvaluacion[];
+  puntajesInstantanea?: FilaPuntajePreguntaInstantanea[];
 }
 
 interface RepoSimulado {
@@ -189,6 +248,11 @@ function repo(filas: unknown[]): RepoSimulado {
 function montar(escenario: Escenario) {
   const repositorios = new Map<unknown, RepoSimulado>([
     [AsignacionPregunta, repo(escenario.asignaciones ?? [])],
+    [ExamenPregunta, repo(escenario.puntajesEvaluacion ?? [])],
+    [
+      ExamenPoolSnapshotPregunta,
+      repo(escenario.puntajesInstantanea ?? []),
+    ],
     [Inciso, repo(escenario.incisos ?? [])],
     [RespuestaInciso, repo(escenario.respuestas ?? [])],
     [OpcionMarcada, repo(escenario.opciones ?? [])],
@@ -263,6 +327,65 @@ describe('CorreccionRendicionService', () => {
       estado_correccion: 'automatica',
     });
   });
+
+  it(
+    'escala el puntaje de la pregunta según el valor configurado en la evaluación',
+    async () => {
+      const respuestas = [respuesta(20, 'a'), respuesta(20, 'b')];
+      const { servicio, manager } = montar({
+        asignaciones: [{ pregunta_id: 20 }],
+        incisos: [
+          inciso(20, 'a', 'opcion_unica', 4),
+          inciso(20, 'b', 'opcion_unica', 6),
+        ],
+        respuestas,
+        opciones: [marcada(20, 'a', 1), marcada(20, 'b', 2)],
+        solucionesOpcion: [
+          solucionOpcion(20, 'a', 1),
+          solucionOpcion(20, 'b', 1),
+        ],
+        reglas: [regla(1, 'opcion_unica')],
+        puntajesEvaluacion: [{ pregunta_id: 20, puntaje: '20' }],
+      });
+
+      const resultado = await servicio.corregirRendicion(
+        manager,
+        EXAMEN_ID,
+        ESTUDIANTE_ID,
+      );
+
+      expect(resultado.notaFinal).toBe('8.00');
+      expect(respuestas[0].puntaje_obtenido).toBe('4.00');
+      expect(respuestas[1].puntaje_obtenido).toBe('0.00');
+    },
+  );
+
+  it(
+    'usa el puntaje de la instantánea para una pregunta aleatoria',
+    async () => {
+      const respuestas = [respuesta(21, 'a')];
+      const { servicio, manager } = montar({
+        asignaciones: [{ pregunta_id: 21 }],
+        incisos: [inciso(21, 'a', 'opcion_unica', 10)],
+        respuestas,
+        opciones: [marcada(21, 'a', 1)],
+        solucionesOpcion: [solucionOpcion(21, 'a', 1)],
+        reglas: [regla(1, 'opcion_unica')],
+        puntajesInstantanea: [
+          { pregunta_id: 21, puntaje_maximo_pregunta: '5' },
+        ],
+      });
+
+      const resultado = await servicio.corregirRendicion(
+        manager,
+        EXAMEN_ID,
+        ESTUDIANTE_ID,
+      );
+
+      expect(resultado.notaFinal).toBe('5.00');
+      expect(respuestas[0].puntaje_obtenido).toBe('10.00');
+    },
+  );
 
   it('califica verdadero/falso comparando con la solución del inciso', async () => {
     const respuestas = [respuesta(11, 'a'), respuesta(11, 'b')];

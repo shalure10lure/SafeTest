@@ -27,6 +27,7 @@ import { ExamenPoolSnapshotInciso } from '../examenpoolsnapshot/entity/examen-po
 import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
 import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
+import { GuardarPuntajesDto } from './dto/guardar-puntajes.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
 import { calcularDistribucionPuntajes } from './puntajes-resumen';
@@ -373,6 +374,9 @@ export class ExamenService {
                 disponible_desde: desde,
                 disponible_hasta: hasta,
                 modo_entrega_nota: dto.modo_entrega_nota,
+                // La columna `numeric` se persiste como texto, igual que otros
+                // puntajes del modelo.
+                puntaje_total: String(dto.puntaje_total),
             },
         );
 
@@ -1112,11 +1116,11 @@ export class ExamenService {
      * no tiene un puntaje numérico, finito y mayor que cero.
      */
     private async problemasDePuntaje(
-        examenId: number,
+        examen: Examen,
         manager: EntityManager,
     ): Promise<{ paso: number; mensaje: string }[]> {
         const filas = await manager.getRepository(ExamenPregunta).find({
-            where: { examen_id: examenId },
+            where: { examen_id: examen.examen_id },
             order: { orden: 'ASC' },
         });
 
@@ -1126,7 +1130,7 @@ export class ExamenService {
 
         const preguntas = await this.obtenerPreguntasPorIds(
             filas.map((fila) => fila.pregunta_id),
-            examenId,
+            examen.examen_id,
             manager,
         );
         const distribucion = calcularDistribucionPuntajes(preguntas, 'manual');
@@ -1139,18 +1143,60 @@ export class ExamenService {
             });
         }
 
-        if (
-            problemas.length === 0 &&
-            (distribucion.puntaje_total ?? 0) <= 0
-        ) {
-            problemas.push({
-                paso: 2,
-                mensaje:
-                    'El puntaje total de la evaluación debe ser mayor que cero.',
-            });
+        // La suma solo se compara cuando todas las preguntas tienen un puntaje
+        // válido; de lo contrario el mensaje de la pregunta inválida ya indica
+        // qué corregir.
+        if (problemas.length === 0) {
+            const problemaSuma = this.problemaDeSumaPuntajes(
+                distribucion.puntaje_total === null
+                    ? null
+                    : parsearPuntajeDecimal(
+                        distribucion.puntaje_total.toFixed(2),
+                    ),
+                examen.puntaje_total,
+                2,
+                'las preguntas',
+            );
+
+            if (problemaSuma) {
+                problemas.push(problemaSuma);
+            }
         }
 
         return problemas;
+    }
+
+    /**
+     * Compara la suma de los puntajes con el total configurado. La ausencia de
+     * total se informa aparte, en el paso 3.
+     */
+    private problemaDeSumaPuntajes(
+        suma: PuntajeDecimal | null,
+        totalConfigurado: string | null,
+        paso: number,
+        descripcion: string,
+    ): { paso: number; mensaje: string } | null {
+        const total = parsearPuntajeDecimal(totalConfigurado);
+
+        if (!total) {
+            return null;
+        }
+
+        if (!suma) {
+            return {
+                paso,
+                mensaje: `No se pudo calcular la suma de los puntajes de ${descripcion}.`,
+            };
+        }
+
+        if (!puntajesDecimalesIguales(suma, total)) {
+            return {
+                paso,
+                mensaje: `La suma de los puntajes de ${descripcion} (${puntajeDecimalATexto(suma)}) no coincide con el puntaje total configurado (${puntajeDecimalATexto(total)}).`,
+            };
+        }
+
+        return null;
     }
 
     private async crearInstantaneaPoolAleatorio(
@@ -1419,6 +1465,17 @@ export class ExamenService {
             );
         }
 
+        const problemaSuma = this.problemaDeSumaPuntajes(
+            puntajeTotal,
+            examen.puntaje_total,
+            2,
+            'las preguntas aleatorias',
+        );
+
+        if (problemaSuma) {
+            throw new BadRequestException(problemaSuma.mensaje);
+        }
+
         await manager.insert(ExamenPoolSnapshot, {
             examen_id: examen.examen_id,
             version: 1,
@@ -1449,7 +1506,7 @@ export class ExamenService {
             } else {
                 problemas.push(
                     ...(await this.problemasDePuntaje(
-                        examen.examen_id,
+                        examen,
                         manager,
                     )),
                 );
@@ -1483,6 +1540,14 @@ export class ExamenService {
         }
 
         // Paso 3: configuración y disponibilidad.
+        if (!parsearPuntajeDecimal(examen.puntaje_total)) {
+            problemas.push({
+                paso: 3,
+                mensaje:
+                    'Define el puntaje total de la evaluación antes de publicarla.',
+            });
+        }
+
         if (
             examen.duracion_min === null ||
             examen.duracion_min < 5 ||
@@ -1648,6 +1713,11 @@ export class ExamenService {
             modo_seleccion: examen.modo_seleccion,
             orden_preguntas: examen.orden_preguntas,
             duracion_min: examen.duracion_min,
+            // numeric llega como texto desde PostgreSQL; el contrato es numérico.
+            puntaje_total:
+                examen.puntaje_total === null
+                    ? null
+                    : Number(examen.puntaje_total),
             disponible_desde: examen.disponible_desde,
             disponible_hasta: examen.disponible_hasta,
             modo_entrega_nota: examen.modo_entrega_nota,
@@ -1742,6 +1812,12 @@ export class ExamenService {
             .innerJoin('pregunta.tema', 'tema')
             .innerJoin('tema.materia', 'materia')
             .leftJoin('pregunta.incisos', 'inciso')
+            .leftJoin(
+                ExamenPregunta,
+                'examenPregunta',
+                'examenPregunta.pregunta_id = pregunta.pregunta_id AND examenPregunta.examen_id = :examenId',
+                { examenId },
+            )
             .select('pregunta.pregunta_id', 'pregunta_id')
             .addSelect('pregunta.enunciado', 'enunciado')
             .addSelect('pregunta.dificultad', 'dificultad')
@@ -1751,6 +1827,7 @@ export class ExamenService {
             .addSelect('materia.materia_id', 'materia_id')
             .addSelect('materia.nombre', 'materia_nombre')
             .addSelect('COALESCE(SUM(inciso.puntaje_max), 0)', 'puntos')
+            .addSelect('MAX(examenPregunta.puntaje)', 'puntaje')
             .addSelect('COUNT(inciso.letra)', 'total_incisos')
             .addSelect(
                 `COUNT(inciso.letra) FILTER (WHERE inciso.puntaje_max <= 0)`,
@@ -1779,6 +1856,7 @@ export class ExamenService {
                 materia_id: number;
                 materia_nombre: string;
                 puntos: string;
+                puntaje: string | null;
                 total_incisos: string;
                 incisos_sin_puntaje: string;
                 tipo_respuesta: string | null;
@@ -1808,6 +1886,12 @@ export class ExamenService {
                     dificultad: fila.dificultad,
                     tipo_respuesta: fila.tipo_respuesta,
                     puntos: Number(fila.puntos),
+                    // Puntaje propio de esta evaluación; `null` = aún no se ha
+                    // inicializado (evaluaciones anteriores a esta columna).
+                    puntaje:
+                        fila.puntaje === null || fila.puntaje === undefined
+                            ? null
+                            : Number(fila.puntaje),
                     total_incisos: Number(fila.total_incisos),
                     incisos_sin_puntaje: Number(fila.incisos_sin_puntaje),
                     usada_en: usosPorPregunta.get(Number(fila.pregunta_id)) ?? 0,
@@ -2001,8 +2085,28 @@ export class ExamenService {
 
             if (dto.modo_seleccion === 'manual') {
                 const ids = dto.pregunta_ids ?? [];
+                const puntajesSolicitados = new Map(
+                    (dto.puntajes ?? []).map((fila) => [
+                        fila.pregunta_id,
+                        fila.puntaje,
+                    ]),
+                );
+                const fueraDeSeleccion = [...puntajesSolicitados.keys()].filter(
+                    (preguntaId) => !ids.includes(preguntaId),
+                );
+
+                if (fueraDeSeleccion.length > 0) {
+                    throw new BadRequestException(
+                        'Solo se puede indicar el puntaje de las preguntas seleccionadas.',
+                    );
+                }
 
                 await this.validarPreguntasManual(ids, docenteId, manager);
+                const puntajesBanco = await this.obtenerPuntajesBanco(
+                    ids,
+                    manager,
+                );
+
                 await manager.delete(ExamenPregunta, { examen_id: examenId });
                 await manager.delete(ExamenTema, { examen_id: examenId });
 
@@ -2013,6 +2117,15 @@ export class ExamenService {
                             examen_id: examenId,
                             pregunta_id,
                             orden: indice + 1,
+                            // Sin un puntaje explícito, se conserva el valor
+                            // inicial del banco.
+                            puntaje:
+                                puntajesSolicitados.get(pregunta_id) !==
+                                undefined
+                                    ? String(
+                                        puntajesSolicitados.get(pregunta_id),
+                                    )
+                                    : (puntajesBanco.get(pregunta_id) ?? null),
                         })),
                     );
                 }
@@ -2087,6 +2200,158 @@ export class ExamenService {
                 ),
             };
         });
+    }
+
+    // GUARDAR LOS PUNTAJES DE LAS PREGUNTAS YA SELECCIONADAS (paso 2)
+
+    async guardarPuntajes(
+        examenId: number,
+        dto: GuardarPuntajesDto,
+        docenteId: number,
+    ) {
+        await this.dataSource.transaction(async (manager) => {
+            const examen = await manager
+                .getRepository(Examen)
+                .createQueryBuilder('examen')
+                .where('examen.examen_id = :examenId', { examenId })
+                .andWhere('examen.docente_id = :docenteId', { docenteId })
+                .setLock('pessimistic_write')
+                .getOne();
+
+            if (!examen) {
+                throw new NotFoundException('La evaluación no existe.');
+            }
+
+            if (examen.estado !== 'borrador') {
+                throw new BadRequestException(
+                    'Solo se pueden modificar los puntajes de una evaluación en borrador.',
+                );
+            }
+
+            const filas = await manager.getRepository(ExamenPregunta).find({
+                where: { examen_id: examenId },
+                order: { orden: 'ASC' },
+            });
+            const preguntasPorId = new Map(
+                filas.map((fila) => [fila.pregunta_id, fila]),
+            );
+
+            for (const item of dto.puntajes) {
+                if (!preguntasPorId.has(item.pregunta_id)) {
+                    throw new BadRequestException(
+                        `La pregunta #${item.pregunta_id} no pertenece a la evaluación.`,
+                    );
+                }
+            }
+
+            const totalConfigurado = parsearPuntajeDecimal(
+                examen.puntaje_total,
+            );
+
+            if (!totalConfigurado) {
+                throw new BadRequestException(
+                    'Configure el puntaje total de la evaluación antes de guardar los puntajes de las preguntas.',
+                );
+            }
+
+            const solicitados = new Map<number, PuntajeDecimal>();
+
+            for (const item of dto.puntajes) {
+                const puntaje = parsearPuntajeDecimal(item.puntaje);
+
+                if (!puntaje) {
+                    throw new BadRequestException(
+                        `El puntaje de la pregunta #${item.pregunta_id} debe ser un número mayor que cero.`,
+                    );
+                }
+
+                solicitados.set(item.pregunta_id, puntaje);
+            }
+
+            // La suma se valida con el puntaje resultante de todas las
+            // preguntas, no solo con las enviadas, para que una actualización
+            // parcial no deje la evaluación por encima de su total.
+            const puntajesBanco = await this.obtenerPuntajesBanco(
+                filas.map((fila) => fila.pregunta_id),
+                manager,
+            );
+            const efectivos = filas.map((fila) => {
+                const solicitado = solicitados.get(fila.pregunta_id);
+
+                if (solicitado) return solicitado;
+
+                const guardado = parsearPuntajeDecimal(fila.puntaje);
+
+                if (guardado) return guardado;
+
+                const delBanco = parsearPuntajeDecimal(
+                    puntajesBanco.get(fila.pregunta_id),
+                );
+
+                if (delBanco) return delBanco;
+
+                throw new BadRequestException(
+                    `La pregunta #${fila.pregunta_id} no tiene un puntaje válido. Asigne uno mayor que cero.`,
+                );
+            });
+            const suma = sumarPuntajesDecimales(efectivos);
+
+            if (
+                puntajeDecimalANumero(suma) >
+                puntajeDecimalANumero(totalConfigurado)
+            ) {
+                throw new BadRequestException(
+                    `La suma de los puntajes de las preguntas (${puntajeDecimalATexto(suma)}) no puede superar el puntaje total configurado (${puntajeDecimalATexto(totalConfigurado)}).`,
+                );
+            }
+
+            for (const item of dto.puntajes) {
+                await manager.update(
+                    ExamenPregunta,
+                    {
+                        examen_id: examenId,
+                        pregunta_id: item.pregunta_id,
+                    },
+                    { puntaje: String(item.puntaje) },
+                );
+            }
+        });
+
+        return this.findOne(examenId, docenteId);
+    }
+
+    // Puntaje inicial de cada pregunta: suma de los `puntaje_max` de sus
+    // incisos. Las preguntas sin un total positivo válido quedan fuera del
+    // mapa y se guardan en `NULL`.
+    private async obtenerPuntajesBanco(
+        ids: number[],
+        manager: EntityManager,
+    ): Promise<Map<number, string>> {
+        if (ids.length === 0) return new Map();
+
+        const filas = await manager
+            .getRepository(Inciso)
+            .createQueryBuilder('inciso')
+            .select('inciso.pregunta_id', 'pregunta_id')
+            .addSelect('SUM(inciso.puntaje_max)', 'puntaje')
+            .where('inciso.pregunta_id IN (:...ids)', { ids })
+            .groupBy('inciso.pregunta_id')
+            .getRawMany<{ pregunta_id: number; puntaje: string }>();
+
+        const puntajes = new Map<number, string>();
+
+        for (const fila of filas) {
+            const puntaje = parsearPuntajeDecimal(fila.puntaje);
+
+            if (puntaje) {
+                puntajes.set(
+                    Number(fila.pregunta_id),
+                    puntajeDecimalATexto(puntaje),
+                );
+            }
+        }
+
+        return puntajes;
     }
 
     // Las preguntas deben existir, estar activas y ser del docente.

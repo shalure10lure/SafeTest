@@ -24,7 +24,13 @@ export type MotivoPreguntaSinPuntaje =
 export interface PreguntaPuntajeResumen {
   pregunta_id: number;
   enunciado: string;
+  /** Puntaje del banco: suma de los `puntaje_max` de sus incisos. */
   puntos: number;
+  /**
+   * Puntaje propio de la pregunta en la evaluación. Si es `null` o no se
+   * informa, se conserva el comportamiento anterior y se usa `puntos`.
+   */
+  puntaje?: number | null;
   total_incisos: number;
   incisos_sin_puntaje: number;
   tema: {
@@ -79,6 +85,23 @@ function motivoSinPuntaje(
 }
 
 /**
+ * Puntaje que aporta una pregunta a la evaluación.
+ *
+ * El contrato nuevo guarda en `examen_pregunta.puntaje` el valor propio de la
+ * evaluación. Si la fila es anterior a esa columna (`puntaje` nulo) o el
+ * llamador no lo informa, se mantiene el valor derivado del banco.
+ */
+export function puntajePreguntaResumen(
+  pregunta: PreguntaPuntajeResumen,
+): number {
+  if (pregunta.puntaje === undefined || pregunta.puntaje === null) {
+    return Number(pregunta.puntos);
+  }
+
+  return Number(pregunta.puntaje);
+}
+
+/**
  * Agrega los puntajes de las preguntas seleccionadas.
  *
  * - Deduplica por `pregunta_id` para no sumar dos veces la misma pregunta.
@@ -113,7 +136,7 @@ export function calcularDistribucionPuntajes(
   let puntajeTotal = 0;
 
   for (const pregunta of preguntasUnicas.values()) {
-    const puntos = Number(pregunta.puntos);
+    const puntos = puntajePreguntaResumen(pregunta);
     const totalIncisos = Number(pregunta.total_incisos);
     const incisosSinPuntaje = Number(pregunta.incisos_sin_puntaje);
     const motivo = motivoSinPuntaje(
@@ -323,15 +346,17 @@ export function calcularPuntajesManual(
       motivo: null,
       detalle: null,
     })),
-    preguntas: [...unicas.values()].map((pregunta) => ({
-      pregunta_id: pregunta.pregunta_id,
-      tema_id: pregunta.tema.tema_id,
-      enunciado: pregunta.enunciado,
-      puntaje_maximo: Number.isFinite(Number(pregunta.puntos))
-        ? Number(pregunta.puntos)
-        : null,
-      incisos: [],
-    })),
+    preguntas: [...unicas.values()].map((pregunta) => {
+      const puntaje = puntajePreguntaResumen(pregunta);
+
+      return {
+        pregunta_id: pregunta.pregunta_id,
+        tema_id: pregunta.tema.tema_id,
+        enunciado: pregunta.enunciado,
+        puntaje_maximo: Number.isFinite(puntaje) ? puntaje : null,
+        incisos: [],
+      };
+    }),
     preguntas_sin_puntaje: distribucion.preguntas_sin_puntaje,
     motivo: null,
     detalle: null,

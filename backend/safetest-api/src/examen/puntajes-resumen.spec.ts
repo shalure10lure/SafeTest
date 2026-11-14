@@ -54,6 +54,41 @@ describe('calcularDistribucionPuntajes', () => {
     expect(resultado.preguntas_sin_puntaje).toEqual([]);
   });
 
+  it('usa el puntaje propio de la evaluación en lugar del banco', () => {
+    const resultado = calcularDistribucionPuntajes(
+      [
+        pregunta({
+          puntos: 2,
+          puntaje: 5,
+          tema: { tema_id: 1, nombre_tema: 'Tema 1' },
+        }),
+        pregunta({
+          pregunta_id: 2,
+          puntos: 10,
+          puntaje: 8.5,
+          tema: { tema_id: 1, nombre_tema: 'Tema 1' },
+        }),
+      ],
+      'manual',
+    );
+
+    expect(resultado.puntaje_total).toBe(13.5);
+    expect(resultado.distribucion_temas[0]).toMatchObject({
+      cantidad: 2,
+      puntos: 13.5,
+    });
+    expect(resultado.preguntas_sin_puntaje).toEqual([]);
+  });
+
+  it('usa el banco cuando la fila guardada no tiene puntaje propio', () => {
+    const resultado = calcularDistribucionPuntajes(
+      [pregunta({ puntos: 12, puntaje: null, total_incisos: 3 })],
+      'manual',
+    );
+
+    expect(resultado.puntaje_total).toBe(12);
+  });
+
   it('suma los puntajes de varias preguntas', () => {
     const resultado = calcularDistribucionPuntajes(
       [
@@ -256,6 +291,31 @@ describe('calcularPuntajesManual', () => {
       },
     ]);
     expect(resultado.preguntas_sin_puntaje).toEqual([]);
+  });
+
+  it('expone el puntaje propio de cada pregunta en el resumen', () => {
+    const resultado = calcularPuntajesManual([
+      pregunta({ pregunta_id: 1, puntos: 2, puntaje: 6 }),
+      pregunta({ pregunta_id: 2, puntos: 10, puntaje: null }),
+    ]);
+
+    expect(resultado.puntaje_total).toBe(16);
+    expect(resultado.preguntas).toEqual([
+      {
+        pregunta_id: 1,
+        tema_id: 1,
+        enunciado: 'Pregunta',
+        puntaje_maximo: 6,
+        incisos: [],
+      },
+      {
+        pregunta_id: 2,
+        tema_id: 1,
+        enunciado: 'Pregunta',
+        puntaje_maximo: 10,
+        incisos: [],
+      },
+    ]);
   });
 });
 

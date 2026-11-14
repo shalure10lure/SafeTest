@@ -123,6 +123,8 @@ export interface Evaluacion {
 
     orden_preguntas: OrdenPreguntas;
     duracion_min: number | null;
+    /** Puntaje total definido por el docente en el paso 3. */
+    puntaje_total: number | null;
     /** ISO (UTC). `null` mientras no se configure. */
     disponible_desde: string | null;
     disponible_hasta: string | null;
@@ -211,6 +213,12 @@ export interface PreguntaBanco {
 export interface PreguntaSeleccionada extends PreguntaBanco {
     /** `false` si la pregunta se dio de baja después de guardarse. */
     activo: boolean;
+    /**
+     * Puntaje propio de la pregunta en esta evaluación. `null` en evaluaciones
+     * guardadas antes de que existiera esta columna; en ese caso se usa
+     * `puntos` (el valor del banco).
+     */
+    puntaje: number | null;
     /** Cantidad de incisos de la pregunta (lo devuelve `GET /examenes/:id/resumen`). */
     total_incisos?: number;
     /** Incisos cuyo `puntaje_max` no es mayor que 0. */
@@ -232,8 +240,20 @@ export interface BancoEvaluacion {
     temas: TemaBanco[];
 }
 
+/** Puntaje que el docente asigna a una pregunta de la evaluación. */
+export interface PuntajePreguntaSeleccion {
+    pregunta_id: number;
+    /** Número positivo con un máximo de 2 decimales. */
+    puntaje: number;
+}
+
 export type GuardarSeleccionDto =
-    | { modo_seleccion: 'manual'; pregunta_ids: number[] }
+    | {
+        modo_seleccion: 'manual';
+        pregunta_ids: number[];
+        /** Si falta una pregunta, el backend usa el puntaje del banco. */
+        puntajes?: PuntajePreguntaSeleccion[];
+    }
     | { modo_seleccion: 'aleatorio'; criterios: CriterioTema[] };
 
 export interface SeleccionGuardada {
@@ -262,6 +282,8 @@ export interface GuardarConfiguracionDto {
     disponible_desde: string;
     disponible_hasta: string;
     modo_entrega_nota: ModoEntregaNota;
+    /** Número positivo con un máximo de 2 decimales. */
+    puntaje_total: number;
 }
 
 /* ------------------------------------------------------------------ */

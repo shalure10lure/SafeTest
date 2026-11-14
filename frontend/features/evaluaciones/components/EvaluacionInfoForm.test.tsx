@@ -28,6 +28,8 @@ const datos = vi.hoisted(() => {
         modo_seleccion: 'manual',
         orden_preguntas: 'definido',
         duracion_min: 60,
+        /** Puntaje total definido por el docente en el paso 3. */
+        puntaje_total: null,
         disponible_desde: null,
         disponible_hasta: null,
         modo_entrega_nota: 'al_publicar',

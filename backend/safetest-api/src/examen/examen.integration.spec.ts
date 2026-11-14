@@ -85,6 +85,9 @@ class Examen {
   @Column({ name: 'duracion_min', type: 'int', nullable: true })
   duracion_min: number | null;
 
+  @Column({ name: 'puntaje_total', type: 'numeric', precision: 12, scale: 2, nullable: true })
+  puntaje_total: string | null;
+
   @Column({ name: 'disponible_desde', type: 'timestamptz', nullable: true })
   disponible_desde: Date | null;
 
@@ -209,6 +212,15 @@ class ExamenPregunta {
 
   @Column({ name: 'pregunta_id', type: 'int', nullable: true })
   pregunta_id: number | null;
+
+  @Column({
+    name: 'puntaje',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+  })
+  puntaje: string | null;
 }
 
 @Entity('materia')

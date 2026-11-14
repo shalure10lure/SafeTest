@@ -68,6 +68,7 @@ function resumen(sobrescribir: Partial<ResumenEvaluacion> = {}): ResumenEvaluaci
         modo_seleccion: 'manual',
         orden_preguntas: 'definido',
         duracion_min: 90,
+        puntaje_total: null,
         disponible_desde: '2026-11-07T12:00:00.000Z',
         disponible_hasta: '2026-11-07T14:30:00.000Z',
         modo_entrega_nota: 'al_publicar',
@@ -109,7 +110,7 @@ describe('ResumenPublicacion — puntajes de evaluaciones manuales', () => {
     it('muestra el puntaje total derivado y la cantidad de preguntas', async () => {
         await renderizar(resumen());
 
-        expect(screen.getByText('Puntaje total')).toBeDefined();
+        expect(screen.getByText('Suma de puntajes')).toBeDefined();
         // Aparece en la fila del resumen y en el total de la distribución.
         expect(screen.getAllByText('15 pts')).toHaveLength(2);
         expect(screen.getByText('3 preguntas')).toBeDefined();
@@ -124,6 +125,43 @@ describe('ResumenPublicacion — puntajes de evaluaciones manuales', () => {
         expect(screen.getByText('Geometría')).toBeDefined();
         expect(screen.getByText('1 pregunta · 5 pts')).toBeDefined();
         expect(screen.getAllByText('15 pts')).toHaveLength(2);
+    });
+
+    it('muestra el puntaje de cada pregunta y si coincide con el total configurado', async () => {
+        await renderizar(
+            resumen({
+                puntaje_total: 16,
+                puntajes: puntajes({
+                    preguntas: [
+                        {
+                            pregunta_id: 1,
+                            tema_id: 1,
+                            enunciado: 'Pregunta sobre álgebra',
+                            puntaje_maximo: 10,
+                            incisos: [],
+                        },
+                        {
+                            pregunta_id: 2,
+                            tema_id: 2,
+                            enunciado: 'Pregunta sobre geometría',
+                            puntaje_maximo: 5,
+                            incisos: [],
+                        },
+                    ],
+                }),
+            }),
+        );
+
+        expect(screen.getByText('Puntaje por pregunta')).toBeDefined();
+        expect(
+            screen.getByText('Pregunta sobre álgebra').parentElement?.textContent,
+        ).toContain('10 pts');
+        expect(
+            screen.getByText('Pregunta sobre geometría').parentElement?.textContent,
+        ).toContain('5 pts');
+        expect(screen.getByText('Puntaje total configurado')).toBeDefined();
+        expect(screen.getByText('16 pts')).toBeDefined();
+        expect(screen.getByText('La suma no coincide')).toBeDefined();
     });
 
     it('informa las preguntas sin puntaje válido y su motivo', async () => {
@@ -243,6 +281,15 @@ describe('ResumenPublicacion — evaluaciones publicadas', () => {
                 puntajes: puntajes({
                     origen: 'instantanea',
                     puntaje_total: 20,
+                    preguntas: [
+                        {
+                            pregunta_id: 31,
+                            tema_id: 1,
+                            enunciado: null,
+                            puntaje_maximo: 10,
+                            incisos: [],
+                        },
+                    ],
                     temas: [
                         {
                             tema_id: 1,
@@ -262,6 +309,9 @@ describe('ResumenPublicacion — evaluaciones publicadas', () => {
         expect(screen.getByText('Puntaje máximo total')).toBeDefined();
         expect(screen.getAllByText('20 pts')).toHaveLength(2);
         expect(screen.getByText('2 de 4 preguntas · 20 pts')).toBeDefined();
+        expect(
+            screen.getByText('Pregunta #31').parentElement?.textContent,
+        ).toContain('10 pts');
         expect(
             screen.queryByText('No determinable antes de iniciar'),
         ).toBeNull();
