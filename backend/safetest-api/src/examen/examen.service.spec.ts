@@ -20,6 +20,11 @@ class ExamenTema {}
 class ExamenEstudiante {}
 class Pregunta {}
 class Tema {}
+class Inciso {}
+class ExamenPoolSnapshot {}
+class ExamenPoolSnapshotTema {}
+class ExamenPoolSnapshotPregunta {}
+class ExamenPoolSnapshotInciso {}
 
 let ExamenService: typeof import('./examen.service').ExamenService;
 
@@ -59,6 +64,25 @@ beforeAll(async () => {
     Pregunta,
   }));
   jest.unstable_mockModule('../tema/entity/tema.entity', () => ({ Tema }));
+  jest.unstable_mockModule('../inciso/entity/inciso.entity', () => ({
+    Inciso,
+  }));
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot.entity',
+    () => ({ ExamenPoolSnapshot }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity',
+    () => ({ ExamenPoolSnapshotTema }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity',
+    () => ({ ExamenPoolSnapshotPregunta }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity',
+    () => ({ ExamenPoolSnapshotInciso }),
+  );
 
   ({ ExamenService } = await import('./examen.service'));
 });
@@ -155,6 +179,11 @@ interface Montaje {
   examenPregunta: RepoMock;
   examenTema: RepoMock;
   examenEstudiante: RepoMock;
+  inciso: RepoMock;
+  snapshot: RepoMock;
+  snapshotTema: RepoMock;
+  snapshotPregunta: RepoMock;
+  snapshotInciso: RepoMock;
 }
 
 function montar(): Montaje {
@@ -168,6 +197,11 @@ function montar(): Montaje {
   const examenPregunta = repoMock();
   const examenTema = repoMock();
   const examenEstudiante = repoMock();
+  const inciso = repoMock();
+  const snapshot = repoMock();
+  const snapshotTema = repoMock();
+  const snapshotPregunta = repoMock();
+  const snapshotInciso = repoMock();
 
   const repositorios = new Map<unknown, RepoMock>([
     [Examen, examen],
@@ -180,6 +214,11 @@ function montar(): Montaje {
     [ExamenPregunta, examenPregunta],
     [ExamenTema, examenTema],
     [ExamenEstudiante, examenEstudiante],
+    [Inciso, inciso],
+    [ExamenPoolSnapshot, snapshot],
+    [ExamenPoolSnapshotTema, snapshotTema],
+    [ExamenPoolSnapshotPregunta, snapshotPregunta],
+    [ExamenPoolSnapshotInciso, snapshotInciso],
   ]);
 
   const manager: ManagerMock = {
@@ -231,6 +270,11 @@ function montar(): Montaje {
     examenPregunta,
     examenTema,
     examenEstudiante,
+    inciso,
+    snapshot,
+    snapshotTema,
+    snapshotPregunta,
+    snapshotInciso,
   };
 }
 
@@ -748,6 +792,1190 @@ describe('ExamenService — asignación de evaluaciones', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('publicar — validación de puntajes', () => {
+    const PREGUNTA_BASE = {
+      pregunta_id: '1',
+      enunciado: 'Pregunta de prueba',
+      dificultad: null,
+      activo: true,
+      tema_id: '1',
+      nombre_tema: 'Algebra',
+      materia_id: '1',
+      materia_nombre: 'Matematica',
+      puntos: '10',
+      total_incisos: '2',
+      incisos_sin_puntaje: '0',
+      tipo_respuesta: 'opcion_unica',
+    };
+
+    function examenPublicable() {
+      return {
+        ...EXAMEN_BORRADOR,
+        modo_asignacion: 'paralelos',
+        modo_seleccion: 'manual',
+        duracion_min: 60,
+        disponible_desde: new Date(Date.now() + 60 * 60 * 1000),
+        disponible_hasta: new Date(Date.now() + 3 * 60 * 60 * 1000),
+        paralelos: [{ paralelo_id: 10 }],
+      };
+    }
+
+    function prepararPublicacion(
+      filaPregunta: Record<string, unknown> | null,
+    ) {
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue(EXAMEN_BORRADOR);
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+      montaje.examen.findOne.mockResolvedValue(examenPublicable());
+
+      montaje.examenPregunta.count.mockResolvedValue(
+        filaPregunta ? 1 : 0,
+      );
+      montaje.examenPregunta.find.mockResolvedValue(
+        filaPregunta
+          ? [{ examen_id: 5, pregunta_id: 1, orden: 1 }]
+          : [],
+      );
+
+      const preguntas = queryBuilderMock();
+      preguntas.getRawMany.mockResolvedValue(
+        filaPregunta ? [filaPregunta] : [],
+      );
+      montaje.pregunta.createQueryBuilder.mockReturnValue(preguntas);
+
+      const usos = queryBuilderMock();
+      usos.getRawMany.mockResolvedValue([]);
+      montaje.examenPregunta.createQueryBuilder.mockReturnValue(usos);
+
+      const inscripciones = queryBuilderMock();
+      inscripciones.getMany.mockResolvedValue([
+        {
+          estudiante: { estudiante_id: 100, nombre_completo: 'Ana' },
+        },
+      ]);
+      montaje.inscripcion.createQueryBuilder.mockReturnValue(inscripciones);
+
+      return { bloqueo, preguntas, usos };
+    }
+
+    async function problemasDePublicacion() {
+      try {
+        await montaje.servicio.publicar(5, 7);
+        throw new Error('La publicación debía bloquearse.');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        const respuesta = (
+          error as BadRequestException
+        ).getResponse() as {
+          problemas: { paso: number; mensaje: string }[];
+        };
+        return respuesta.problemas;
+      }
+    }
+
+    it('publica si todas las preguntas tienen puntajes mayores que cero', async () => {
+      prepararPublicacion({ ...PREGUNTA_BASE });
+
+      const resultado = await montaje.servicio.publicar(5, 7);
+
+      expect(resultado).toEqual({ examen_id: 5, estado: 'publicado' });
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        Examen,
+        { examen_id: 5, estado: 'borrador' },
+        { estado: 'publicado' },
+      );
+    });
+
+    it('bloquea la publicación si una pregunta no tiene incisos', async () => {
+      prepararPublicacion({
+        ...PREGUNTA_BASE,
+        puntos: '0',
+        total_incisos: '0',
+      });
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paso: 2,
+            mensaje: 'La pregunta #1 no tiene incisos.',
+          }),
+        ]),
+      );
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('bloquea la publicación si un inciso tiene puntaje cero o negativo', async () => {
+      prepararPublicacion({
+        ...PREGUNTA_BASE,
+        puntos: '5',
+        total_incisos: '2',
+        incisos_sin_puntaje: '1',
+      });
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paso: 2,
+            mensaje: expect.stringContaining(
+              'no es numérico, finito y mayor que cero',
+            ),
+          }),
+        ]),
+      );
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('bloquea la publicación si un puntaje no es numérico o no es finito', async () => {
+      prepararPublicacion({
+        ...PREGUNTA_BASE,
+        puntos: 'NaN',
+        total_incisos: '1',
+      });
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paso: 2,
+            mensaje: expect.stringContaining(
+              'no numérico o no finito',
+            ),
+          }),
+        ]),
+      );
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('bloquea una pregunta con varios incisos si uno de ellos es inválido', async () => {
+      prepararPublicacion({
+        ...PREGUNTA_BASE,
+        puntos: '12',
+        total_incisos: '3',
+        incisos_sin_puntaje: '1',
+      });
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paso: 2,
+            mensaje: expect.stringContaining('La pregunta #1'),
+          }),
+        ]),
+      );
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('bloquea la publicación cuando el puntaje total es cero', async () => {
+      prepararPublicacion({
+        ...PREGUNTA_BASE,
+        puntos: '0',
+        total_incisos: '1',
+      });
+
+      const problemas = await problemasDePublicacion();
+
+      expect(problemas.length).toBeGreaterThan(0);
+      expect(problemas[0].paso).toBe(2);
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('publicar — instantánea del pool aleatorio', () => {
+    function prepararPublicacionAleatoria({
+      cantidad = 1,
+      preguntas = [
+        { pregunta_id: 1, tema_id: 1, enunciado: 'Pregunta 1', activo: true },
+        { pregunta_id: 2, tema_id: 1, enunciado: 'Pregunta 2', activo: true },
+      ],
+      incisos = [
+        { pregunta_id: 1, letra: 'a', puntaje_max: '2' },
+        { pregunta_id: 2, letra: 'a', puntaje_max: '2' },
+      ],
+      totalValidacion = preguntas.filter((pregunta) => pregunta.activo).length,
+      snapshotExistente = false,
+    }: {
+      cantidad?: number;
+      preguntas?: {
+        pregunta_id: number;
+        tema_id: number;
+        enunciado: string;
+        activo: boolean;
+      }[];
+      incisos?: {
+        pregunta_id: number;
+        letra: string;
+        puntaje_max: string;
+      }[];
+      totalValidacion?: number;
+      snapshotExistente?: boolean;
+    } = {}) {
+      const examen = {
+        ...EXAMEN_BORRADOR,
+        modo_asignacion: 'paralelos',
+        modo_seleccion: 'aleatorio',
+        duracion_min: 60,
+        disponible_desde: new Date(Date.now() + 60 * 60 * 1000),
+        disponible_hasta: new Date(Date.now() + 3 * 60 * 60 * 1000),
+        paralelos: [{ paralelo_id: 10 }],
+      };
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue(examen);
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+      montaje.examen.findOne.mockResolvedValue(examen);
+
+      const criterios = [{ examen_id: 5, tema_id: 1, cantidad }];
+      montaje.examenTema.find.mockResolvedValue(criterios);
+      const criteriosBloqueados = queryBuilderMock();
+      criteriosBloqueados.getMany.mockResolvedValue(criterios);
+      montaje.examenTema.createQueryBuilder.mockReturnValue(
+        criteriosBloqueados,
+      );
+
+      const temas = [{ tema_id: 1, materia_id: 1, nombre_tema: 'Algebra' }];
+      montaje.tema.find.mockResolvedValue(temas);
+      const temasBloqueados = queryBuilderMock();
+      temasBloqueados.getMany.mockResolvedValue(temas);
+      montaje.tema.createQueryBuilder.mockReturnValue(temasBloqueados);
+
+      const conteo = queryBuilderMock();
+      conteo.getRawMany.mockResolvedValue([
+        { tema_id: 1, total: String(totalValidacion) },
+      ]);
+      const poolBloqueado = queryBuilderMock();
+      poolBloqueado.getMany.mockResolvedValue(preguntas);
+      montaje.pregunta.createQueryBuilder
+        .mockReturnValueOnce(conteo)
+        .mockReturnValueOnce(poolBloqueado);
+
+      const incisosBloqueados = queryBuilderMock();
+      incisosBloqueados.getMany.mockResolvedValue(incisos);
+      montaje.inciso.createQueryBuilder.mockReturnValue(incisosBloqueados);
+      montaje.snapshot.findOne.mockResolvedValue(
+        snapshotExistente ? { examen_id: 5 } : null,
+      );
+
+      const inscripciones = queryBuilderMock();
+      inscripciones.getMany.mockResolvedValue([
+        { estudiante: { estudiante_id: 100, nombre_completo: 'Ana' } },
+      ]);
+      montaje.inscripcion.createQueryBuilder.mockReturnValue(inscripciones);
+
+      return {
+        bloqueo,
+        criteriosBloqueados,
+        temasBloqueados,
+        poolBloqueado,
+        incisosBloqueados,
+      };
+    }
+
+    function problemasDeError(error: unknown) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      return (error as BadRequestException).getResponse() as {
+        problemas: { paso: number; mensaje: string }[];
+      };
+    }
+
+    it('permite un pool parcial uniforme y conserva puntajes decimales', async () => {
+      const bloqueos = prepararPublicacionAleatoria({
+        cantidad: 1,
+        preguntas: [
+          { pregunta_id: 1, tema_id: 1, enunciado: 'Pregunta 1', activo: true },
+          { pregunta_id: 2, tema_id: 1, enunciado: 'Pregunta 2', activo: true },
+        ],
+        incisos: [
+          { pregunta_id: 1, letra: 'a', puntaje_max: '1.25' },
+          { pregunta_id: 1, letra: 'b', puntaje_max: '0.75' },
+          { pregunta_id: 2, letra: 'a', puntaje_max: '2.0' },
+        ],
+      });
+
+      await montaje.servicio.publicar(5, 7);
+
+      expect(bloqueos.criteriosBloqueados.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
+      expect(bloqueos.temasBloqueados.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
+      expect(bloqueos.poolBloqueado.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
+      expect(bloqueos.incisosBloqueados.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
+      expect(bloqueos.criteriosBloqueados.orderBy).toHaveBeenCalledWith(
+        'examenTema.tema_id',
+        'ASC',
+      );
+      expect(bloqueos.temasBloqueados.orderBy).toHaveBeenCalledWith(
+        'tema.tema_id',
+        'ASC',
+      );
+      expect(bloqueos.poolBloqueado.addOrderBy).toHaveBeenCalledWith(
+        'pregunta.pregunta_id',
+        'ASC',
+      );
+      expect(bloqueos.incisosBloqueados.addOrderBy).toHaveBeenCalledWith(
+        'inciso.letra',
+        'ASC',
+      );
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        1,
+        ExamenPoolSnapshot,
+        {
+          examen_id: 5,
+          version: 1,
+          puntaje_maximo_garantizado: '2',
+        },
+      );
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        2,
+        ExamenPoolSnapshotTema,
+        [
+          {
+            examen_id: 5,
+            tema_id: 1,
+            cantidad_seleccionada: 1,
+            cantidad_candidatas: 2,
+            puntaje_maximo_tema: '2',
+          },
+        ],
+      );
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        3,
+        ExamenPoolSnapshotPregunta,
+        [
+          {
+            examen_id: 5,
+            tema_id: 1,
+            pregunta_id: 1,
+            puntaje_maximo_pregunta: '2',
+          },
+          {
+            examen_id: 5,
+            tema_id: 1,
+            pregunta_id: 2,
+            puntaje_maximo_pregunta: '2',
+          },
+        ],
+      );
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        4,
+        ExamenPoolSnapshotInciso,
+        expect.arrayContaining([
+          expect.objectContaining({
+            pregunta_id: 1,
+            letra: 'a',
+            puntaje_max: '1.25',
+          }),
+          expect.objectContaining({
+            pregunta_id: 1,
+            letra: 'b',
+            puntaje_max: '0.75',
+          }),
+        ]),
+      );
+    });
+
+    it('rechaza un pool parcial si sus preguntas tienen puntajes diferentes', async () => {
+      prepararPublicacionAleatoria({
+        cantidad: 1,
+        incisos: [
+          { pregunta_id: 1, letra: 'a', puntaje_max: '2' },
+          { pregunta_id: 2, letra: 'a', puntaje_max: '3' },
+        ],
+      });
+
+      try {
+        await montaje.servicio.publicar(5, 7);
+        throw new Error('La publicación debía bloquearse.');
+      } catch (error) {
+        const respuesta = problemasDeError(error);
+        expect(respuesta.problemas[0]).toMatchObject({
+          paso: 2,
+          mensaje: expect.stringContaining(
+            'contiene preguntas con puntajes máximos diferentes',
+          ),
+        });
+      }
+
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('permite puntajes diferentes cuando se selecciona todo el pool', async () => {
+      prepararPublicacionAleatoria({
+        cantidad: 2,
+        incisos: [
+          { pregunta_id: 1, letra: 'a', puntaje_max: '2' },
+          { pregunta_id: 2, letra: 'a', puntaje_max: '3.5' },
+        ],
+      });
+
+      await montaje.servicio.publicar(5, 7);
+
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        1,
+        ExamenPoolSnapshot,
+        expect.objectContaining({
+          puntaje_maximo_garantizado: '5.5',
+        }),
+      );
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        2,
+        ExamenPoolSnapshotTema,
+        [
+          expect.objectContaining({
+            cantidad_seleccionada: 2,
+            cantidad_candidatas: 2,
+            puntaje_maximo_tema: '5.5',
+          }),
+        ],
+      );
+    });
+
+    it('solo incluye preguntas activas en las candidatas congeladas', async () => {
+      prepararPublicacionAleatoria({
+        cantidad: 1,
+        preguntas: [
+          { pregunta_id: 1, tema_id: 1, enunciado: 'Activa', activo: true },
+          { pregunta_id: 2, tema_id: 1, enunciado: 'Inactiva', activo: false },
+        ],
+        incisos: [{ pregunta_id: 1, letra: 'a', puntaje_max: '2' }],
+      });
+
+      await montaje.servicio.publicar(5, 7);
+
+      expect(montaje.manager.insert).toHaveBeenNthCalledWith(
+        3,
+        ExamenPoolSnapshotPregunta,
+        [
+          {
+            examen_id: 5,
+            tema_id: 1,
+            pregunta_id: 1,
+            puntaje_maximo_pregunta: '2',
+          },
+        ],
+      );
+    });
+
+    it('revalida el pool bloqueado y rechaza una cantidad insuficiente', async () => {
+      prepararPublicacionAleatoria({
+        cantidad: 2,
+        preguntas: [
+          { pregunta_id: 1, tema_id: 1, enunciado: 'Pregunta 1', activo: true },
+        ],
+        incisos: [{ pregunta_id: 1, letra: 'a', puntaje_max: '2' }],
+        totalValidacion: 2,
+      });
+
+      await expect(montaje.servicio.publicar(5, 7)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        incisos: [],
+        mensaje: 'no tiene incisos',
+      },
+      {
+        incisos: [{ pregunta_id: 1, letra: 'a', puntaje_max: 'NaN' }],
+        mensaje: 'no es numérico, finito y mayor que cero',
+      },
+      {
+        incisos: [{ pregunta_id: 1, letra: 'a', puntaje_max: '0' }],
+        mensaje: 'no es numérico, finito y mayor que cero',
+      },
+      {
+        incisos: [{ pregunta_id: 1, letra: 'a', puntaje_max: '-1' }],
+        mensaje: 'no es numérico, finito y mayor que cero',
+      },
+    ])(
+      'rechaza una candidata con puntaje inválido',
+      async ({ incisos, mensaje }) => {
+        prepararPublicacionAleatoria({
+          cantidad: 1,
+          preguntas: [
+            {
+              pregunta_id: 1,
+              tema_id: 1,
+              enunciado: 'Pregunta 1',
+              activo: true,
+            },
+          ],
+          incisos,
+        });
+
+        try {
+          await montaje.servicio.publicar(5, 7);
+          throw new Error('La publicación debía bloquearse.');
+        } catch (error) {
+          const respuesta = problemasDeError(error);
+          expect(respuesta.problemas[0].mensaje).toContain(mensaje);
+        }
+
+        expect(montaje.manager.insert).not.toHaveBeenCalled();
+        expect(montaje.manager.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('no publica si falla la inserción de cualquier parte de la instantánea', async () => {
+      prepararPublicacionAleatoria();
+      montaje.manager.insert
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error('Fallo de persistencia'));
+
+      await expect(montaje.servicio.publicar(5, 7)).rejects.toThrow(
+        'Fallo de persistencia',
+      );
+
+      expect(montaje.manager.insert).toHaveBeenCalledTimes(3);
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una segunda publicación con snapshot existente o estado publicado', async () => {
+      const { bloqueo } = prepararPublicacionAleatoria({
+        snapshotExistente: true,
+      });
+
+      await expect(montaje.servicio.publicar(5, 7)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+
+      bloqueo.getOne.mockResolvedValueOnce({
+        ...EXAMEN_BORRADOR,
+        estado: 'publicado',
+      });
+      await expect(montaje.servicio.publicar(5, 7)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+    });
+
+    it('solo una publicación concurrente inserta la instantánea', async () => {
+      const { bloqueo } = prepararPublicacionAleatoria();
+      bloqueo.getOne
+        .mockResolvedValueOnce(EXAMEN_BORRADOR)
+        .mockResolvedValueOnce({ ...EXAMEN_BORRADOR, estado: 'publicado' });
+
+      const resultados = await Promise.allSettled([
+        montaje.servicio.publicar(5, 7),
+        montaje.servicio.publicar(5, 7),
+      ]);
+
+      expect(
+        resultados.filter((resultado) => resultado.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        resultados.filter((resultado) => resultado.status === 'rejected'),
+      ).toHaveLength(1);
+      expect(montaje.manager.insert).toHaveBeenCalledTimes(4);
+    });
+
+    it('impide que un guardado concurrente cambie criterios después de publicar', async () => {
+      const { bloqueo } = prepararPublicacionAleatoria();
+      bloqueo.getOne
+        .mockResolvedValueOnce(EXAMEN_BORRADOR)
+        .mockResolvedValueOnce({ ...EXAMEN_BORRADOR, estado: 'publicado' });
+
+      const resultados = await Promise.allSettled([
+        montaje.servicio.publicar(5, 7),
+        montaje.servicio.guardarSeleccion(
+          5,
+          {
+            modo_seleccion: 'aleatorio',
+            criterios: [{ tema_id: 1, cantidad: 2 }],
+          },
+          7,
+        ),
+      ]);
+
+      expect(
+        resultados.filter((resultado) => resultado.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        resultados.filter((resultado) => resultado.status === 'rejected'),
+      ).toHaveLength(1);
+      expect(montaje.manager.insert).toHaveBeenCalledTimes(4);
+      expect(montaje.manager.insert).not.toHaveBeenCalledWith(
+        ExamenTema,
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('guardarSeleccion', () => {
+    it('bloquea el examen y guarda criterios dentro de la transacción', async () => {
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue(EXAMEN_BORRADOR);
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+      montaje.tema.find.mockResolvedValue([{ tema_id: 1, materia_id: 1 }]);
+
+      const conteo = queryBuilderMock();
+      conteo.getRawMany.mockResolvedValue([{ tema_id: 1, total: '3' }]);
+      montaje.pregunta.createQueryBuilder.mockReturnValue(conteo);
+
+      const resultado = await montaje.servicio.guardarSeleccion(
+        5,
+        {
+          modo_seleccion: 'aleatorio',
+          criterios: [{ tema_id: 1, cantidad: 2 }],
+        },
+        7,
+      );
+
+      expect(montaje.dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(bloqueo.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(montaje.manager.delete).toHaveBeenCalledWith(ExamenTema, {
+        examen_id: 5,
+      });
+      expect(montaje.manager.insert).toHaveBeenCalledWith(ExamenTema, [
+        { examen_id: 5, tema_id: 1, cantidad: 2 },
+      ]);
+      expect(montaje.manager.update).toHaveBeenCalledWith(
+        Examen,
+        { examen_id: 5, docente_id: 7, estado: 'borrador' },
+        { modo_seleccion: 'aleatorio' },
+      );
+      expect(resultado.total_preguntas).toBe(2);
+    });
+
+    it('no modifica criterios si el estado dejó de ser borrador', async () => {
+      const bloqueo = queryBuilderMock();
+      bloqueo.getOne.mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        estado: 'publicado',
+      });
+      montaje.examen.createQueryBuilder.mockReturnValue(bloqueo);
+
+      await expect(
+        montaje.servicio.guardarSeleccion(
+          5,
+          {
+            modo_seleccion: 'aleatorio',
+            criterios: [{ tema_id: 1, cantidad: 1 }],
+          },
+          7,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(bloqueo.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(montaje.manager.delete).not.toHaveBeenCalled();
+      expect(montaje.manager.insert).not.toHaveBeenCalled();
+      expect(montaje.manager.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('obtenerResumen', () => {
+    it('no carga preguntas actuales para una evaluación aleatoria publicada', async () => {
+      Object.defineProperty(montaje.servicio, 'consultar', {
+        value: jest.fn().mockResolvedValue([
+          {
+            ...EXAMEN_BORRADOR,
+            estado: 'publicado',
+            modo_seleccion: 'aleatorio',
+          },
+        ]),
+      });
+
+      const resultado = await montaje.servicio.findOne(5, 7);
+
+      expect(resultado.pregunta_ids).toEqual([]);
+      expect(resultado.preguntas).toEqual([]);
+      expect(montaje.examenPregunta.find).not.toHaveBeenCalled();
+      expect(montaje.pregunta.createQueryBuilder).not.toHaveBeenCalled();
+      expect(montaje.inciso.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    function prepararCriterios(
+      filas: {
+        tema_id: number;
+        cantidad: number;
+        tema: { nombre_tema: string };
+      }[] = [
+        {
+          tema_id: 1,
+          cantidad: 2,
+          tema: { nombre_tema: 'Algebra' },
+        },
+      ],
+    ) {
+      const criterios = queryBuilderMock();
+      criterios.getMany.mockResolvedValue(filas);
+      montaje.examenTema.createQueryBuilder.mockReturnValue(criterios);
+      return criterios;
+    }
+
+    function prepararPreguntasAleatorias(
+      preguntas: {
+        pregunta_id: number;
+        tema_id: number;
+        enunciado: string;
+        activo: boolean;
+      }[],
+      incisos: {
+        pregunta_id: number;
+        letra: string;
+        puntaje_max: string;
+      }[],
+    ) {
+      const consultaPreguntas = queryBuilderMock();
+      consultaPreguntas.getMany.mockResolvedValue(preguntas);
+      montaje.pregunta.createQueryBuilder.mockReturnValue(consultaPreguntas);
+
+      const consultaIncisos = queryBuilderMock();
+      consultaIncisos.getMany.mockResolvedValue(incisos);
+      montaje.inciso.createQueryBuilder.mockReturnValue(consultaIncisos);
+    }
+
+    function prepararInstantanea(
+      datos: {
+        total: string;
+        temas: {
+          tema_id: number;
+          cantidad_seleccionada: number;
+          cantidad_candidatas: number;
+          puntaje_maximo_tema: string;
+        }[];
+        preguntas: {
+          pregunta_id: number;
+          tema_id: number;
+          puntaje_maximo_pregunta: string;
+        }[];
+        incisos?: {
+          pregunta_id: number;
+          tema_id: number;
+          letra: string;
+          puntaje_max: string;
+        }[];
+      },
+    ) {
+      montaje.snapshot.findOne.mockResolvedValue({
+        examen_id: 5,
+        version: 1,
+        puntaje_maximo_garantizado: datos.total,
+      });
+      montaje.snapshotTema.find.mockResolvedValue(
+        datos.temas.map((tema) => ({ examen_id: 5, ...tema })),
+      );
+      montaje.snapshotPregunta.find.mockResolvedValue(
+        datos.preguntas.map((pregunta) => ({
+          examen_id: 5,
+          ...pregunta,
+        })),
+      );
+      montaje.snapshotInciso.find.mockResolvedValue(
+        (datos.incisos ?? []).map((inciso) => ({
+          examen_id: 5,
+          ...inciso,
+        })),
+      );
+    }
+
+    it('deriva el total y la distribucion por tema de las preguntas guardadas', async () => {
+      prepararCriterios();
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        modo_seleccion: 'manual',
+        paralelos: [],
+        total_preguntas: 2,
+        preguntas: [
+          {
+            pregunta_id: 1,
+            enunciado: 'Pregunta con tres incisos',
+            puntos: 12,
+            total_incisos: 3,
+            incisos_sin_puntaje: 0,
+            tema: { tema_id: 1, nombre_tema: 'Algebra' },
+          },
+          {
+            pregunta_id: 2,
+            enunciado: 'Pregunta con dos incisos',
+            puntos: 7.5,
+            total_incisos: 2,
+            incisos_sin_puntaje: 0,
+            tema: { tema_id: 1, nombre_tema: 'Algebra' },
+          },
+        ],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes.origen).toBe('seleccion');
+      expect(resultado.puntajes.disponible).toBe(true);
+      expect(resultado.puntajes.puntaje_total).toBe(19.5);
+      expect(resultado.puntajes.temas).toEqual([
+        {
+          tema_id: 1,
+          nombre_tema: 'Algebra',
+          cantidad_candidatas: 2,
+          cantidad_seleccionada: 2,
+          puntaje_maximo: 19.5,
+          garantizado: true,
+          motivo: null,
+          detalle: null,
+        },
+      ]);
+      expect(resultado.puntajes.preguntas).toEqual([
+        expect.objectContaining({ pregunta_id: 1, puntaje_maximo: 12 }),
+        expect.objectContaining({ pregunta_id: 2, puntaje_maximo: 7.5 }),
+      ]);
+      expect(resultado.preguntas[0].puntos).toBe(12);
+      expect(resultado.preguntas[1].puntos).toBe(7.5);
+      expect(resultado.puntajes.preguntas_sin_puntaje).toEqual([]);
+      expect(resultado.criterios).toEqual([
+        { tema_id: 1, nombre_tema: 'Algebra', cantidad: 2 },
+      ]);
+    });
+
+    it('garantiza el puntaje de un borrador aleatorio parcial uniforme', async () => {
+      prepararCriterios([
+        {
+          tema_id: 1,
+          cantidad: 1,
+          tema: { nombre_tema: 'Algebra' },
+        },
+      ]);
+      prepararPreguntasAleatorias(
+        [
+          {
+            pregunta_id: 1,
+            tema_id: 1,
+            enunciado: 'Pregunta A',
+            activo: true,
+          },
+          {
+            pregunta_id: 2,
+            tema_id: 1,
+            enunciado: 'Pregunta B',
+            activo: true,
+          },
+        ],
+        [
+          { pregunta_id: 1, letra: 'a', puntaje_max: '5' },
+          { pregunta_id: 2, letra: 'a', puntaje_max: '5' },
+        ],
+      );
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        modo_seleccion: 'aleatorio',
+        paralelos: [],
+        total_preguntas: 1,
+        preguntas: [],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes).toMatchObject({
+        origen: 'calculo_previo',
+        disponible: true,
+        puntaje_total: 5,
+        motivo: null,
+      });
+      expect(resultado.puntajes.temas).toEqual([
+        {
+          tema_id: 1,
+          nombre_tema: 'Algebra',
+          cantidad_candidatas: 2,
+          cantidad_seleccionada: 1,
+          puntaje_maximo: 5,
+          garantizado: true,
+          motivo: null,
+          detalle: null,
+        },
+      ]);
+      expect(resultado.puntajes.preguntas).toHaveLength(2);
+      expect(resultado.total_preguntas).toBe(1);
+    });
+
+    it('suma todo el pool cuando el borrador aleatorio selecciona todas las candidatas', async () => {
+      prepararCriterios([
+        {
+          tema_id: 1,
+          cantidad: 2,
+          tema: { nombre_tema: 'Algebra' },
+        },
+      ]);
+      prepararPreguntasAleatorias(
+        [
+          {
+            pregunta_id: 1,
+            tema_id: 1,
+            enunciado: 'Pregunta A',
+            activo: true,
+          },
+          {
+            pregunta_id: 2,
+            tema_id: 1,
+            enunciado: 'Pregunta B',
+            activo: true,
+          },
+        ],
+        [
+          { pregunta_id: 1, letra: 'a', puntaje_max: '3' },
+          { pregunta_id: 2, letra: 'a', puntaje_max: '7' },
+        ],
+      );
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        modo_seleccion: 'aleatorio',
+        paralelos: [],
+        total_preguntas: 2,
+        preguntas: [],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes.disponible).toBe(true);
+      expect(resultado.puntajes.puntaje_total).toBe(10);
+      expect(resultado.puntajes.temas[0]).toMatchObject({
+        cantidad_candidatas: 2,
+        cantidad_seleccionada: 2,
+        puntaje_maximo: 10,
+        garantizado: true,
+      });
+    });
+
+    it('no presenta total en una seleccion parcial con puntajes diferentes', async () => {
+      prepararCriterios([
+        {
+          tema_id: 1,
+          cantidad: 1,
+          tema: { nombre_tema: 'Algebra' },
+        },
+      ]);
+      prepararPreguntasAleatorias(
+        [
+          {
+            pregunta_id: 1,
+            tema_id: 1,
+            enunciado: 'Pregunta A',
+            activo: true,
+          },
+          {
+            pregunta_id: 2,
+            tema_id: 1,
+            enunciado: 'Pregunta B',
+            activo: true,
+          },
+        ],
+        [
+          { pregunta_id: 1, letra: 'a', puntaje_max: '3' },
+          { pregunta_id: 2, letra: 'a', puntaje_max: '7' },
+        ],
+      );
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        modo_seleccion: 'aleatorio',
+        paralelos: [],
+        total_preguntas: 1,
+        preguntas: [],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes.disponible).toBe(false);
+      expect(resultado.puntajes.puntaje_total).toBeNull();
+      expect(resultado.puntajes.motivo).toBe('puntajes_no_uniformes');
+      expect(resultado.puntajes.detalle).toContain('puntajes máximos diferentes');
+      expect(resultado.puntajes.temas[0]).toMatchObject({
+        cantidad_candidatas: 2,
+        cantidad_seleccionada: 1,
+        puntaje_maximo: null,
+        garantizado: false,
+        motivo: 'puntajes_no_uniformes',
+      });
+    });
+
+    it('lee los valores definitivos de la instantanea al estar publicada', async () => {
+      prepararCriterios([
+        {
+          tema_id: 1,
+          cantidad: 2,
+          tema: { nombre_tema: 'Algebra' },
+        },
+      ]);
+      prepararInstantanea({
+        total: '20',
+        temas: [
+          {
+            tema_id: 1,
+            cantidad_seleccionada: 2,
+            cantidad_candidatas: 3,
+            puntaje_maximo_tema: '20',
+          },
+        ],
+        preguntas: [
+          {
+            pregunta_id: 11,
+            tema_id: 1,
+            puntaje_maximo_pregunta: '10',
+          },
+          {
+            pregunta_id: 12,
+            tema_id: 1,
+            puntaje_maximo_pregunta: '10',
+          },
+          {
+            pregunta_id: 13,
+            tema_id: 1,
+            puntaje_maximo_pregunta: '10',
+          },
+        ],
+        incisos: [
+          {
+            pregunta_id: 11,
+            tema_id: 1,
+            letra: 'a',
+            puntaje_max: '10',
+          },
+        ],
+      });
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        estado: 'publicado',
+        modo_seleccion: 'aleatorio',
+        paralelos: [],
+        total_preguntas: 99,
+        preguntas: [],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes).toMatchObject({
+        origen: 'instantanea',
+        disponible: true,
+        puntaje_total: 20,
+        motivo: null,
+      });
+      expect(resultado.puntajes.temas).toEqual([
+        {
+          tema_id: 1,
+          nombre_tema: 'Algebra',
+          cantidad_candidatas: 3,
+          cantidad_seleccionada: 2,
+          puntaje_maximo: 20,
+          garantizado: true,
+          motivo: null,
+          detalle: null,
+        },
+      ]);
+      expect(resultado.puntajes.preguntas).toHaveLength(3);
+      expect(resultado.puntajes.preguntas[0]).toMatchObject({
+        pregunta_id: 11,
+        puntaje_maximo: 10,
+        incisos: [{ letra: 'a', puntaje_max: 10 }],
+      });
+      expect(resultado.total_preguntas).toBe(2);
+      expect(resultado.criterios).toEqual([
+        { tema_id: 1, nombre_tema: 'Algebra', cantidad: 2 },
+      ]);
+      // No se consultan las preguntas activas para reconstruir la instantánea.
+      expect(montaje.pregunta.createQueryBuilder).not.toHaveBeenCalled();
+      expect(montaje.inciso.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('no recalcula el resumen publicado cuando cambian los datos de origen', async () => {
+      prepararCriterios();
+      prepararInstantanea({
+        total: '18',
+        temas: [
+          {
+            tema_id: 1,
+            cantidad_seleccionada: 2,
+            cantidad_candidatas: 2,
+            puntaje_maximo_tema: '18',
+          },
+        ],
+        preguntas: [
+          {
+            pregunta_id: 11,
+            tema_id: 1,
+            puntaje_maximo_pregunta: '9',
+          },
+          {
+            pregunta_id: 12,
+            tema_id: 1,
+            puntaje_maximo_pregunta: '9',
+          },
+        ],
+      });
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        estado: 'publicado',
+        modo_seleccion: 'aleatorio',
+        paralelos: [],
+        total_preguntas: 2,
+        // Simula que el origen cambió después de publicar.
+        preguntas: [
+          {
+            pregunta_id: 11,
+            enunciado: 'Pregunta modificada',
+            puntos: 100,
+            total_incisos: 1,
+            incisos_sin_puntaje: 0,
+            tema: { tema_id: 1, nombre_tema: 'Algebra' },
+          },
+        ],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes.puntaje_total).toBe(18);
+      expect(resultado.puntajes.temas[0].puntaje_maximo).toBe(18);
+      expect(resultado.puntajes.preguntas).toEqual([
+        expect.objectContaining({ pregunta_id: 11, puntaje_maximo: 9 }),
+        expect.objectContaining({ pregunta_id: 12, puntaje_maximo: 9 }),
+      ]);
+    });
+
+    it('no inventa un total publicado si falta la instantanea', async () => {
+      prepararCriterios();
+      montaje.snapshot.findOne.mockResolvedValue(null);
+      jest.spyOn(montaje.servicio, 'findOne').mockResolvedValue({
+        ...EXAMEN_BORRADOR,
+        estado: 'publicado',
+        modo_seleccion: 'aleatorio',
+        paralelos: [],
+        total_preguntas: 0,
+        preguntas: [],
+        criterios: [],
+      } as never);
+
+      const resultado = await montaje.servicio.obtenerResumen(5, 7);
+
+      expect(resultado.puntajes).toMatchObject({
+        origen: 'instantanea',
+        disponible: false,
+        puntaje_total: null,
+        motivo: 'sin_instantanea',
+      });
+      expect(resultado.puntajes.temas).toEqual([]);
     });
   });
 

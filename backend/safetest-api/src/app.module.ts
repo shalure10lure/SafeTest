@@ -21,6 +21,10 @@ import { ExamenModule } from './examen/examen.module';
 import { ExamenEstudiante } from './examenestudiante/entity/examenestudiante.entity';
 import { ExamenPregunta } from './examenpregunta/entity/examenpregunta.entity';
 import { ExamenTema } from './examentema/entity/examentema.entity';
+import { ExamenPoolSnapshot } from './examenpoolsnapshot/entity/examen-pool-snapshot.entity';
+import { ExamenPoolSnapshotTema } from './examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity';
+import { ExamenPoolSnapshotPregunta } from './examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
+import { ExamenPoolSnapshotInciso } from './examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity';
 import { Formula } from './formula/entity/formula.entity';
 import { FormulaElegida } from './formulaelegida/entity/formulaelegida.entity';
 import { Inciso } from './inciso/entity/inciso.entity';
@@ -93,6 +97,10 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
           ExamenEstudiante,
           ExamenPregunta,
           ExamenTema,
+          ExamenPoolSnapshot,
+          ExamenPoolSnapshotTema,
+          ExamenPoolSnapshotPregunta,
+          ExamenPoolSnapshotInciso,
           Formula,
           FormulaElegida,
           Inciso,

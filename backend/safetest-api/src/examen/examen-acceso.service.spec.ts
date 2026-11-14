@@ -285,6 +285,28 @@ describe('ExamenAccesoService', () => {
   }
 
   describe('vista del estudiante', () => {
+    it('mantiene el contrato de puntaje máximo por inciso y total derivado por pregunta', async () => {
+      prepararVista(null, [
+        ...FILAS_SEGURAS,
+        {
+          ...FILAS_SEGURAS[0],
+          letra: 'b',
+          enunciado_inciso: 'Inciso adicional',
+          puntaje_max: '3',
+          nro_opcion: null,
+          texto_opcion: null,
+        },
+      ]);
+
+      const vista = await montaje.servicio.obtenerVistaEstudiante(5, 9);
+      const pregunta = vista.preguntas[0];
+
+      expect(pregunta).toHaveProperty('puntaje_max', 8);
+      expect(pregunta.incisos.map((inciso) => inciso.puntaje_max)).toEqual([
+        5, 3,
+      ]);
+    });
+
     it('no expone respuestas correctas antes de la publicación autorizada', async () => {
       prepararVista(null, FILAS_SEGURAS);
 

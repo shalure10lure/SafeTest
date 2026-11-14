@@ -114,7 +114,7 @@ export default function SeleccionManual({
                                             <Badge tono="blue">{infoTipoPregunta(pregunta.tipo_respuesta).label}</Badge>
                                             <span className="text-xs text-slate-500">
                                                 {pregunta.materia.nombre} · {pregunta.tema.nombre_tema} ·{' '}
-                                                {pregunta.puntos} pts
+                                                Puntaje de la pregunta: {pregunta.puntos} pts
                                             </span>
                                             {pregunta.usada_en > 0 && (
                                                 <span className="ml-auto rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">

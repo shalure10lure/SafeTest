@@ -3,10 +3,13 @@ import { MulterModule } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
+import { ExamenPoolSnapshotInciso } from '../examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity';
+import { ExamenPoolSnapshotPregunta } from '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
 import { Materia } from '../materia/entity/materia.entity';
 import { PreguntaRecurso } from '../preguntarecurso/entity/preguntarecurso.entity';
 import { Pregunta } from './entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
+import { PreguntaCongeladaService } from './pregunta-congelada.service';
 import { PreguntaController } from './pregunta.controller';
 import { PreguntaService } from './pregunta.service';
 import { AlmacenImagenesPregunta } from './recursos/almacen-imagenes-pregunta';
@@ -25,6 +28,8 @@ import { PreguntaRecursosService } from './recursos/recursos.service';
       Tema,
       Materia,
       ExamenPregunta,
+      ExamenPoolSnapshotInciso,
+      ExamenPoolSnapshotPregunta,
       PreguntaRecurso,
     ]),
     RecursosConfigModule,
@@ -40,10 +45,15 @@ import { PreguntaRecursosService } from './recursos/recursos.service';
   controllers: [PreguntaController],
   providers: [
     PreguntaService,
+    PreguntaCongeladaService,
     PreguntaRecursosService,
     AlmacenImagenesPregunta,
     RecursosTamanoFilter,
   ],
-  exports: [PreguntaService, PreguntaRecursosService],
+  exports: [
+    PreguntaService,
+    PreguntaRecursosService,
+    PreguntaCongeladaService,
+  ],
 })
 export class PreguntaModule {}

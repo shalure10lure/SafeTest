@@ -67,6 +67,7 @@ export default function PanelSeleccionadas({
                                             {tipo && <span>{tipo.label}</span>}
                                             {item.pregunta && (
                                                 <span>
+                                                    Puntaje de la pregunta:{' '}
                                                     {formatearPuntos(item.pregunta.puntos)} pts
                                                 </span>
                                             )}
@@ -93,7 +94,7 @@ export default function PanelSeleccionadas({
 
                     <p className="border-t border-slate-200 px-4 py-3 text-[11px] text-slate-500">
                         {items.length} {items.length === 1 ? 'pregunta' : 'preguntas'} ·{' '}
-                        {formatearPuntos(totalPuntos)} pts en total
+                        Puntaje total: {formatearPuntos(totalPuntos)} pts
                     </p>
                 </>
             )}

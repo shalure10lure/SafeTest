@@ -286,7 +286,8 @@ export default function PropuestaIaEditor({
                 </Campo>
                 <Campo
                     id={`puntaje-${propuesta.propuesta_id}`}
-                    etiqueta="Puntaje máximo"
+                    etiqueta="Puntaje máximo del inciso"
+                    ayuda="Se asignará al inciso que se crea para esta pregunta."
                     error={mostrarErrores ? erroresGenerales.puntaje : ''}
                 >
                     <input

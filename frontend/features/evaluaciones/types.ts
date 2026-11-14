@@ -193,6 +193,7 @@ export interface PreguntaBanco {
     dificultad: string | null;
     /** Valor crudo del backend (ej. "opcion_unica"); ver `tipos-pregunta.ts`. */
     tipo_respuesta: string | null;
+    /** Puntaje de la pregunta: suma de los puntajes máximos de sus incisos. */
     puntos: number;
     /** En cuántas otras evaluaciones ya se usó. */
     usada_en: number;
@@ -210,6 +211,10 @@ export interface PreguntaBanco {
 export interface PreguntaSeleccionada extends PreguntaBanco {
     /** `false` si la pregunta se dio de baja después de guardarse. */
     activo: boolean;
+    /** Cantidad de incisos de la pregunta (lo devuelve `GET /examenes/:id/resumen`). */
+    total_incisos?: number;
+    /** Incisos cuyo `puntaje_max` no es mayor que 0. */
+    incisos_sin_puntaje?: number;
 }
 
 export interface TemaBanco {
@@ -312,7 +317,80 @@ export interface AsignacionGuardada {
 export interface CriterioResumen {
     tema_id: number;
     nombre_tema: string;
+    /** Cantidad definitiva (o prevista, en borrador) por estudiante. */
     cantidad: number;
+}
+
+/** De dónde salen los puntajes mostrados en el resumen. */
+export type OrigenPuntajesResumen =
+    | 'seleccion'
+    | 'calculo_previo'
+    | 'instantanea';
+
+export type MotivoPuntajeNoGarantizado =
+    | 'sin_criterios'
+    | 'cantidad_invalida'
+    | 'candidatas_insuficientes'
+    | 'puntajes_no_uniformes'
+    | 'pregunta_sin_puntaje'
+    | 'sin_instantanea'
+    | 'instantanea_invalida';
+
+export interface IncisoPuntajeResumen {
+    letra: string;
+    puntaje_max: number | null;
+}
+
+/** Pregunta del pool con su puntaje máximo. */
+export interface PreguntaPoolResumen {
+    pregunta_id: number;
+    tema_id: number;
+    /** `null` cuando la fuente es la instantánea (no guarda el enunciado). */
+    enunciado: string | null;
+    puntaje_maximo: number | null;
+    incisos: IncisoPuntajeResumen[];
+}
+
+export interface TemaPuntajeResumen {
+    tema_id: number;
+    nombre_tema: string;
+    /** Preguntas activas que pueden entrar en el pool. */
+    cantidad_candidatas: number;
+    /** Preguntas que recibe cada estudiante del tema. */
+    cantidad_seleccionada: number;
+    /**
+     * Puntaje máximo por estudiante para el tema. En borrador aleatorio es el
+     * valor garantizado; en publicado es el valor definitivo.
+     */
+    puntaje_maximo: number | null;
+    garantizado: boolean;
+    motivo: MotivoPuntajeNoGarantizado | null;
+    detalle: string | null;
+}
+
+export interface ResumenPuntajes {
+    origen: OrigenPuntajesResumen;
+    /** `true` si `puntaje_total` puede mostrarse sin riesgo de ser falso. */
+    disponible: boolean;
+    /** Puntaje máximo (o definitivo) por estudiante. */
+    puntaje_total: number | null;
+    temas: TemaPuntajeResumen[];
+    preguntas: PreguntaPoolResumen[];
+    preguntas_sin_puntaje: PreguntaSinPuntajeResumen[];
+    /** Motivo global cuando el total no está disponible. */
+    motivo: MotivoPuntajeNoGarantizado | null;
+    detalle: string | null;
+}
+
+export type MotivoPreguntaSinPuntaje =
+    | 'sin_incisos'
+    | 'inciso_sin_puntaje'
+    | 'puntaje_no_finito';
+
+export interface PreguntaSinPuntajeResumen {
+    pregunta_id: number;
+    enunciado: string;
+    motivo: MotivoPreguntaSinPuntaje;
 }
 
 export interface EstudianteAsignadoResumen {
@@ -326,6 +404,11 @@ export interface ResumenEvaluacion extends Omit<EvaluacionDetalle, 'criterios'> 
     criterios: CriterioResumen[];
     estudiantes_asignados: EstudianteAsignadoResumen[];
     total_estudiantes: number;
+    /**
+     * Puntajes del borrador (cálculo previo) o de la instantánea publicada.
+     * El campo `origen` distingue datos previos de definitivos.
+     */
+    puntajes: ResumenPuntajes;
 }
 
 /** Motivo por el que no se puede publicar y paso del asistente que lo corrige. */

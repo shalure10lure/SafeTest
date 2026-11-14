@@ -18,12 +18,46 @@ import { ExamenTema } from '../examentema/entity/examentema.entity';
 import { ExamenEstudiante } from '../examenestudiante/entity/examenestudiante.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Tema } from '../tema/entity/tema.entity';
+import { Inciso } from '../inciso/entity/inciso.entity';
+import { ExamenPoolSnapshot } from '../examenpoolsnapshot/entity/examen-pool-snapshot.entity';
+import { ExamenPoolSnapshotTema } from '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity';
+import { ExamenPoolSnapshotPregunta } from '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
+import { ExamenPoolSnapshotInciso } from '../examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity';
 
 import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
 import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
+import { calcularDistribucionPuntajes } from './puntajes-resumen';
+import {
+    calcularPuntajesAleatorioBorrador,
+    calcularPuntajesInstantanea,
+    calcularPuntajesManual,
+} from './puntajes-resumen';
+import type {
+    CriterioPuntajeResumen,
+    DatosInstantaneaResumen,
+    MotivoPreguntaSinPuntaje,
+    PreguntaPuntajeCalculo,
+    ResumenPuntajes,
+} from './puntajes-resumen';
+import {
+    multiplicarPuntajeDecimal,
+    parsearPuntajeDecimal,
+    puntajeDecimalANumero,
+    puntajeDecimalATexto,
+    puntajesDecimalesIguales,
+    sumarPuntajesDecimales,
+} from './puntajes-decimales';
+import type { PuntajeDecimal } from './puntajes-decimales';
+
+const MOTIVO_PUNTAJE_INVALIDO: Record<MotivoPreguntaSinPuntaje, string> = {
+    sin_incisos: 'no tiene incisos',
+    inciso_sin_puntaje:
+        'tiene incisos con un puntaje que no es numérico, finito y mayor que cero',
+    puntaje_no_finito: 'tiene un puntaje no numérico o no finito',
+};
 
 @Injectable()
 export class ExamenService {
@@ -639,7 +673,7 @@ export class ExamenService {
     async obtenerResumen(examenId: number, docenteId: number) {
         const examen = await this.findOne(examenId, docenteId);
 
-        const [estudiantes, criterios] = await Promise.all([
+        const [estudiantes, criteriosActuales] = await Promise.all([
             this.estudiantesAsignados(examen),
             this.dataSource
                 .getRepository(ExamenTema)
@@ -650,15 +684,279 @@ export class ExamenService {
                 .getMany(),
         ]);
 
-        return {
-            ...examen,
-            criterios: criterios.map((fila) => ({
+        const criteriosBase: CriterioPuntajeResumen[] = criteriosActuales.map(
+            (fila) => ({
                 tema_id: fila.tema_id,
                 nombre_tema: fila.tema.nombre_tema,
-                cantidad: fila.cantidad,
-            })),
+                cantidad: Number(fila.cantidad),
+            }),
+        );
+        const nombresPorTema = new Map(
+            criteriosBase.map((criterio) => [
+                criterio.tema_id,
+                criterio.nombre_tema,
+            ]),
+        );
+
+        let puntajes: ResumenPuntajes;
+        let criterios: { tema_id: number; nombre_tema: string; cantidad: number }[];
+
+        if (
+            examen.estado === 'publicado' &&
+            examen.modo_seleccion === 'aleatorio'
+        ) {
+            // Publicado: los valores definitivos salen de la instantánea.
+            // No se recalculan con Pregunta, Inciso ni el pool activo.
+            const instantanea = await this.obtenerDatosInstantanea(examenId);
+
+            puntajes = calcularPuntajesInstantanea(
+                instantanea
+                    ? {
+                        ...instantanea,
+                        temas: instantanea.temas.map((tema) => ({
+                            ...tema,
+                            nombre_tema:
+                                nombresPorTema.get(tema.tema_id) ??
+                                `Tema ${tema.tema_id}`,
+                        })),
+                    }
+                    : null,
+            );
+
+            criterios = puntajes.temas.map((tema) => ({
+                tema_id: tema.tema_id,
+                nombre_tema: tema.nombre_tema,
+                cantidad: tema.cantidad_seleccionada,
+            }));
+        } else if (examen.modo_seleccion === 'aleatorio') {
+            // Borrador: cálculo previo aplicando las reglas de T3.2.
+            puntajes = await this.calcularPuntajesBorradorAleatorio(
+                criteriosBase,
+            );
+            criterios = criteriosBase.map((criterio) => ({
+                tema_id: criterio.tema_id,
+                nombre_tema: criterio.nombre_tema,
+                cantidad: criterio.cantidad,
+            }));
+        } else {
+            // Manual: se conserva el cálculo derivado de la selección actual.
+            puntajes = calcularPuntajesManual(examen.preguntas);
+            criterios = criteriosBase.map((criterio) => ({
+                tema_id: criterio.tema_id,
+                nombre_tema: criterio.nombre_tema,
+                cantidad: criterio.cantidad,
+            }));
+        }
+
+        return {
+            ...examen,
+            // En una evaluación publicada la cantidad definitiva es la de la
+            // instantánea; el cálculo previo no debe reemplazarla.
+            total_preguntas:
+                examen.estado === 'publicado' &&
+                examen.modo_seleccion === 'aleatorio'
+                    ? puntajes.temas.reduce(
+                        (total, tema) => total + tema.cantidad_seleccionada,
+                        0,
+                    )
+                    : examen.total_preguntas,
+            puntajes,
+            criterios,
             estudiantes_asignados: estudiantes,
             total_estudiantes: estudiantes.length,
+        };
+    }
+
+    /**
+     * Preguntas candidatas de un borrador aleatorio con su puntaje máximo.
+     * Solo lee preguntas activas y sus incisos; no selecciona ni escribe.
+     */
+    private async calcularPuntajesBorradorAleatorio(
+        criterios: CriterioPuntajeResumen[],
+    ): Promise<ResumenPuntajes> {
+        if (criterios.length === 0) {
+            return calcularPuntajesAleatorioBorrador([], []);
+        }
+
+        const temaIds = [
+            ...new Set(criterios.map((criterio) => criterio.tema_id)),
+        ];
+        const preguntas = await this.preguntaRepository
+            .createQueryBuilder('pregunta')
+            .where('pregunta.tema_id IN (:...temaIds)', { temaIds })
+            .andWhere('pregunta.activo = true')
+            .orderBy('pregunta.tema_id', 'ASC')
+            .addOrderBy('pregunta.pregunta_id', 'ASC')
+            .getMany();
+
+        const preguntaIds = preguntas.map(
+            (pregunta) => pregunta.pregunta_id,
+        );
+        const incisos =
+            preguntaIds.length === 0
+                ? []
+                : await this.dataSource
+                    .getRepository(Inciso)
+                    .createQueryBuilder('inciso')
+                    .where('inciso.pregunta_id IN (:...preguntaIds)', {
+                        preguntaIds,
+                    })
+                    .orderBy('inciso.pregunta_id', 'ASC')
+                    .addOrderBy('inciso.letra', 'ASC')
+                    .getMany();
+
+        const incisosPorPregunta = new Map<
+            number,
+            { letra: string; puntaje_max: string }[]
+        >();
+
+        for (const inciso of incisos) {
+            const lista =
+                incisosPorPregunta.get(inciso.pregunta_id) ?? [];
+            lista.push({
+                letra: inciso.letra,
+                puntaje_max: inciso.puntaje_max,
+            });
+            incisosPorPregunta.set(inciso.pregunta_id, lista);
+        }
+
+        const calculadas: PreguntaPuntajeCalculo[] = preguntas.map(
+            (pregunta) => {
+                const incisosPregunta =
+                    incisosPorPregunta.get(pregunta.pregunta_id) ?? [];
+                const parseados = incisosPregunta.map((inciso) =>
+                    parsearPuntajeDecimal(inciso.puntaje_max),
+                );
+                const incisosValidos: {
+                    letra: string;
+                    puntaje: PuntajeDecimal;
+                }[] = [];
+                let motivo: MotivoPreguntaSinPuntaje | null = null;
+
+                if (incisosPregunta.length === 0) {
+                    motivo = 'sin_incisos';
+                } else if (parseados.some((puntaje) => puntaje === null)) {
+                    motivo = 'inciso_sin_puntaje';
+                } else {
+                    for (const [indice, puntaje] of parseados.entries()) {
+                        if (puntaje) {
+                            incisosValidos.push({
+                                letra: incisosPregunta[indice].letra,
+                                puntaje,
+                            });
+                        }
+                    }
+                }
+
+                if (motivo !== null) {
+                    return {
+                        pregunta_id: pregunta.pregunta_id,
+                        tema_id: pregunta.tema_id,
+                        enunciado: pregunta.enunciado,
+                        puntaje: null,
+                        motivo,
+                        incisos: incisosValidos,
+                    };
+                }
+
+                const suma = sumarPuntajesDecimales(
+                    incisosValidos.map((inciso) => inciso.puntaje),
+                );
+
+                if (
+                    !Number.isFinite(puntajeDecimalANumero(suma)) ||
+                    suma.coeficiente <= 0n
+                ) {
+                    return {
+                        pregunta_id: pregunta.pregunta_id,
+                        tema_id: pregunta.tema_id,
+                        enunciado: pregunta.enunciado,
+                        puntaje: null,
+                        motivo: 'puntaje_no_finito',
+                        incisos: incisosValidos,
+                    };
+                }
+
+                return {
+                    pregunta_id: pregunta.pregunta_id,
+                    tema_id: pregunta.tema_id,
+                    enunciado: pregunta.enunciado,
+                    puntaje: suma,
+                    motivo: null,
+                    incisos: incisosValidos,
+                };
+            },
+        );
+
+        return calcularPuntajesAleatorioBorrador(criterios, calculadas);
+    }
+
+    /**
+     * Lee las cuatro tablas de la instantánea sin tocar Pregunta, Inciso ni
+     * el conjunto activo. Devuelve `null` si la evaluación no tiene instantánea.
+     */
+    private async obtenerDatosInstantanea(
+        examenId: number,
+    ): Promise<DatosInstantaneaResumen | null> {
+        const manager = this.dataSource.manager;
+        const [cabecera, temas, preguntas, incisos] = await Promise.all([
+            manager
+                .getRepository(ExamenPoolSnapshot)
+                .findOne({ where: { examen_id: examenId } }),
+            manager.getRepository(ExamenPoolSnapshotTema).find({
+                where: { examen_id: examenId },
+                order: { tema_id: 'ASC' },
+            }),
+            manager.getRepository(ExamenPoolSnapshotPregunta).find({
+                where: { examen_id: examenId },
+                order: { tema_id: 'ASC', pregunta_id: 'ASC' },
+            }),
+            manager.getRepository(ExamenPoolSnapshotInciso).find({
+                where: { examen_id: examenId },
+                order: {
+                    tema_id: 'ASC',
+                    pregunta_id: 'ASC',
+                    letra: 'ASC',
+                },
+            }),
+        ]);
+
+        if (!cabecera) {
+            return null;
+        }
+
+        const incisosPorPregunta = new Map<
+            number,
+            { letra: string; puntaje_max: string }[]
+        >();
+
+        for (const inciso of incisos) {
+            const lista =
+                incisosPorPregunta.get(inciso.pregunta_id) ?? [];
+            lista.push({
+                letra: inciso.letra,
+                puntaje_max: inciso.puntaje_max,
+            });
+            incisosPorPregunta.set(inciso.pregunta_id, lista);
+        }
+
+        return {
+            puntaje_maximo_garantizado:
+                cabecera.puntaje_maximo_garantizado,
+            temas: temas.map((tema) => ({
+                tema_id: tema.tema_id,
+                nombre_tema: '',
+                cantidad_seleccionada: tema.cantidad_seleccionada,
+                cantidad_candidatas: tema.cantidad_candidatas,
+                puntaje_maximo_tema: tema.puntaje_maximo_tema,
+            })),
+            preguntas: preguntas.map((pregunta) => ({
+                pregunta_id: pregunta.pregunta_id,
+                tema_id: pregunta.tema_id,
+                puntaje_maximo_pregunta:
+                    pregunta.puntaje_maximo_pregunta,
+                incisos: incisosPorPregunta.get(pregunta.pregunta_id) ?? [],
+            })),
         };
     }
 
@@ -705,6 +1003,21 @@ export class ExamenService {
                     message: 'La evaluación aún no se puede publicar.',
                     problemas,
                 });
+            }
+
+            if (examen.modo_seleccion === 'aleatorio') {
+                try {
+                    await this.crearInstantaneaPoolAleatorio(examen, manager);
+                } catch (error) {
+                    if (!(error instanceof BadRequestException)) {
+                        throw error;
+                    }
+
+                    throw new BadRequestException({
+                        message: 'La evaluación aún no se puede publicar.',
+                        problemas: [{ paso: 2, mensaje: error.message }],
+                    });
+                }
             }
 
             // Las preguntas por estudiante (asignacion_pregunta) aún no se generan
@@ -792,6 +1105,330 @@ export class ExamenService {
     }
 
     // Problemas que impiden publicar, con el paso del asistente que los corrige.
+    /**
+     * Valida los puntajes de las preguntas seleccionadas en modo manual.
+     * Reutiliza el cálculo derivado de HU-30/T1 para no duplicar la regla:
+     * una pregunta es inválida si no tiene incisos o si alguno de sus incisos
+     * no tiene un puntaje numérico, finito y mayor que cero.
+     */
+    private async problemasDePuntaje(
+        examenId: number,
+        manager: EntityManager,
+    ): Promise<{ paso: number; mensaje: string }[]> {
+        const filas = await manager.getRepository(ExamenPregunta).find({
+            where: { examen_id: examenId },
+            order: { orden: 'ASC' },
+        });
+
+        if (filas.length === 0) {
+            return [];
+        }
+
+        const preguntas = await this.obtenerPreguntasPorIds(
+            filas.map((fila) => fila.pregunta_id),
+            examenId,
+            manager,
+        );
+        const distribucion = calcularDistribucionPuntajes(preguntas, 'manual');
+        const problemas: { paso: number; mensaje: string }[] = [];
+
+        for (const pregunta of distribucion.preguntas_sin_puntaje) {
+            problemas.push({
+                paso: 2,
+                mensaje: `La pregunta #${pregunta.pregunta_id} ${MOTIVO_PUNTAJE_INVALIDO[pregunta.motivo]}.`,
+            });
+        }
+
+        if (
+            problemas.length === 0 &&
+            (distribucion.puntaje_total ?? 0) <= 0
+        ) {
+            problemas.push({
+                paso: 2,
+                mensaje:
+                    'El puntaje total de la evaluación debe ser mayor que cero.',
+            });
+        }
+
+        return problemas;
+    }
+
+    private async crearInstantaneaPoolAleatorio(
+        examen: Examen,
+        manager: EntityManager,
+    ): Promise<void> {
+        const snapshotExistente = await manager
+            .getRepository(ExamenPoolSnapshot)
+            .findOne({ where: { examen_id: examen.examen_id } });
+
+        if (snapshotExistente) {
+            throw new BadRequestException(
+                'La evaluación ya tiene una instantánea del pool aleatorio.',
+            );
+        }
+
+        const criterios = await manager
+            .getRepository(ExamenTema)
+            .createQueryBuilder('examenTema')
+            .where('examenTema.examen_id = :examenId', {
+                examenId: examen.examen_id,
+            })
+            .orderBy('examenTema.tema_id', 'ASC')
+            .setLock('pessimistic_write')
+            .getMany();
+
+        if (criterios.length === 0) {
+            throw new BadRequestException(
+                'Define al menos un criterio de preguntas aleatorias.',
+            );
+        }
+
+        const temaIds = criterios.map((criterio) => Number(criterio.tema_id));
+        const temas = await manager
+            .getRepository(Tema)
+            .createQueryBuilder('tema')
+            .where('tema.tema_id IN (:...temaIds)', { temaIds })
+            .orderBy('tema.tema_id', 'ASC')
+            .setLock('pessimistic_write')
+            .getMany();
+
+        if (
+            examen.materia_id === null ||
+            temas.length !== temaIds.length ||
+            temas.some((tema) => tema.materia_id !== examen.materia_id)
+        ) {
+            throw new BadRequestException(
+                'Algún tema ya no pertenece a la materia de la evaluación.',
+            );
+        }
+
+        const temaPorId = new Map(
+            temas.map((tema) => [tema.tema_id, tema]),
+        );
+        const preguntas = await manager
+            .getRepository(Pregunta)
+            .createQueryBuilder('pregunta')
+            .where('pregunta.tema_id IN (:...temaIds)', { temaIds })
+            .orderBy('pregunta.tema_id', 'ASC')
+            .addOrderBy('pregunta.pregunta_id', 'ASC')
+            .setLock('pessimistic_write')
+            .getMany();
+        const preguntasActivas = preguntas.filter(
+            (pregunta) => pregunta.activo,
+        );
+
+        const preguntasPorTema = new Map<number, Pregunta[]>(
+            temaIds.map((temaId) => [temaId, []]),
+        );
+
+        for (const pregunta of preguntasActivas) {
+            preguntasPorTema.get(pregunta.tema_id)?.push(pregunta);
+        }
+
+        for (const criterio of criterios) {
+            const cantidad = Number(criterio.cantidad);
+            const candidatas =
+                preguntasPorTema.get(criterio.tema_id) ?? [];
+            const tema = temaPorId.get(criterio.tema_id);
+
+            if (!Number.isInteger(cantidad) || cantidad <= 0) {
+                throw new BadRequestException(
+                    `La cantidad de preguntas del tema "${tema?.nombre_tema}" debe ser mayor que cero.`,
+                );
+            }
+
+            if (cantidad > candidatas.length) {
+                throw new BadRequestException(
+                    `El tema "${tema?.nombre_tema}" solo tiene ${candidatas.length} preguntas activas disponibles.`,
+                );
+            }
+        }
+
+        const preguntaIds = preguntasActivas.map(
+            (pregunta) => pregunta.pregunta_id,
+        );
+        const incisos = await manager
+            .getRepository(Inciso)
+            .createQueryBuilder('inciso')
+            .where('inciso.pregunta_id IN (:...preguntaIds)', {
+                preguntaIds,
+            })
+            .orderBy('inciso.pregunta_id', 'ASC')
+            .addOrderBy('inciso.letra', 'ASC')
+            .setLock('pessimistic_write')
+            .getMany();
+        const incisosPorPregunta = new Map<number, Inciso[]>(
+            preguntaIds.map((preguntaId) => [preguntaId, []]),
+        );
+
+        for (const inciso of incisos) {
+            incisosPorPregunta.get(inciso.pregunta_id)?.push(inciso);
+        }
+
+        const puntajesPorPregunta = new Map<
+            number,
+            PuntajeDecimal
+        >();
+        const incisosSnapshot: {
+            examen_id: number;
+            tema_id: number;
+            pregunta_id: number;
+            letra: string;
+            puntaje_max: string;
+        }[] = [];
+
+        for (const pregunta of preguntasActivas) {
+            const incisosPregunta =
+                incisosPorPregunta.get(pregunta.pregunta_id) ?? [];
+
+            if (incisosPregunta.length === 0) {
+                throw new BadRequestException(
+                    `La pregunta #${pregunta.pregunta_id} no tiene incisos.`,
+                );
+            }
+
+            const puntajesIncisos = incisosPregunta.map((inciso) => {
+                const puntaje = parsearPuntajeDecimal(inciso.puntaje_max);
+
+                if (!puntaje) {
+                    throw new BadRequestException(
+                        `La pregunta #${pregunta.pregunta_id} tiene incisos con un puntaje que no es numérico, finito y mayor que cero.`,
+                    );
+                }
+
+                incisosSnapshot.push({
+                    examen_id: examen.examen_id,
+                    tema_id: pregunta.tema_id,
+                    pregunta_id: pregunta.pregunta_id,
+                    letra: inciso.letra,
+                    puntaje_max: puntajeDecimalATexto(puntaje),
+                });
+
+                return puntaje;
+            });
+
+            puntajesPorPregunta.set(
+                pregunta.pregunta_id,
+                sumarPuntajesDecimales(puntajesIncisos),
+            );
+        }
+
+        const obtenerPuntajePregunta = (preguntaId: number) => {
+            const puntaje = puntajesPorPregunta.get(preguntaId);
+
+            if (!puntaje) {
+                throw new Error(
+                    `No se calculó el puntaje de la pregunta #${preguntaId}.`,
+                );
+            }
+
+            return puntaje;
+        };
+
+        const resumenPuntajes = calcularDistribucionPuntajes(
+            preguntasActivas.map((pregunta) => ({
+                pregunta_id: pregunta.pregunta_id,
+                enunciado: pregunta.enunciado,
+                puntos: puntajeDecimalANumero(
+                    obtenerPuntajePregunta(pregunta.pregunta_id),
+                ),
+                total_incisos:
+                    incisosPorPregunta.get(pregunta.pregunta_id)?.length ?? 0,
+                incisos_sin_puntaje: 0,
+                tema: {
+                    tema_id: pregunta.tema_id,
+                    nombre_tema:
+                        temaPorId.get(pregunta.tema_id)?.nombre_tema ?? '',
+                },
+            })),
+            'manual',
+        );
+
+        if (resumenPuntajes.preguntas_sin_puntaje.length > 0) {
+            const invalida = resumenPuntajes.preguntas_sin_puntaje[0];
+            throw new BadRequestException(
+                `La pregunta #${invalida.pregunta_id} ${MOTIVO_PUNTAJE_INVALIDO[invalida.motivo]}.`,
+            );
+        }
+
+        const temasSnapshot: {
+            examen_id: number;
+            tema_id: number;
+            cantidad_seleccionada: number;
+            cantidad_candidatas: number;
+            puntaje_maximo_tema: string;
+        }[] = [];
+        const puntajesTemas: PuntajeDecimal[] = [];
+        const preguntasSnapshot = preguntasActivas.map((pregunta) => ({
+            examen_id: examen.examen_id,
+            tema_id: pregunta.tema_id,
+            pregunta_id: pregunta.pregunta_id,
+            puntaje_maximo_pregunta: puntajeDecimalATexto(
+                obtenerPuntajePregunta(pregunta.pregunta_id),
+            ),
+        }));
+
+        for (const criterio of criterios) {
+            const candidatas =
+                preguntasPorTema.get(criterio.tema_id) ?? [];
+            const puntajes = candidatas.map((pregunta) =>
+                obtenerPuntajePregunta(pregunta.pregunta_id),
+            );
+            const cantidad = Number(criterio.cantidad);
+            let puntajeTema: PuntajeDecimal;
+
+            if (cantidad === candidatas.length) {
+                puntajeTema = sumarPuntajesDecimales(puntajes);
+            } else {
+                const puntajeComun = puntajes[0];
+                const uniforme = puntajes.every((puntaje) =>
+                    puntajesDecimalesIguales(puntaje, puntajeComun),
+                );
+
+                if (!uniforme) {
+                    const tema = temaPorId.get(criterio.tema_id);
+                    throw new BadRequestException(
+                        `El tema "${tema?.nombre_tema}" contiene preguntas con puntajes máximos diferentes; solo se puede seleccionar una parte de un pool con puntajes uniformes.`,
+                    );
+                }
+
+                puntajeTema = multiplicarPuntajeDecimal(
+                    puntajeComun,
+                    cantidad,
+                );
+            }
+
+            puntajesTemas.push(puntajeTema);
+            temasSnapshot.push({
+                examen_id: examen.examen_id,
+                tema_id: criterio.tema_id,
+                cantidad_seleccionada: cantidad,
+                cantidad_candidatas: candidatas.length,
+                puntaje_maximo_tema: puntajeDecimalATexto(puntajeTema),
+            });
+        }
+
+        const puntajeTotal = sumarPuntajesDecimales(puntajesTemas);
+
+        if (
+            !Number.isFinite(puntajeDecimalANumero(puntajeTotal)) ||
+            puntajeTotal.coeficiente <= 0n
+        ) {
+            throw new BadRequestException(
+                'El puntaje máximo garantizado de la evaluación debe ser finito y mayor que cero.',
+            );
+        }
+
+        await manager.insert(ExamenPoolSnapshot, {
+            examen_id: examen.examen_id,
+            version: 1,
+            puntaje_maximo_garantizado: puntajeDecimalATexto(puntajeTotal),
+        });
+        await manager.insert(ExamenPoolSnapshotTema, temasSnapshot);
+        await manager.insert(ExamenPoolSnapshotPregunta, preguntasSnapshot);
+        await manager.insert(ExamenPoolSnapshotInciso, incisosSnapshot);
+    }
+
     private async problemasParaPublicar(
         examen: Examen & { paralelos: ParaleloExamen[] },
         manager: EntityManager = this.dataSource.manager,
@@ -809,8 +1446,15 @@ export class ExamenService {
                     paso: 2,
                     mensaje: 'Agrega al menos una pregunta a la evaluación.',
                 });
+            } else {
+                problemas.push(
+                    ...(await this.problemasDePuntaje(
+                        examen.examen_id,
+                        manager,
+                    )),
+                );
             }
-        } else {
+        } else if (examen.modo_seleccion === 'aleatorio') {
             const criterios = await manager
                 .getRepository(ExamenTema)
                 .find({ where: { examen_id: examen.examen_id } });
@@ -822,7 +1466,7 @@ export class ExamenService {
                 });
             } else {
                 try {
-                    await this.validarCriterios(criterios, examen);
+                    await this.validarCriterios(criterios, examen, manager);
                 } catch (error) {
                     if (error instanceof BadRequestException) {
                         problemas.push({ paso: 2, mensaje: error.message });
@@ -831,6 +1475,11 @@ export class ExamenService {
                     }
                 }
             }
+        } else {
+            problemas.push({
+                paso: 2,
+                mensaje: 'El modo de selección de preguntas no es válido.',
+            });
         }
 
         // Paso 3: configuración y disponibilidad.
@@ -1042,10 +1691,18 @@ export class ExamenService {
             throw new NotFoundException('La evaluación no existe.');
         }
 
+        const esAleatorioPublicado =
+            examen.estado === 'publicado' &&
+            examen.modo_seleccion === 'aleatorio';
         const [preguntas, temas] = await Promise.all([
-            this.dataSource
-                .getRepository(ExamenPregunta)
-                .find({ where: { examen_id: examenId }, order: { orden: 'ASC' } }),
+            esAleatorioPublicado
+                ? Promise.resolve([])
+                : this.dataSource
+                    .getRepository(ExamenPregunta)
+                    .find({
+                        where: { examen_id: examenId },
+                        order: { orden: 'ASC' },
+                    }),
             this.dataSource
                 .getRepository(ExamenTema)
                 .find({ where: { examen_id: examenId } }),
@@ -1070,12 +1727,17 @@ export class ExamenService {
      * Detalle de preguntas concretas sin filtrar por estado ni por materia.
      * Se usa para reconstruir la selección guardada de una evaluación.
      */
-    private async obtenerPreguntasPorIds(ids: number[], examenId: number) {
+    private async obtenerPreguntasPorIds(
+        ids: number[],
+        examenId: number,
+        manager: EntityManager = this.dataSource.manager,
+    ) {
         if (ids.length === 0) {
             return [];
         }
 
-        const filas = await this.preguntaRepository
+        const filas = await manager
+            .getRepository(Pregunta)
             .createQueryBuilder('pregunta')
             .innerJoin('pregunta.tema', 'tema')
             .innerJoin('tema.materia', 'materia')
@@ -1089,6 +1751,11 @@ export class ExamenService {
             .addSelect('materia.materia_id', 'materia_id')
             .addSelect('materia.nombre', 'materia_nombre')
             .addSelect('COALESCE(SUM(inciso.puntaje_max), 0)', 'puntos')
+            .addSelect('COUNT(inciso.letra)', 'total_incisos')
+            .addSelect(
+                `COUNT(inciso.letra) FILTER (WHERE inciso.puntaje_max <= 0)`,
+                'incisos_sin_puntaje',
+            )
             .addSelect(
                 `CASE
            WHEN COUNT(DISTINCT inciso.tipo_respuesta) = 1 THEN MIN(inciso.tipo_respuesta)
@@ -1112,11 +1779,13 @@ export class ExamenService {
                 materia_id: number;
                 materia_nombre: string;
                 puntos: string;
+                total_incisos: string;
+                incisos_sin_puntaje: string;
                 tipo_respuesta: string | null;
             }>();
 
         // "Usada en N evaluaciones" (sin contar esta evaluación).
-        const filasUsos = await this.dataSource
+        const filasUsos = await manager
             .getRepository(ExamenPregunta)
             .createQueryBuilder('ep')
             .select('ep.pregunta_id', 'pregunta_id')
@@ -1139,6 +1808,8 @@ export class ExamenService {
                     dificultad: fila.dificultad,
                     tipo_respuesta: fila.tipo_respuesta,
                     puntos: Number(fila.puntos),
+                    total_incisos: Number(fila.total_incisos),
+                    incisos_sin_puntaje: Number(fila.incisos_sin_puntaje),
                     usada_en: usosPorPregunta.get(Number(fila.pregunta_id)) ?? 0,
                     activo: fila.activo,
                     tema: {
@@ -1300,26 +1971,38 @@ export class ExamenService {
         dto: GuardarSeleccionDto,
         docenteId: number,
     ) {
-        const examen = await this.examenRepository.findOne({
-            where: { examen_id: examenId, docente_id: docenteId },
-        });
-
-        if (!examen) {
-            throw new NotFoundException('La evaluación no existe.');
-        }
-
-        if (examen.estado !== 'borrador') {
+        if (
+            dto.modo_seleccion !== 'manual' &&
+            dto.modo_seleccion !== 'aleatorio'
+        ) {
             throw new BadRequestException(
-                'Solo se puede cambiar la selección de una evaluación en borrador.',
+                'El modo de selección de preguntas no es válido.',
             );
         }
 
-        if (dto.modo_seleccion === 'manual') {
-            const ids = dto.pregunta_ids ?? [];
+        return this.dataSource.transaction(async (manager) => {
+            const examen = await manager
+                .getRepository(Examen)
+                .createQueryBuilder('examen')
+                .where('examen.examen_id = :examenId', { examenId })
+                .andWhere('examen.docente_id = :docenteId', { docenteId })
+                .setLock('pessimistic_write')
+                .getOne();
 
-            await this.validarPreguntasManual(ids, docenteId);
+            if (!examen) {
+                throw new NotFoundException('La evaluación no existe.');
+            }
 
-            await this.dataSource.transaction(async (manager) => {
+            if (examen.estado !== 'borrador') {
+                throw new BadRequestException(
+                    'Solo se puede cambiar la selección de una evaluación en borrador.',
+                );
+            }
+
+            if (dto.modo_seleccion === 'manual') {
+                const ids = dto.pregunta_ids ?? [];
+
+                await this.validarPreguntasManual(ids, docenteId, manager);
                 await manager.delete(ExamenPregunta, { examen_id: examenId });
                 await manager.delete(ExamenTema, { examen_id: examenId });
 
@@ -1334,26 +2017,33 @@ export class ExamenService {
                     );
                 }
 
-                await manager.update(
+                const actualizacion = await manager.update(
                     Examen,
-                    { examen_id: examenId },
+                    {
+                        examen_id: examenId,
+                        docente_id: docenteId,
+                        estado: 'borrador',
+                    },
                     { modo_seleccion: 'manual' },
                 );
-            });
 
-            return {
-                modo_seleccion: 'manual',
-                pregunta_ids: ids,
-                criterios: [],
-                total_preguntas: ids.length,
-            };
-        }
+                if (actualizacion.affected === 0) {
+                    throw new BadRequestException(
+                        'Solo se puede cambiar la selección de una evaluación en borrador.',
+                    );
+                }
 
-        const criterios = dto.criterios ?? [];
+                return {
+                    modo_seleccion: 'manual',
+                    pregunta_ids: ids,
+                    criterios: [],
+                    total_preguntas: ids.length,
+                };
+            }
 
-        await this.validarCriterios(criterios, examen);
+            const criterios = dto.criterios ?? [];
 
-        await this.dataSource.transaction(async (manager) => {
+            await this.validarCriterios(criterios, examen, manager);
             await manager.delete(ExamenPregunta, { examen_id: examenId });
             await manager.delete(ExamenTema, { examen_id: examenId });
 
@@ -1368,32 +2058,47 @@ export class ExamenService {
                 );
             }
 
-            await manager.update(
+            const actualizacion = await manager.update(
                 Examen,
-                { examen_id: examenId },
+                {
+                    examen_id: examenId,
+                    docente_id: docenteId,
+                    estado: 'borrador',
+                },
                 { modo_seleccion: 'aleatorio' },
             );
-        });
 
-        return {
-            modo_seleccion: 'aleatorio',
-            pregunta_ids: [],
-            criterios: criterios.map((criterio) => ({
-                tema_id: criterio.tema_id,
-                cantidad: criterio.cantidad,
-            })),
-            total_preguntas: criterios.reduce(
-                (suma, criterio) => suma + criterio.cantidad,
-                0,
-            ),
-        };
+            if (actualizacion.affected === 0) {
+                throw new BadRequestException(
+                    'Solo se puede cambiar la selección de una evaluación en borrador.',
+                );
+            }
+
+            return {
+                modo_seleccion: 'aleatorio',
+                pregunta_ids: [],
+                criterios: criterios.map((criterio) => ({
+                    tema_id: criterio.tema_id,
+                    cantidad: criterio.cantidad,
+                })),
+                total_preguntas: criterios.reduce(
+                    (suma, criterio) => suma + criterio.cantidad,
+                    0,
+                ),
+            };
+        });
     }
 
     // Las preguntas deben existir, estar activas y ser del docente.
-    private async validarPreguntasManual(ids: number[], docenteId: number) {
+    private async validarPreguntasManual(
+        ids: number[],
+        docenteId: number,
+        manager: EntityManager = this.dataSource.manager,
+    ) {
         if (ids.length === 0) return;
 
-        const validas = await this.preguntaRepository
+        const validas = await manager
+            .getRepository(Pregunta)
             .createQueryBuilder('pregunta')
             .innerJoin('pregunta.tema', 'tema')
             .innerJoin('tema.materia', 'materia')
@@ -1414,6 +2119,7 @@ export class ExamenService {
     private async validarCriterios(
         criterios: { tema_id: number; cantidad: number }[],
         examen: Examen,
+        manager: EntityManager = this.dataSource.manager,
     ) {
         if (criterios.length === 0) return;
 
@@ -1431,7 +2137,7 @@ export class ExamenService {
             );
         }
 
-        const temas = await this.temaRepository.find({
+        const temas = await manager.getRepository(Tema).find({
             where: { tema_id: In(idsTemas), materia_id: examen.materia_id },
         });
 
@@ -1441,7 +2147,16 @@ export class ExamenService {
             );
         }
 
-        const filas = await this.preguntaRepository
+        for (const criterio of criterios) {
+            if (!Number.isInteger(criterio.cantidad) || criterio.cantidad <= 0) {
+                throw new BadRequestException(
+                    'La cantidad de preguntas por tema debe ser un entero mayor que cero.',
+                );
+            }
+        }
+
+        const filas = await manager
+            .getRepository(Pregunta)
             .createQueryBuilder('pregunta')
             .select('pregunta.tema_id', 'tema_id')
             .addSelect('COUNT(*)', 'total')

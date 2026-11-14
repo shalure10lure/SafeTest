@@ -14,6 +14,10 @@ import { Tema } from '../tema/entity/tema.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
 import { ExamenTema } from '../examentema/entity/examentema.entity';
+import { ExamenPoolSnapshot } from '../examenpoolsnapshot/entity/examen-pool-snapshot.entity';
+import { ExamenPoolSnapshotTema } from '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity';
+import { ExamenPoolSnapshotPregunta } from '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
+import { ExamenPoolSnapshotInciso } from '../examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity';
 
 import { ExamenController } from './examen.controller';
 import { ExamenEstudianteController } from './examen-estudiante.controller';
@@ -40,6 +44,10 @@ import { RendicionVencimientoWorker } from '../rendicion/rendicion-vencimiento.w
             Tema,
             ExamenPregunta,
             ExamenTema,
+            ExamenPoolSnapshot,
+            ExamenPoolSnapshotTema,
+            ExamenPoolSnapshotPregunta,
+            ExamenPoolSnapshotInciso,
             AsignacionPregunta,
         ]),
         PreguntaModule,

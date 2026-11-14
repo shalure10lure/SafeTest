@@ -5,21 +5,91 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
-
-import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
-import { Examen } from '../examen/entity/examen.entity';
-import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
-import { ExamenTema } from '../examentema/entity/examentema.entity';
-import { Inciso } from '../inciso/entity/inciso.entity';
-import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
-import { Opcion } from '../opcion/entity/opcion.entity';
-import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
-import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
-import { Pregunta } from '../pregunta/entity/pregunta.entity';
-import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
 import type { GuardarRespuestaEstudianteDto } from './dto/guardar-respuesta-estudiante.dto';
-import { Rendicion } from './entity/rendicion.entity';
-import { RendicionService } from './rendicion.service';
+
+class AsignacionPregunta {}
+class Examen {}
+class ExamenPregunta {}
+class ExamenPoolSnapshot {}
+class ExamenPoolSnapshotPregunta {}
+class ExamenPoolSnapshotTema {}
+class ExamenTema {}
+class Inciso {}
+class Inscripcion {}
+class Opcion {}
+class OpcionMarcada {}
+class ParaleloExamen {}
+class Pregunta {}
+class RespuestaInciso {}
+class Rendicion {}
+
+let RendicionService: typeof import('./rendicion.service').RendicionService;
+
+beforeAll(async () => {
+  jest.unstable_mockModule(
+    '../asignacionpregunta/entity/asignacionpregunta.entity',
+    () => ({ AsignacionPregunta }),
+  );
+  jest.unstable_mockModule('../examen/entity/examen.entity', () => ({
+    Examen,
+  }));
+  jest.unstable_mockModule(
+    '../examen/examen-acceso.service',
+    () => ({ ExamenAccesoService: class ExamenAccesoService {} }),
+  );
+  jest.unstable_mockModule(
+    '../examenpregunta/entity/examenpregunta.entity',
+    () => ({ ExamenPregunta }),
+  );
+  jest.unstable_mockModule('../examentema/entity/examentema.entity', () => ({
+    ExamenTema,
+  }));
+  jest.unstable_mockModule('../inciso/entity/inciso.entity', () => ({
+    Inciso,
+  }));
+  jest.unstable_mockModule('../opcion/entity/opcion.entity', () => ({
+    Opcion,
+  }));
+  jest.unstable_mockModule(
+    '../opcionmarcada/entity/opcionmarcada.entity',
+    () => ({ OpcionMarcada }),
+  );
+  jest.unstable_mockModule('../inscripcion/entity/inscripcion.entity', () => ({
+    Inscripcion,
+  }));
+  jest.unstable_mockModule(
+    '../paraleloexamen/entity/paraleloexamen.entity',
+    () => ({ ParaleloExamen }),
+  );
+  jest.unstable_mockModule('../pregunta/entity/pregunta.entity', () => ({
+    Pregunta,
+  }));
+  jest.unstable_mockModule(
+    '../respuestainciso/entity/respuestainciso.entity',
+    () => ({ RespuestaInciso }),
+  );
+  jest.unstable_mockModule('./entity/rendicion.entity', () => ({ Rendicion }));
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot.entity',
+    () => ({ ExamenPoolSnapshot }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity',
+    () => ({ ExamenPoolSnapshotPregunta }),
+  );
+  jest.unstable_mockModule(
+    '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity',
+    () => ({ ExamenPoolSnapshotTema }),
+  );
+  jest.unstable_mockModule(
+    '../reglacorreccion/correccion-rendicion.service',
+    () => ({
+      CorreccionRendicionService: class CorreccionRendicionService {},
+    }),
+  );
+
+  ({ RendicionService } = await import('./rendicion.service'));
+});
 
 /**
  * Las entidades solo se usan como tokens de repositorio. Se trabaja con
@@ -32,11 +102,13 @@ function prepararServicio({
     disponible_hasta: null,
     al_terminar_tiempo: 'enviar_automatico',
   },
+  modoSeleccion,
   paraleloRelacionado = 1,
   inscripcion = 1,
   preguntasManual = [{ pregunta_id: 21, orden: 1 }],
-  criterios = [],
-  preguntasTema = [],
+  snapshot = null,
+  temasSnapshot = [],
+  preguntasSnapshot = [],
   rendicionActiva = {
     estudiante_id: 9,
     examen_id: 5,
@@ -67,11 +139,22 @@ function prepararServicio({
   opcionesDisponibles = [{ nro_opcion: 1, texto_opcion: 'Alternativa' }],
 }: {
   examen?: Record<string, unknown> | null;
+  modoSeleccion?: 'manual' | 'aleatorio';
   paraleloRelacionado?: number;
   inscripcion?: number;
   preguntasManual?: { pregunta_id: number; orden: number }[];
-  criterios?: { tema_id: number; cantidad: number }[];
-  preguntasTema?: { pregunta_id: number }[];
+  snapshot?: Record<string, unknown> | null;
+  temasSnapshot?: {
+    examen_id: number;
+    tema_id: number;
+    cantidad_seleccionada: number;
+    cantidad_candidatas: number;
+  }[];
+  preguntasSnapshot?: {
+    examen_id: number;
+    tema_id: number;
+    pregunta_id: number;
+  }[];
   rendicionActiva?: Record<string, unknown> | null;
   asignacionesRendicion?: { pregunta_id: number; orden: number }[];
   filasPreguntas?: Record<string, unknown>[];
@@ -111,7 +194,16 @@ function prepararServicio({
     find: jest.fn().mockResolvedValue(preguntasManual),
   };
   const examenTemaRepository = {
-    find: jest.fn().mockResolvedValue(criterios),
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const snapshotRepository = {
+    findOne: jest.fn().mockResolvedValue(snapshot),
+  };
+  const snapshotTemaRepository = {
+    find: jest.fn().mockResolvedValue(temasSnapshot),
+  };
+  const snapshotPreguntaRepository = {
+    find: jest.fn().mockResolvedValue(preguntasSnapshot),
   };
   const paraleloExamenRepository = {
     count: jest.fn().mockResolvedValue(paraleloRelacionado),
@@ -141,7 +233,7 @@ function prepararServicio({
     preguntaQueryBuilder[metodo].mockReturnValue(preguntaQueryBuilder);
   }
   const preguntaRepository = {
-    find: jest.fn().mockResolvedValue(preguntasTema),
+    find: jest.fn().mockResolvedValue([]),
     createQueryBuilder: jest.fn().mockReturnValue(preguntaQueryBuilder),
   };
   const respuestasGuardadas = [...respuestas];
@@ -210,6 +302,9 @@ function prepararServicio({
     [AsignacionPregunta, asignacionRepository],
     [ExamenPregunta, examenPreguntaRepository],
     [ExamenTema, examenTemaRepository],
+    [ExamenPoolSnapshot, snapshotRepository],
+    [ExamenPoolSnapshotTema, snapshotTemaRepository],
+    [ExamenPoolSnapshotPregunta, snapshotPreguntaRepository],
     [ParaleloExamen, paraleloExamenRepository],
     [Inscripcion, inscripcionRepository],
     [Pregunta, preguntaRepository],
@@ -230,7 +325,7 @@ function prepararServicio({
   const examenAccesoService = {
     obtenerExamenParaRendicion: jest.fn().mockResolvedValue({
       modo_asignacion: 'estudiantes',
-      modo_seleccion: criterios.length ? 'aleatorio' : 'manual',
+      modo_seleccion: modoSeleccion ?? 'manual',
       orden_preguntas: 'definido',
     }),
   };
@@ -261,6 +356,9 @@ function prepararServicio({
     asignacionRepository,
     examenPreguntaRepository,
     examenTemaRepository,
+    snapshotRepository,
+    snapshotTemaRepository,
+    snapshotPreguntaRepository,
     paraleloExamenRepository,
     inscripcionRepository,
     preguntaRepository,
@@ -325,6 +423,7 @@ describe('RendicionService.iniciarORecuperar', () => {
         orden: 1,
       },
     ]);
+    expect(montaje.snapshotRepository.findOne).not.toHaveBeenCalled();
     expect(resultado).toEqual({
       examen_id: 5,
       paralelo_id: 7,
@@ -913,11 +1012,28 @@ describe('RendicionService.iniciarORecuperar', () => {
 
   it('conserva las preguntas aleatorias materializadas al recuperar el intento', async () => {
     const montaje = prepararServicio({
-      criterios: [{ tema_id: 4, cantidad: 2 }],
-      preguntasTema: [
-        { pregunta_id: 10 },
-        { pregunta_id: 11 },
-        { pregunta_id: 12 },
+      modoSeleccion: 'aleatorio',
+      snapshot: { examen_id: 5 },
+      temasSnapshot: [
+        {
+          examen_id: 5,
+          tema_id: 4,
+          cantidad_seleccionada: 2,
+          cantidad_candidatas: 3,
+        },
+        {
+          examen_id: 5,
+          tema_id: 8,
+          cantidad_seleccionada: 1,
+          cantidad_candidatas: 2,
+        },
+      ],
+      preguntasSnapshot: [
+        { examen_id: 5, tema_id: 4, pregunta_id: 10 },
+        { examen_id: 5, tema_id: 4, pregunta_id: 11 },
+        { examen_id: 5, tema_id: 4, pregunta_id: 12 },
+        { examen_id: 5, tema_id: 8, pregunta_id: 21 },
+        { examen_id: 5, tema_id: 8, pregunta_id: 22 },
       ],
     });
     secuenciaIniciar(montaje, null);
@@ -931,6 +1047,21 @@ describe('RendicionService.iniciarORecuperar', () => {
     const primera = await montaje.service.iniciarORecuperar(5, 9, {
       paralelo_id: 7,
     });
+
+    expect(asignadas).toHaveLength(3);
+    expect(new Set(asignadas.map(({ pregunta_id }) => pregunta_id)).size).toBe(3);
+    expect(
+      asignadas.filter(({ pregunta_id }) => [10, 11, 12].includes(pregunta_id)),
+    ).toHaveLength(2);
+    expect(
+      asignadas.filter(({ pregunta_id }) => [21, 22].includes(pregunta_id)),
+    ).toHaveLength(1);
+    expect(
+      asignadas.every(({ pregunta_id }) =>
+        [10, 11, 12, 21, 22].includes(pregunta_id),
+      ),
+    ).toBe(true);
+
     secuenciaIniciar(montaje, {
       ...RENDICION_NUEVA,
       fecha_inicio: primera.fecha_inicio,
@@ -944,8 +1075,88 @@ describe('RendicionService.iniciarORecuperar', () => {
     });
 
     expect(primera.preguntas).toEqual(recuperada.preguntas);
-    expect(montaje.examenTemaRepository.find).toHaveBeenCalledTimes(1);
+    expect(montaje.snapshotRepository.findOne).toHaveBeenCalledTimes(1);
+    expect(montaje.snapshotTemaRepository.find).toHaveBeenCalledTimes(1);
+    expect(montaje.snapshotPreguntaRepository.find).toHaveBeenCalledTimes(1);
+    expect(montaje.examenTemaRepository.find).not.toHaveBeenCalled();
+    expect(montaje.preguntaRepository.find).not.toHaveBeenCalled();
     expect(recuperada.recuperada).toBe(true);
+  });
+
+  it('bloquea un nuevo inicio aleatorio de una evaluación antigua sin instantánea', async () => {
+    const montaje = prepararServicio({ modoSeleccion: 'aleatorio' });
+    secuenciaIniciar(montaje, null);
+
+    await expect(
+      montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
+    ).rejects.toThrow('requiere regularización');
+
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
+    expect(montaje.snapshotTemaRepository.find).not.toHaveBeenCalled();
+    expect(montaje.preguntaRepository.find).not.toHaveBeenCalled();
+  });
+
+  it('recupera asignaciones existentes aunque la evaluación no tenga instantánea', async () => {
+    const montaje = prepararServicio({ modoSeleccion: 'aleatorio' });
+    secuenciaIniciar(montaje, { ...RENDICION_NUEVA });
+    montaje.asignacionRepository.find.mockResolvedValue([
+      { pregunta_id: 31, orden: 1 },
+      { pregunta_id: 42, orden: 2 },
+    ]);
+
+    const resultado = await montaje.service.iniciarORecuperar(5, 9, {
+      paralelo_id: 7,
+    });
+
+    expect(resultado.preguntas).toEqual([
+      { pregunta_id: 31, orden: 1 },
+      { pregunta_id: 42, orden: 2 },
+    ]);
+    expect(resultado.recuperada).toBe(true);
+    expect(montaje.builder.insert).not.toHaveBeenCalled();
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
+    expect(montaje.snapshotRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('rechaza recuperar una rendición activa sin asignaciones', async () => {
+    const montaje = prepararServicio({
+      modoSeleccion: 'aleatorio',
+      asignacionesRendicion: [],
+    });
+    secuenciaIniciar(montaje, { ...RENDICION_NUEVA });
+
+    await expect(
+      montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
+    ).rejects.toThrow('no tiene preguntas asignadas');
+
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
+    expect(montaje.snapshotRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una instantánea con candidatas de otro tema o conteo inconsistente', async () => {
+    const montaje = prepararServicio({
+      modoSeleccion: 'aleatorio',
+      snapshot: { examen_id: 5 },
+      temasSnapshot: [
+        {
+          examen_id: 5,
+          tema_id: 4,
+          cantidad_seleccionada: 2,
+          cantidad_candidatas: 2,
+        },
+      ],
+      preguntasSnapshot: [
+        { examen_id: 5, tema_id: 8, pregunta_id: 10 },
+        { examen_id: 5, tema_id: 4, pregunta_id: 11 },
+      ],
+    });
+    secuenciaIniciar(montaje, null);
+
+    await expect(
+      montaje.service.iniciarORecuperar(5, 9, { paralelo_id: 7 }),
+    ).rejects.toThrow('instantánea del pool aleatorio está incompleta');
+
+    expect(montaje.asignacionRepository.insert).not.toHaveBeenCalled();
   });
 
   it('no recupera rendiciones que ya no están en curso', async () => {
