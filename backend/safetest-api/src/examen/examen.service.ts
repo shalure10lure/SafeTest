@@ -94,6 +94,12 @@ export class ExamenService {
         dto: Pick<CreateExamenDto, 'materia_id' | 'semestre_id' | 'paralelo_id'>,
         docenteId: number,
     ) {
+        if (!dto.materia_id || !dto.semestre_id || !dto.paralelo_id) {
+            throw new BadRequestException(
+                'Faltan datos obligatorios para crear o editar la evaluación.',
+            );
+        }
+
         const materia = await this.materiaRepository.findOne({
             where: { materia_id: dto.materia_id, docente_id: docenteId },
         });
@@ -1616,7 +1622,10 @@ export class ExamenService {
             .leftJoinAndSelect('examen.semestre', 'semestre')
             .leftJoinAndSelect('examen.paralelos', 'paraleloExamen')
             .leftJoinAndSelect('paraleloExamen.paralelo', 'paralelo')
-            .where('examen.docente_id = :docenteId', { docenteId })
+            .where(
+                '(examen.docente_id = :docenteId OR materia.docente_id = :docenteId OR semestre.docente_id = :docenteId)',
+                { docenteId },
+            )
             .orderBy('examen.examen_id', 'DESC');
 
         if (examenId !== undefined) {
