@@ -2,8 +2,13 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import type { Rol } from "../types";
 import { authService } from "../services/auth.service";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../hooks/useAuth";
+import { rutaSeguraAceptacion } from
+  "@/features/invitacion/services/aceptacion-invitacion.service";
 
 interface RegisterFormProps {
   rol: Rol;
@@ -14,7 +19,7 @@ interface RegisterFormProps {
 export default function RegisterForm({
   rol,
   onBack,
-  loginHref="/login",
+  loginHref = "/login",
 }: RegisterFormProps) {
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
@@ -22,7 +27,11 @@ export default function RegisterForm({
   const [password, setPassword] = useState("");
   const [confirmarPassword, setConfirmarPassword] =
     useState("");
+  const [mostrarPassword, setMostrarPassword] =
+    useState(false);
 
+  const [mostrarConfirmacion, setMostrarConfirmacion] =
+    useState(false);
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -35,15 +44,23 @@ export default function RegisterForm({
 
   const labelClass =
     "mb-2 block text-sm font-medium text-slate-800";
+  const router = useRouter();
+  const { login } = useAuth();
+
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
+
     setError("");
     setMensaje("");
 
-    if (!nombre.trim() || !correo.trim()) {
+    const correoNormalizado =
+      correo.trim().toLowerCase();
+
+    // Validaciones
+    if (!nombre.trim() || !correoNormalizado) {
       setError("Completa todos los campos obligatorios.");
       return;
     }
@@ -72,38 +89,81 @@ export default function RegisterForm({
 
     setLoading(true);
 
+    // PRIMERA ETAPA: registrar la cuenta
     try {
       if (esDocente) {
         await authService.registerDocente({
           nombre: nombre.trim(),
-          correo: correo.trim(),
+          correo: correoNormalizado,
           password,
         });
       } else {
         await authService.registerEstudiante({
           nombre_completo: nombre.trim(),
           celular: celular.trim(),
-          correo_institucional: correo.trim(),
+          correo_institucional: correoNormalizado,
           password,
         });
       }
-
-      setMensaje(
-        "Cuenta creada correctamente. Ya puedes iniciar sesión.",
-      );
-
-      setPassword("");
-      setConfirmarPassword("");
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : "Ocurrió un error al crear la cuenta.",
       );
+
+      setLoading(false);
+      return;
+    }
+
+    // SEGUNDA ETAPA: iniciar sesión automáticamente
+    try {
+      const usuario = await login({
+        correo: correoNormalizado,
+        password,
+      });
+
+      // Si es docente, ir al panel docente
+      if (usuario.tipo === "docente") {
+        router.replace("/docente");
+        return;
+      }
+
+      // Si es estudiante, recuperar una invitación
+      // pendiente o ir al panel principal
+      if (usuario.tipo === "estudiante") {
+        const parametros = new URL(
+          loginHref,
+          window.location.origin,
+        ).searchParams;
+
+        const retorno = rutaSeguraAceptacion(
+          parametros.get("next"),
+        );
+
+        router.replace(retorno ?? "/estudiante");
+        return;
+      }
+
+      // Si el backend devolvió un rol inesperado,
+      // la cuenta ya existe, pero no redirigimos.
+      setMensaje(
+        "Cuenta creada, pero no se pudo identificar el rol. " +
+        "Inicia sesión desde la página de acceso.",
+      );
+    } catch {
+      // El registro ya terminó correctamente.
+      // No debemos intentar registrar la misma cuenta otra vez.
+      setMensaje(
+        "Cuenta creada correctamente, pero no se pudo " +
+        "iniciar sesión automáticamente. " +
+        "Puedes iniciar sesión desde la página de acceso.",
+      );
     } finally {
       setLoading(false);
     }
   }
+
 
   return (
     <div className="w-full">
@@ -123,18 +183,17 @@ export default function RegisterForm({
         </h1>
 
         <span
-          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-            esDocente
-              ? "bg-violet-50 text-violet-600"
-              : "bg-emerald-50 text-emerald-600"
-          }`}
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${esDocente
+            ? "bg-violet-50 text-violet-600"
+            : "bg-emerald-50 text-emerald-600"
+            }`}
         >
           ● {esDocente ? "Docente" : "Estudiante"}
         </span>
       </div>
 
       <p className="mt-2 text-sm text-slate-500">
-        Completa tus datos institucionales para registrarte.
+        Completa tus datos para crear una cuenta en SafeTest.
       </p>
 
       <form
@@ -162,7 +221,7 @@ export default function RegisterForm({
         {/* Correo */}
         <div>
           <label htmlFor="correo" className={labelClass}>
-            Correo institucional
+            Correo electrónico
           </label>
 
           <input
@@ -170,7 +229,7 @@ export default function RegisterForm({
             type="email"
             required
             autoComplete="email"
-            placeholder="usuario@universidad.edu"
+            placeholder="usuario@gmail.com"
             value={correo}
             onChange={(e) => setCorreo(e.target.value)}
             className={inputClass}
@@ -198,25 +257,52 @@ export default function RegisterForm({
         )}
 
         {/* Contraseñas */}
+
+        {/* CONTRASEÑAS CON OJITOS */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+          {/* Contraseña */}
           <div>
             <label htmlFor="password" className={labelClass}>
               Contraseña
             </label>
 
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={6}
-              autoComplete="new-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={inputClass}
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={mostrarPassword ? "text" : "password"}
+                required
+                minLength={6}
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`${inputClass} pr-11`}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setMostrarPassword(!mostrarPassword)
+                }
+                aria-label={
+                  mostrarPassword
+                    ? "Ocultar contraseña"
+                    : "Mostrar contraseña"
+                }
+                aria-pressed={mostrarPassword}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-blue-600"
+              >
+                {mostrarPassword ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            </div>
           </div>
 
+          {/* Confirmar contraseña */}
           <div>
             <label
               htmlFor="confirmarPassword"
@@ -225,21 +311,46 @@ export default function RegisterForm({
               Confirmar contraseña
             </label>
 
-            <input
-              id="confirmarPassword"
-              type="password"
-              required
-              minLength={6}
-              autoComplete="new-password"
-              placeholder="••••••••"
-              value={confirmarPassword}
-              onChange={(e) =>
-                setConfirmarPassword(e.target.value)
-              }
-              className={inputClass}
-            />
+            <div className="relative">
+              <input
+                id="confirmarPassword"
+                type={
+                  mostrarConfirmacion ? "text" : "password"
+                }
+                required
+                minLength={6}
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={confirmarPassword}
+                onChange={(e) =>
+                  setConfirmarPassword(e.target.value)
+                }
+                className={`${inputClass} pr-11`}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setMostrarConfirmacion(!mostrarConfirmacion)
+                }
+                aria-label={
+                  mostrarConfirmacion
+                    ? "Ocultar confirmación de contraseña"
+                    : "Mostrar confirmación de contraseña"
+                }
+                aria-pressed={mostrarConfirmacion}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-blue-600"
+              >
+                {mostrarConfirmacion ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            </div>
           </div>
         </div>
+
 
         {/* Términos */}
         <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">

@@ -5,6 +5,8 @@ import { LogOut, ShieldCheck } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { BadgeKey, NavItem, NavSection } from '@/constants/routes';
+import ConectarGoogleButton from
+    "@/features/auth/components/ConectarGoogleButton";
 
 export interface UsuarioSidebar {
     nombre: string;
@@ -95,6 +97,7 @@ export default function Sidebar({
     onNavigate,
 }: SidebarProps) {
     return (
+
         <aside className="flex h-full w-full flex-col border-r border-slate-200 bg-white">
             {/* Marca */}
             <Link
@@ -115,7 +118,9 @@ export default function Sidebar({
             <nav
                 aria-label="Navegación principal"
                 className="flex-1 space-y-5 overflow-y-auto px-3 py-4"
+
             >
+                <ConectarGoogleButton />
                 {secciones.map((seccion, indice) => (
                     <div key={seccion.titulo ?? `seccion-${indice}`}>
                         {seccion.titulo && (

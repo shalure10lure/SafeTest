@@ -9,6 +9,7 @@ import type {
   RegisterDocenteDto,
   RegisterEstudianteDto,
   RegisterResponse,
+  
 } from '../types';
 
 class AuthService extends BaseService {
@@ -16,6 +17,36 @@ class AuthService extends BaseService {
   constructor() {
     super('/auth');
   }
+  vincularGoogle(
+    accessToken: string,
+  ): Promise<{ url: string }> {
+    return this.post<
+      { url: string },
+      Record<string, never>
+    >(
+      '/google/vincular',
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+  }
+
+  estadoGoogle(
+    accessToken: string,
+  ): Promise<{ vinculado: boolean }> {
+    return this.get<{ vinculado: boolean }>(
+      '/google/estado',
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+  }
+
 
   login(datos: LoginDto): Promise<LoginResponse> {
     return this.post<LoginResponse, LoginDto>(
@@ -42,25 +73,25 @@ class AuthService extends BaseService {
     );
   }
 
-  
-    refresh(): Promise<RefreshResponse> {
-      // Si ya estamos recuperando la sesión,
-      // reutilizamos la misma solicitud.
-      if (this.refreshEnCurso) {
-        return this.refreshEnCurso;
-      }
 
-      this.refreshEnCurso =
-        this.post<
-          RefreshResponse,
-          Record<string, never>
-        >('/refresh', {}).finally(() => {
-          // Cuando termina, permitimos futuras renovaciones.
-          this.refreshEnCurso = null;
-        });
-
+  refresh(): Promise<RefreshResponse> {
+    // Si ya estamos recuperando la sesión,
+    // reutilizamos la misma solicitud.
+    if (this.refreshEnCurso) {
       return this.refreshEnCurso;
     }
+
+    this.refreshEnCurso =
+      this.post<
+        RefreshResponse,
+        Record<string, never>
+      >('/refresh', {}).finally(() => {
+        // Cuando termina, permitimos futuras renovaciones.
+        this.refreshEnCurso = null;
+      });
+
+    return this.refreshEnCurso;
+  }
 
 
   checkStatus(accessToken: string): Promise<UsuarioAuth> {

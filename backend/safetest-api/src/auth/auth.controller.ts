@@ -6,6 +6,9 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
   UseGuards,
 } from '@nestjs/common';
 
@@ -17,7 +20,6 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 import { GoogleAuthService } from './google-auth.service';
 import { timingSafeEqual } from 'crypto';
-import { ConflictException } from '@nestjs/common';
 import { Public } from './public.decorator';
 
 @Controller('auth')
@@ -28,7 +30,7 @@ export class AuthController {
   ) {}
 
   // REGISTRAR DOCENTE
-  
+
   @Post('register/docente')
   @Public()
   async registerDocente(
@@ -47,7 +49,7 @@ export class AuthController {
   }
 
   // REGISTRAR ESTUDIANTE
-  
+
   @Post('register/estudiante')
   @Public()
   async registerEstudiante(
@@ -68,7 +70,7 @@ export class AuthController {
   }
 
   // LOGIN
-  
+
   @Post('login')
   @Public()
   async login(
@@ -126,7 +128,7 @@ export class AuthController {
   }
 
   // REFRESH TOKEN
-  
+
   @Post('refresh')
   @Public()
   async refresh(
@@ -189,7 +191,23 @@ export class AuthController {
       usuario.tipo,
     );
   }
-  
+
+  // CONSULTAR ESTADO DE VINCULACIÓN CON GOOGLE
+
+  @Get('google/estado')
+  @UseGuards(JwtAuthGuard)
+  async estadoGoogle(@Req() request: Request) {
+    const usuario = request.user as {
+      id: number;
+      tipo: 'docente' | 'estudiante';
+    };
+
+    return this.authService.obtenerEstadoGoogle(
+      usuario.id,
+      usuario.tipo,
+    );
+  }
+
   // INICIAR AUTENTICACIÓN CON GOOGLE
 
   @Get('google')
@@ -221,8 +239,67 @@ export class AuthController {
       opciones,
     );
 
+    response.clearCookie('safetest_google_link', {
+      path: '/auth/google/callback',
+    });
     return response.redirect(url);
   }
+
+  // CONECTAR GOOGLE A UNA CUENTA AUTENTICADA
+
+  @Post('google/vincular')
+  @UseGuards(JwtAuthGuard)
+  async prepararVinculacionGoogle(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const usuario = request.user as {
+      id: number;
+      tipo: 'docente' | 'estudiante';
+    };
+
+    const { url, state, codeVerifier } =
+      await this.googleAuthService.crearSolicitud();
+
+    const opciones = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      path: '/auth/google/callback',
+      maxAge: 5 * 60 * 1000,
+    };
+
+    // Guardar estado y PKCE del nuevo flujo
+    response.cookie(
+      'safetest_google_state',
+      state,
+      opciones,
+    );
+
+    response.cookie(
+      'safetest_google_pkce',
+      codeVerifier,
+      opciones,
+    );
+
+    // Asociar la autorización con el usuario actual
+    const tokenVinculacion =
+      await this.authService.crearTokenVinculacion(
+        usuario.id,
+        usuario.tipo,
+        state,
+      );
+
+    response.cookie(
+      'safetest_google_link',
+      tokenVinculacion,
+      opciones,
+    );
+
+    // El frontend abre esta URL para autorizar Google
+    return { url };
+  }
+
 
   // RECIBIR LA RESPUESTA DE GOOGLE
 
@@ -243,6 +320,9 @@ export class AuthController {
 
     const verificador =
       request.cookies?.safetest_google_pkce;
+    const tokenVinculacion =
+      request.cookies?.safetest_google_link;
+    const esVinculacion = typeof tokenVinculacion === 'string';
 
     // Eliminar las cookies temporales después del intento.
     response.clearCookie('safetest_google_state', {
@@ -250,6 +330,9 @@ export class AuthController {
     });
 
     response.clearCookie('safetest_google_pkce', {
+      path: '/auth/google/callback',
+    });
+    response.clearCookie('safetest_google_link', {
       path: '/auth/google/callback',
     });
 
@@ -260,7 +343,9 @@ export class AuthController {
       typeof verificador !== 'string'
     ) {
       return response.redirect(
-        `${frontendUrl}/login?google_error=cancelado`,
+        esVinculacion
+          ? `${frontendUrl}/google/resultado?link_error=cancelado`
+          : `${frontendUrl}/login?google_error=cancelado`,
       );
     }
 
@@ -273,7 +358,9 @@ export class AuthController {
       !timingSafeEqual(recibido, esperado)
     ) {
       return response.redirect(
-        `${frontendUrl}/login?google_error=estado`,
+        esVinculacion
+          ? `${frontendUrl}/google/resultado?link_error=estado`
+          : `${frontendUrl}/login?google_error=estado`,
       );
     }
 
@@ -285,9 +372,29 @@ export class AuthController {
           verificador,
         );
 
-      // Crear o recuperar el docente y generar JWT.
-      const resultado =
-        await this.authService.loginConGoogle(perfil);
+      // Vincular la cuenta existente o iniciar sesión con Google.
+      let resultado;
+
+      if (typeof tokenVinculacion === 'string') {
+        // Google se está vinculando a un usuario
+        // que ya inició sesión con su contraseña.
+        const vinculacion =
+          await this.authService.verificarTokenVinculacion(
+            tokenVinculacion,
+            estado,
+          );
+
+        resultado =
+          await this.authService.vincularCuentaGoogle(
+            vinculacion.id,
+            vinculacion.tipo,
+            perfil,
+          );
+      } else {
+        // Inicio de sesión normal con Google
+        resultado =
+          await this.authService.loginConGoogle(perfil);
+      }
 
       // Guardamos el refresh token en cookie HttpOnly.
       response.cookie(
@@ -307,6 +414,35 @@ export class AuthController {
         `${frontendUrl}/google/resultado`,
       );
     } catch (error) {
+      // La vinculación desde el perfil NO es un inicio de sesión.
+      // Ante un error, mantenemos la cookie de sesión existente.
+      if (esVinculacion) {
+        let motivo = 'fallo';
+
+        if (error instanceof BadRequestException) {
+          motivo = 'correo_no_coincide';
+        } else if (error instanceof ConflictException) {
+          motivo = 'google_ya_vinculado';
+        } else if (
+          error instanceof UnauthorizedException ||
+          error instanceof NotFoundException
+        ) {
+          motivo = 'cuenta_no_disponible';
+        }
+
+        return response.redirect(
+          `${frontendUrl}/google/resultado?link_error=${motivo}`,
+        );
+      }
+
+      // Inicio de sesión con Google: cuenta no registrada en SafeTest.
+      if (error instanceof NotFoundException) {
+        return response.redirect(
+          `${frontendUrl}/login?google_error=cuenta_no_registrada`,
+        );
+      }
+
+      // La cuenta existe, pero aún no está vinculada a Google.
       if (error instanceof ConflictException) {
         return response.redirect(
           `${frontendUrl}/login?google_error=cuenta_existente`,
@@ -318,5 +454,4 @@ export class AuthController {
       );
     }
   }
-
 }

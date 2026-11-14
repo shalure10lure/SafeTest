@@ -5,6 +5,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -33,7 +34,7 @@ interface AuthContextType {
   registerEstudiante: (
     datos: RegisterEstudianteDto,
   ) => Promise<unknown>;
-  refreshSession: () => Promise<UsuarioAuth>;
+  refreshSession: (silencioso?: boolean) => Promise<UsuarioAuth>;
   logout: () => Promise<void>;
 }
 
@@ -63,6 +64,7 @@ export function AuthProvider({
 }: {
   children: ReactNode;
 }) {
+  const inicializacionIniciada = useRef(false);
   const [usuario, setUsuario] =
     useState<UsuarioAuth | null>(null);
 
@@ -156,9 +158,12 @@ export function AuthProvider({
     }
   }
 
-  async function refreshSession() {
-    setIsLoading(true);
-    setError("");
+
+  async function refreshSession(silencioso = false) {
+    if (!silencioso) {
+      setIsLoading(true);
+      setError("");
+    }
 
     try {
       const resultado = await authService.refresh();
@@ -173,22 +178,36 @@ export function AuthProvider({
 
       return resultado.usuario;
     } catch (err: unknown) {
+      // Eliminar una sesión local que ya no es válida.
       setUsuario(null);
       setAccessToken(null);
       sessionStorage.removeItem("accessToken");
 
-      setError(
-        obtenerMensajeError(
-          err,
-          "No se pudo recuperar la sesión.",
-        ),
-      );
+      // Un 401 durante la inicialización significa
+      // que no existe una sesión activa.
+      const noHaySesion =
+        axios.isAxiosError(err) &&
+        err.response?.status === 401;
+
+      // Ignoramos únicamente la ausencia normal
+      // de sesión durante el arranque.
+      if (!(silencioso && noHaySesion)) {
+        setError(
+          obtenerMensajeError(
+            err,
+            "No se pudo recuperar la sesión.",
+          ),
+        );
+      }
 
       throw err;
     } finally {
-      setIsLoading(false);
+      if (!silencioso) {
+        setIsLoading(false);
+      }
     }
   }
+
 
   async function logout() {
     setIsLoading(true);
@@ -217,13 +236,16 @@ export function AuthProvider({
       setIsLoading(false);
     }
   }
-
   useEffect(() => {
-    refreshSession()
+    if (inicializacionIniciada.current) return;
+
+    inicializacionIniciada.current = true;
+
+    refreshSession(true)
       .catch(() => undefined)
       .finally(() => setIsInitializing(false));
 
-    // La sesión se comprueba al montar el proveedor.
+    // Inicializamos una sola vez al montar el proveedor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
