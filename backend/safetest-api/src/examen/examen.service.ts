@@ -1713,49 +1713,63 @@ export class ExamenService {
             filasCriterios.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
         );
 
-        return examenes.map((examen) => ({
-            examen_id: examen.examen_id,
-            titulo: examen.titulo,
-            instrucciones: examen.instrucciones,
-            estado: examen.estado,
-            fecha: examen.disponible_desde,
-            modo_seleccion: examen.modo_seleccion,
-            orden_preguntas: examen.orden_preguntas,
-            duracion_min: examen.duracion_min,
-            // numeric llega como texto desde PostgreSQL; el contrato es numérico.
-            puntaje_total:
-                examen.puntaje_total === null
-                    ? null
-                    : Number(examen.puntaje_total),
-            disponible_desde: examen.disponible_desde,
-            disponible_hasta: examen.disponible_hasta,
-            modo_entrega_nota: examen.modo_entrega_nota,
-            modo_asignacion: examen.modo_asignacion,
-            // NULL = las respuestas correctas aún no se publicaron.
-            resultados_publicados_en: examen.resultados_publicados_en,
-            materia: examen.materia
-                ? {
-                    materia_id: examen.materia.materia_id,
-                    nombre: examen.materia.nombre,
+        return examenes.map((examen) => {
+            const materia = examen.materia ?? null;
+            const semestre = examen.semestre ?? null;
+            const paralelos = (examen.paralelos ?? []).flatMap((item) => {
+                if (!item?.paralelo) {
+                    return [];
                 }
-                : null,
-            semestre: {
-                semestre_id: examen.semestre.semestre_id,
-                gestion: examen.semestre.gestion,
-            },
-            paralelos: (examen.paralelos ?? []).map((item) => ({
-                paralelo_id: item.paralelo.paralelo_id,
-                nombre_paralelo: item.paralelo.nombre_paralelo,
-            })),
-            total_preguntas:
-                examen.modo_seleccion === 'aleatorio'
-                    ? (criteriosPorExamen.get(examen.examen_id) ?? 0)
-                    : (preguntasPorExamen.get(examen.examen_id) ?? 0),
-            total_inscritos:
-                examen.modo_asignacion === 'estudiantes'
-                    ? (especificosPorExamen.get(examen.examen_id) ?? 0)
-                    : (inscritosPorExamen.get(examen.examen_id) ?? 0),
-        }));
+
+                return [{
+                    paralelo_id: item.paralelo.paralelo_id,
+                    nombre_paralelo: item.paralelo.nombre_paralelo,
+                }];
+            });
+
+            return {
+                examen_id: examen.examen_id,
+                titulo: examen.titulo,
+                instrucciones: examen.instrucciones,
+                estado: examen.estado,
+                fecha: examen.disponible_desde,
+                modo_seleccion: examen.modo_seleccion,
+                orden_preguntas: examen.orden_preguntas,
+                duracion_min: examen.duracion_min,
+                // numeric llega como texto desde PostgreSQL; el contrato es numérico.
+                puntaje_total:
+                    examen.puntaje_total === null
+                        ? null
+                        : Number(examen.puntaje_total),
+                disponible_desde: examen.disponible_desde,
+                disponible_hasta: examen.disponible_hasta,
+                modo_entrega_nota: examen.modo_entrega_nota,
+                modo_asignacion: examen.modo_asignacion,
+                // NULL = las respuestas correctas aún no se publicaron.
+                resultados_publicados_en: examen.resultados_publicados_en,
+                materia: materia
+                    ? {
+                        materia_id: materia.materia_id,
+                        nombre: materia.nombre,
+                    }
+                    : null,
+                semestre: semestre
+                    ? {
+                        semestre_id: semestre.semestre_id,
+                        gestion: semestre.gestion,
+                    }
+                    : null,
+                paralelos,
+                total_preguntas:
+                    examen.modo_seleccion === 'aleatorio'
+                        ? (criteriosPorExamen.get(examen.examen_id) ?? 0)
+                        : (preguntasPorExamen.get(examen.examen_id) ?? 0),
+                total_inscritos:
+                    examen.modo_asignacion === 'estudiantes'
+                        ? (especificosPorExamen.get(examen.examen_id) ?? 0)
+                        : (inscritosPorExamen.get(examen.examen_id) ?? 0),
+            };
+        });
     }
 
     async findAll(docenteId: number) {
