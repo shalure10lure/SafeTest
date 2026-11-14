@@ -17,6 +17,7 @@ import { ExamenAccesoService } from './examen-acceso.service';
 import { CreateExamenDto } from './dto/create-examen.dto';
 import { GuardarAsignacionDto } from './dto/guardar-asignacion.dto';
 import { GuardarConfiguracionDto } from './dto/guardar-configuracion.dto';
+import { GuardarPuntajesDto } from './dto/guardar-puntajes.dto';
 import { GuardarSeleccionDto } from './dto/guardar-seleccion.dto';
 import { UpdateExamenDto } from './dto/update-examen.dto';
 
@@ -59,6 +60,17 @@ export class ExamenController {
         @Req() request: any,
     ) {
         return this.examenService.guardarSeleccion(id, body, request.user.id);
+    }
+
+    // GUARDAR LOS PUNTAJES DE LAS PREGUNTAS SELECCIONADAS (paso 2)
+
+    @Put(':id/puntajes')
+    guardarPuntajes(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: GuardarPuntajesDto,
+        @Req() request: any,
+    ) {
+        return this.examenService.guardarPuntajes(id, body, request.user.id);
     }
 
     // GUARDAR LA CONFIGURACIÓN (paso 3)

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
+import type { EntityManager } from 'typeorm';
 import { Repository } from 'typeorm';
 
 import { PreguntaRecurso } from '../../preguntarecurso/entity/preguntarecurso.entity';
@@ -91,7 +92,11 @@ export class PreguntaRecursosService {
     preguntaId: number,
     recurso: string,
   ): Promise<{ contenido: Buffer; mime: string }> {
-    const fila = await this.buscar(preguntaId, recurso);
+    const fila = await this.buscar(
+      this.recursoRepository,
+      preguntaId,
+      recurso,
+    );
 
     if (fila.tipo !== 'imagen' || !fila.mime_type) {
       throw new NotFoundException('Recurso no encontrado');
@@ -130,8 +135,13 @@ export class PreguntaRecursosService {
     docenteId: number,
     archivo: ArchivoSubido | undefined,
   ): Promise<RecursoPregunta> {
-    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
-    await this.validarCupo(preguntaId);
+    // Comprobación previa sin escrituras: una pregunta congelada no debe
+    // llegar a guardar un archivo en el almacén.
+    await this.preguntaService.ejecutarEdicion(
+      preguntaId,
+      docenteId,
+      async () => undefined,
+    );
 
     if (!archivo) {
       throw new BadRequestException('Adjunta una imagen en el campo "archivo"');
@@ -150,20 +160,32 @@ export class PreguntaRecursosService {
     }
 
     try {
-      const fila = await this.recursoRepository.save(
-        this.recursoRepository.create({
-          pregunta_id: preguntaId,
-          recurso,
-          tipo: 'imagen',
-          contenido: null,
-          mime_type: imagen.mime,
-          nombre_original: limpiarNombre(archivo.originalname),
-        }),
-      );
+      return await this.preguntaService.ejecutarEdicion(
+        preguntaId,
+        docenteId,
+        async (manager) => {
+          const repositorio = this.repositorioDe(manager);
 
-      return this.aRespuesta(fila);
+          await this.validarCupo(repositorio, preguntaId);
+
+          const fila = await repositorio.save(
+            repositorio.create({
+              pregunta_id: preguntaId,
+              recurso,
+              tipo: 'imagen',
+              contenido: null,
+              mime_type: imagen.mime,
+              nombre_original: limpiarNombre(archivo.originalname),
+            }),
+          );
+
+          return this.aRespuesta(fila);
+        },
+      );
     } catch (error) {
-      // Compensación: no dejar un archivo sin fila que lo referencie.
+      // Compensación: no dejar un archivo sin fila que lo referencie, ya sea
+      // porque la pregunta se congeló tras la comprobación previa o porque
+      // falló la escritura.
       await this.almacen.eliminar(clave).catch(() => undefined);
 
       throw error;
@@ -176,26 +198,32 @@ export class PreguntaRecursosService {
     docenteId: number,
     dto: CrearRecursoDto,
   ): Promise<RecursoPregunta> {
-    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
-    await this.validarCupo(preguntaId);
+    return this.preguntaService.ejecutarEdicion(
+      preguntaId,
+      docenteId,
+      async (manager) => {
+        const repositorio = this.repositorioDe(manager);
+        const contenido =
+          dto.tipo === 'formula'
+            ? validarFormula(dto.contenido)
+            : JSON.stringify(validarTabla(dto.contenido));
 
-    const contenido =
-      dto.tipo === 'formula'
-        ? validarFormula(dto.contenido)
-        : JSON.stringify(validarTabla(dto.contenido));
+        await this.validarCupo(repositorio, preguntaId);
 
-    const fila = await this.recursoRepository.save(
-      this.recursoRepository.create({
-        pregunta_id: preguntaId,
-        recurso: randomUUID(),
-        tipo: dto.tipo,
-        contenido,
-        mime_type: null,
-        nombre_original: null,
-      }),
+        const fila = await repositorio.save(
+          repositorio.create({
+            pregunta_id: preguntaId,
+            recurso: randomUUID(),
+            tipo: dto.tipo,
+            contenido,
+            mime_type: null,
+            nombre_original: null,
+          }),
+        );
+
+        return this.aRespuesta(fila);
+      },
     );
-
-    return this.aRespuesta(fila);
   }
 
   // Cambiar el contenido de una fórmula o tabla ya guardada (mismo recurso).
@@ -205,28 +233,33 @@ export class PreguntaRecursosService {
     recurso: string,
     dto: CrearRecursoDto,
   ): Promise<RecursoPregunta> {
-    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
+    return this.preguntaService.ejecutarEdicion(
+      preguntaId,
+      docenteId,
+      async (manager) => {
+        const repositorio = this.repositorioDe(manager);
+        const fila = await this.buscar(repositorio, preguntaId, recurso);
 
-    const fila = await this.buscar(preguntaId, recurso);
+        if (fila.tipo === 'imagen') {
+          throw new BadRequestException(
+            'Las imágenes no se editan: reemplázala por otra imagen',
+          );
+        }
 
-    if (fila.tipo === 'imagen') {
-      throw new BadRequestException(
-        'Las imágenes no se editan: reemplázala por otra imagen',
-      );
-    }
+        if (dto.tipo !== fila.tipo) {
+          throw new BadRequestException(
+            'No se puede cambiar el tipo de un recurso. Elimínalo y crea uno nuevo',
+          );
+        }
 
-    if (dto.tipo !== fila.tipo) {
-      throw new BadRequestException(
-        'No se puede cambiar el tipo de un recurso. Elimínalo y crea uno nuevo',
-      );
-    }
+        fila.contenido =
+          fila.tipo === 'formula'
+            ? validarFormula(dto.contenido)
+            : JSON.stringify(validarTabla(dto.contenido));
 
-    fila.contenido =
-      fila.tipo === 'formula'
-        ? validarFormula(dto.contenido)
-        : JSON.stringify(validarTabla(dto.contenido));
-
-    return this.aRespuesta(await this.recursoRepository.save(fila));
+        return this.aRespuesta(await repositorio.save(fila));
+      },
+    );
   }
 
   // Sustituir la imagen de un recurso por otra, conservando su posición.
@@ -236,41 +269,76 @@ export class PreguntaRecursosService {
     recurso: string,
     archivo: ArchivoSubido | undefined,
   ): Promise<RecursoPregunta> {
-    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
+    // Comprobación previa con bloqueo: evita guardar el archivo nuevo si la
+    // pregunta ya está congelada o el recurso no es una imagen.
+    await this.preguntaService.ejecutarEdicion(
+      preguntaId,
+      docenteId,
+      async (manager) => {
+        const fila = await this.buscar(
+          this.repositorioDe(manager),
+          preguntaId,
+          recurso,
+        );
 
-    const fila = await this.buscar(preguntaId, recurso);
-
-    if (fila.tipo !== 'imagen') {
-      throw new BadRequestException('Este recurso no es una imagen');
-    }
+        if (fila.tipo !== 'imagen') {
+          throw new BadRequestException('Este recurso no es una imagen');
+        }
+      },
+    );
 
     if (!archivo) {
       throw new BadRequestException('Adjunta una imagen en el campo "archivo"');
     }
 
-    const imagen = validarImagen(archivo.buffer, this.config.maxBytesImagen);
+    const archivoNuevo = archivo;
+    const imagen = validarImagen(
+      archivoNuevo.buffer,
+      this.config.maxBytesImagen,
+    );
     // Nombre nuevo: así el navegador no muestra la imagen anterior desde su caché.
     const nuevoRecurso = `${randomUUID()}.${imagen.extension}`;
     const claveNueva = this.claveDe(docenteId, nuevoRecurso);
 
     try {
-      await this.almacen.guardar(claveNueva, archivo.buffer);
+      await this.almacen.guardar(claveNueva, archivoNuevo.buffer);
     } catch {
       throw new ServiceUnavailableException(
         'No se pudo guardar la imagen. Inténtalo de nuevo.',
       );
     }
 
+    let actualizada: RecursoPregunta;
+
     try {
-      await this.recursoRepository.update(
-        { pregunta_id: preguntaId, recurso },
-        {
-          recurso: nuevoRecurso,
-          mime_type: imagen.mime,
-          nombre_original: limpiarNombre(archivo.originalname),
+      actualizada = await this.preguntaService.ejecutarEdicion(
+        preguntaId,
+        docenteId,
+        async (manager) => {
+          const repositorio = this.repositorioDe(manager);
+          const fila = await this.buscar(repositorio, preguntaId, recurso);
+
+          if (fila.tipo !== 'imagen') {
+            throw new BadRequestException('Este recurso no es una imagen');
+          }
+
+          await repositorio.update(
+            { pregunta_id: preguntaId, recurso },
+            {
+              recurso: nuevoRecurso,
+              mime_type: imagen.mime,
+              nombre_original: limpiarNombre(archivoNuevo.originalname),
+            },
+          );
+
+          return this.aRespuesta(
+            await this.buscar(repositorio, preguntaId, nuevoRecurso),
+          );
         },
       );
     } catch (error) {
+      // Compensación: el archivo nuevo no debe quedar huérfano si la
+      // comprobación o la escritura fallan.
       await this.almacen.eliminar(claveNueva).catch(() => undefined);
 
       throw error;
@@ -284,9 +352,7 @@ export class PreguntaRecursosService {
       );
     }
 
-    const actualizada = await this.buscar(preguntaId, nuevoRecurso);
-
-    return this.aRespuesta(actualizada);
+    return actualizada;
   }
 
   // Quitar un recurso (y su archivo, si es una imagen).
@@ -295,14 +361,25 @@ export class PreguntaRecursosService {
     docenteId: number,
     recurso: string,
   ): Promise<void> {
-    await this.preguntaService.obtenerEditable(preguntaId, docenteId);
+    const fila = await this.preguntaService.ejecutarEdicion(
+      preguntaId,
+      docenteId,
+      async (manager) => {
+        const repositorio = this.repositorioDe(manager);
+        const existente = await this.buscar(
+          repositorio,
+          preguntaId,
+          recurso,
+        );
 
-    const fila = await this.buscar(preguntaId, recurso);
+        await repositorio.delete({
+          pregunta_id: preguntaId,
+          recurso,
+        });
 
-    await this.recursoRepository.delete({
-      pregunta_id: preguntaId,
-      recurso,
-    });
+        return existente;
+      },
+    );
 
     if (fila.tipo === 'imagen') {
       try {
@@ -323,7 +400,7 @@ export class PreguntaRecursosService {
   ): Promise<{ contenido: Buffer; mime: string }> {
     await this.preguntaService.findOne(preguntaId, docenteId);
 
-    const fila = await this.buscar(preguntaId, recurso);
+    const fila = await this.buscar(this.recursoRepository, preguntaId, recurso);
 
     if (fila.tipo !== 'imagen' || !fila.mime_type) {
       throw new NotFoundException('Recurso no encontrado');
@@ -344,11 +421,19 @@ export class PreguntaRecursosService {
     return `preguntas/${docenteId}/${recurso}`;
   }
 
+  /** Repositorio ligado a la transacción que bloquea la pregunta. */
+  private repositorioDe(
+    manager: EntityManager,
+  ): Repository<PreguntaRecurso> {
+    return manager.getRepository(PreguntaRecurso);
+  }
+
   private async buscar(
+    repositorio: Repository<PreguntaRecurso>,
     preguntaId: number,
     recurso: string,
   ): Promise<PreguntaRecurso> {
-    const fila = await this.recursoRepository.findOneBy({
+    const fila = await repositorio.findOneBy({
       pregunta_id: preguntaId,
       recurso,
     });
@@ -360,8 +445,11 @@ export class PreguntaRecursosService {
     return fila;
   }
 
-  private async validarCupo(preguntaId: number): Promise<void> {
-    const actuales = await this.recursoRepository.count({
+  private async validarCupo(
+    repositorio: Repository<PreguntaRecurso>,
+    preguntaId: number,
+  ): Promise<void> {
+    const actuales = await repositorio.count({
       where: { pregunta_id: preguntaId },
     });
 

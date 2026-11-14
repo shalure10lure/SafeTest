@@ -166,6 +166,29 @@ describe('RevisionGeneracionIa', () => {
         },
     );
 
+    it('identifica el puntaje de la propuesta como puntaje máximo del inciso', async () => {
+        vi.mocked(iageneracionService.obtener).mockResolvedValue(
+            detalle([propuesta('opcion_unica')]),
+        );
+
+        render(<RevisionGeneracionIa generacionId={12} />);
+
+        expect(
+            await screen.findByText(/Puntaje máximo del inciso:\s*2 pts/),
+        ).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+
+        expect(
+            await screen.findByLabelText('Puntaje máximo del inciso'),
+        ).toBeTruthy();
+        expect(
+            screen.getByText(
+                'Se asignará al inciso que se crea para esta pregunta.',
+            ),
+        ).toBeTruthy();
+    });
+
     it('muestra correctamente acentos, eñes y signos de interrogación ya normalizados', async () => {
         vi.mocked(iageneracionService.obtener).mockResolvedValue(
             detalle([

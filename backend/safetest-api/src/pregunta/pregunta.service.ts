@@ -23,6 +23,7 @@ import {
 import { FiltrarPreguntasDto } from './entity/dtos/filtrar-preguntas.dto';
 import { UpdatePreguntaDto } from './entity/dtos/update-pregunta.dto';
 import { Pregunta } from './entity/pregunta.entity';
+import { PreguntaCongeladaService } from './pregunta-congelada.service';
 import {
   validarConfiguracionRespuesta,
   type ConfiguracionRespuesta,
@@ -53,6 +54,8 @@ export class PreguntaService {
     private readonly examenPreguntaRepository: Repository<ExamenPregunta>,
 
     private readonly dataSource: DataSource,
+
+    private readonly preguntaCongeladaService: PreguntaCongeladaService,
   ) {}
 
   // Consultar preguntas de las materias del docente autenticado.
@@ -176,8 +179,12 @@ export class PreguntaService {
   }
 
   // Consultar una pregunta verificando que pertenezca al docente.
-  async findOne(id: number, docenteId: number) {
-    const pregunta = await this.preguntaRepository
+  async findOne(id: number, docenteId: number, manager?: EntityManager) {
+    const repositorio = manager
+      ? manager.getRepository(Pregunta)
+      : this.preguntaRepository;
+
+    const pregunta = await repositorio
       .createQueryBuilder('pregunta')
       .innerJoin('pregunta.tema', 'tema')
       .innerJoin('tema.materia', 'materia')
@@ -258,22 +265,84 @@ export class PreguntaService {
     };
   }
 
-    // Comprobar que la pregunta es del docente y puede modificarse (no está en
-  // una evaluación publicada). Lo usan los recursos de la pregunta.
+  // Comprobar que la pregunta es del docente y puede modificarse (no está
+  // congelada ni pertenece a una evaluación publicada).
+  //
+  // Es una comprobación de solo lectura: no bloquea la fila, por lo que no
+  // garantiza nada frente a una publicación concurrente. Toda mutación debe
+  // ejecutarse con `ejecutarEdicion()` o `bloquearPreguntaEditable()`.
   async obtenerEditable(id: number, docenteId: number) {
     const pregunta = await this.findOne(id, docenteId);
 
+    // La congelación por instantánea es permanente y prevalece sobre el estado
+    // actual de la evaluación.
+    await this.preguntaCongeladaService.validarModificable(id);
     await this.validarNoVinculadaAExamen(id, true);
 
     return pregunta;
+  }
+
+  /**
+   * Bloquea la pregunta y valida que pueda modificarse dentro de la
+   * transacción recibida. Orden: `Pregunta` (FOR UPDATE) → congelación →
+   * propiedad → vínculo con evaluaciones publicadas.
+   *
+   * Al ser el primer bloqueo de la transacción, comparte el mecanismo con
+   * `ExamenService.publicar()`, que también bloquea `Pregunta` antes de
+   * insertar la instantánea.
+   */
+  private async bloquearPreguntaEditable(
+    manager: EntityManager,
+    id: number,
+    docenteId: number,
+    soloPublicados: boolean,
+  ): Promise<Pregunta> {
+    const pregunta =
+      await this.preguntaCongeladaService.bloquearYValidarModificable(
+        id,
+        manager,
+      );
+
+    await this.findOne(id, docenteId, manager);
+    await this.validarNoVinculadaAExamen(id, soloPublicados, manager);
+
+    return pregunta;
+  }
+
+  /**
+   * Ejecuta una mutación de la pregunta dentro de una transacción que bloquea
+   * su fila y comprueba la congelación antes de escribir. Lo usan las
+   * operaciones sobre recursos, que no pueden abrir su propia transacción sin
+   * duplicar la comprobación.
+   */
+  async ejecutarEdicion<T>(
+    id: number,
+    docenteId: number,
+    operacion: (manager: EntityManager, pregunta: Pregunta) => Promise<T>,
+  ): Promise<T> {
+    return this.dataSource.transaction(async (manager) => {
+      const pregunta = await this.bloquearPreguntaEditable(
+        manager,
+        id,
+        docenteId,
+        true,
+      );
+
+      return operacion(manager, pregunta);
+    });
   }
 
   // Verificar que el tema pertenezca a una materia activa del docente.
   private async validarTemaDelDocente(
     temaId: number,
     docenteId: number,
+    manager?: EntityManager,
   ): Promise<Tema> {
-    const tema = await this.temaRepository
+    const repositorio = manager
+      ? manager.getRepository(Tema)
+      : this.temaRepository;
+
+    const tema = await repositorio
       .createQueryBuilder('tema')
       .innerJoin('tema.materia', 'materia')
       .where('tema.tema_id = :temaId', { temaId })
@@ -295,8 +364,13 @@ export class PreguntaService {
   private async validarNoVinculadaAExamen(
     preguntaId: number,
     soloPublicados = false,
+    manager?: EntityManager,
   ): Promise<void> {
-    const consulta = this.examenPreguntaRepository
+    const repositorio = manager
+      ? manager.getRepository(ExamenPregunta)
+      : this.examenPreguntaRepository;
+
+    const consulta = repositorio
       .createQueryBuilder('examenPregunta')
       .innerJoin('examenPregunta.examen', 'examen')
       .where('examenPregunta.pregunta_id = :preguntaId', { preguntaId });
@@ -512,73 +586,81 @@ export class PreguntaService {
     dto: UpdatePreguntaDto,
     docenteId: number,
   ) {
-    const pregunta = await this.findOne(id, docenteId);
+    await this.dataSource.transaction(async (manager) => {
+      // El bloqueo y la comprobación de congelación ocurren dentro de la misma
+      // transacción que las escrituras de la pregunta y de sus incisos.
+      const pregunta = await this.bloquearPreguntaEditable(
+        manager,
+        id,
+        docenteId,
+        true,
+      );
 
-    await this.validarNoVinculadaAExamen(id,true);
+      // --- Clasificación ---
+      let temaId = pregunta.tema_id;
 
-    // --- Clasificación ---
-    let temaId = pregunta.tema_id;
-
-    if (dto.tema_id !== undefined) {
-      const tema =
-        dto.materia_id !== undefined
-          ? (
-              await this.validarMateriaYTema(
-                dto.materia_id,
+      if (dto.tema_id !== undefined) {
+        const tema =
+          dto.materia_id !== undefined
+            ? (
+                await this.validarMateriaYTema(
+                  dto.materia_id,
+                  dto.tema_id,
+                  docenteId,
+                  manager,
+                )
+              ).tema
+            : await this.validarTemaDelDocente(
                 dto.tema_id,
                 docenteId,
-              )
-            ).tema
-          : await this.validarTemaDelDocente(
-              dto.tema_id,
-              docenteId,
-            );
+                manager,
+              );
 
-      temaId = tema.tema_id;
-    } else if (dto.materia_id !== undefined) {
-      // Solo cambia la materia: el tema actual debe pertenecer a ella.
-      await this.validarMateriaYTema(
-        dto.materia_id,
-        pregunta.tema_id,
-        docenteId,
-      );
-    }
+        temaId = tema.tema_id;
+      } else if (dto.materia_id !== undefined) {
+        // Solo cambia la materia: el tema actual debe pertenecer a ella.
+        await this.validarMateriaYTema(
+          dto.materia_id,
+          pregunta.tema_id,
+          docenteId,
+          manager,
+        );
+      }
 
-    // --- Datos básicos ---
-    const enunciado =
-      dto.enunciado !== undefined ? dto.enunciado.trim() : undefined;
+      // --- Datos básicos ---
+      const enunciado =
+        dto.enunciado !== undefined ? dto.enunciado.trim() : undefined;
 
-    if (enunciado === '') {
-      throw new BadRequestException('El enunciado es obligatorio');
-    }
+      if (enunciado === '') {
+        throw new BadRequestException('El enunciado es obligatorio');
+      }
 
-    // --- Configuración de respuesta ---
-    const tocaConfiguracion =
-      dto.puntaje_max !== undefined ||
-      dto.opciones !== undefined ||
-      dto.valor_correcto !== undefined ||
-      dto.tolerancia !== undefined ||
-      dto.solucion_referencia !== undefined;
+      // --- Configuración de respuesta ---
+      const tocaConfiguracion =
+        dto.puntaje_max !== undefined ||
+        dto.opciones !== undefined ||
+        dto.valor_correcto !== undefined ||
+        dto.tolerancia !== undefined ||
+        dto.solucion_referencia !== undefined;
 
-    if (tocaConfiguracion && dto.tipo_respuesta === undefined) {
-      throw new BadRequestException(
-        'Indica el tipo de pregunta para modificar su configuración',
-      );
-    }
+      if (tocaConfiguracion && dto.tipo_respuesta === undefined) {
+        throw new BadRequestException(
+          'Indica el tipo de pregunta para modificar su configuración',
+        );
+      }
 
-    const tipo = dto.tipo_respuesta;
-    const configuracion =
-      tipo !== undefined
-        ? validarConfiguracionRespuesta({
-            tipo_respuesta: tipo,
-            opciones: dto.opciones,
-            valor_correcto: dto.valor_correcto,
-            tolerancia: dto.tolerancia,
-            solucion_referencia: dto.solucion_referencia,
-          })
-        : null;
+      const tipo = dto.tipo_respuesta;
+      const configuracion =
+        tipo !== undefined
+          ? validarConfiguracionRespuesta({
+              tipo_respuesta: tipo,
+              opciones: dto.opciones,
+              valor_correcto: dto.valor_correcto,
+              tolerancia: dto.tolerancia,
+              solucion_referencia: dto.solucion_referencia,
+            })
+          : null;
 
-    await this.dataSource.transaction(async (manager) => {
       const cambios: {
         tema_id: number;
         enunciado?: string;
@@ -618,7 +700,7 @@ export class PreguntaService {
       } else {
         if (dto.puntaje_max === undefined) {
           throw new BadRequestException(
-            'Indica el puntaje de la pregunta',
+            'Indica el puntaje máximo del inciso',
           );
         }
 
@@ -647,13 +729,20 @@ export class PreguntaService {
 
   // Baja lógica: no borrar físicamente la pregunta.
   async remove(id: number, docenteId: number) {
-    const pregunta = await this.findOne(id, docenteId);
+    await this.dataSource.transaction(async (manager) => {
+      // La baja lógica también compite con la publicación: se bloquea la fila
+      // y se comprueba la instantánea antes de desactivarla.
+      const pregunta = await this.bloquearPreguntaEditable(
+        manager,
+        id,
+        docenteId,
+        false,
+      );
 
-    await this.validarNoVinculadaAExamen(id);
+      pregunta.activo = false;
 
-    pregunta.activo = false;
-
-    await this.preguntaRepository.save(pregunta);
+      await manager.save(pregunta);
+    });
 
     return {
       mensaje: 'Pregunta desactivada correctamente',

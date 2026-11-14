@@ -55,7 +55,7 @@ export default function PreguntasSeleccionadas({
                     </ol>
 
                     <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                        Total: <strong className="text-slate-800">{puntos} pts</strong>
+                        Puntaje total: <strong className="text-slate-800">{puntos} pts</strong>
                     </p>
                 </>
             )}

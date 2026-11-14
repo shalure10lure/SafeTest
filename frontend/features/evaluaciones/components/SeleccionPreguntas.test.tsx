@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SeleccionPreguntas from './SeleccionPreguntas';
-import type { BancoEvaluacion, EvaluacionDetalle, PreguntaBanco } from '../types';
+import type {
+    BancoEvaluacion,
+    EvaluacionDetalle,
+    PreguntaBanco,
+    PreguntaSeleccionada,
+} from '../types';
 
 const mocks = vi.hoisted(() => ({
     push: vi.fn(),
@@ -24,10 +29,12 @@ vi.mock('../hooks/useBancoPreguntas', () => ({
 }));
 
 vi.mock('../services/evaluaciones.service', () => ({
-    evaluacionesService: { guardarSeleccion: mocks.guardarSeleccion },
+    evaluacionesService: {
+        guardarSeleccion: mocks.guardarSeleccion,
+    },
 }));
 
-const evaluacion = {
+const evaluacionBanco = {
     examen_id: 5,
     titulo: 'Parcial 1',
     instrucciones: null,
@@ -41,6 +48,7 @@ const evaluacion = {
     modo_entrega_nota: 'al_publicar',
     modo_asignacion: 'estudiantes',
     materia: { materia_id: 1, nombre: 'Materia A' },
+    puntaje_total: 10,
     semestre: { semestre_id: 2, gestion: '2026' },
     paralelos: [],
     total_preguntas: 0,
@@ -62,7 +70,7 @@ const pregunta = (preguntaId: number, enunciado: string, temaId: number, nombreT
     materia: { materia_id: 1, nombre: 'Materia A' },
 });
 
-const banco: BancoEvaluacion = {
+const bancoPreguntasFixture: BancoEvaluacion = {
     materia_id: 1,
     total_banco: 9,
     preguntas: [
@@ -75,9 +83,9 @@ const banco: BancoEvaluacion = {
     ],
 };
 
-function preparar(bancoPreguntas: BancoEvaluacion | null = banco) {
+function preparar(bancoPreguntas: BancoEvaluacion | null = bancoPreguntasFixture) {
     mocks.useEvaluacion.mockReturnValue({
-        evaluacion,
+        evaluacion: evaluacionBanco,
         cargando: false,
         error: '',
     });
@@ -139,6 +147,10 @@ describe('SeleccionPreguntas', () => {
             expect(mocks.guardarSeleccion).toHaveBeenCalledWith(5, {
                 modo_seleccion: 'manual',
                 pregunta_ids: [10, 11],
+                puntajes: [
+                    { pregunta_id: 10, puntaje: 2 },
+                    { pregunta_id: 11, puntaje: 2 },
+                ],
             });
         });
         expect(mocks.push).toHaveBeenCalledTimes(1);
@@ -158,5 +170,133 @@ describe('SeleccionPreguntas', () => {
 
         expect(await screen.findByText('La evaluación ya no está en borrador.')).toBeTruthy();
         expect(mocks.push).not.toHaveBeenCalled();
+    });
+});
+
+function preguntaSeleccionada(
+    id: number,
+    puntaje: number,
+): PreguntaSeleccionada {
+    return {
+        pregunta_id: id,
+        enunciado: `Pregunta ${id}`,
+        dificultad: null,
+        tipo_respuesta: 'opcion_unica',
+        puntos: puntaje,
+        puntaje,
+        usada_en: 0,
+        activo: true,
+        tema: { tema_id: 1, nombre_tema: 'Álgebra' },
+        materia: { materia_id: 1, nombre: 'Matemática' },
+    };
+}
+
+function evaluacion(puntajeTotal: number | null): EvaluacionDetalle {
+    const preguntas = [preguntaSeleccionada(1, 6), preguntaSeleccionada(2, 5)];
+
+    return {
+        examen_id: 24,
+        titulo: 'Parcial 1',
+        instrucciones: null,
+        estado: 'borrador',
+        fecha: null,
+        modo_seleccion: 'manual',
+        orden_preguntas: 'definido',
+        duracion_min: null,
+        puntaje_total: puntajeTotal,
+        disponible_desde: null,
+        disponible_hasta: null,
+        modo_entrega_nota: 'al_publicar',
+        modo_asignacion: 'paralelos',
+        materia: { materia_id: 1, nombre: 'Matemática' },
+        semestre: { semestre_id: 1, gestion: '2026' },
+        paralelos: [],
+        total_preguntas: preguntas.length,
+        total_inscritos: 0,
+        resultados_publicados_en: null,
+        pregunta_ids: preguntas.map((pregunta) => pregunta.pregunta_id),
+        preguntas,
+        criterios: [],
+    };
+}
+
+function banco(): BancoEvaluacion {
+    return {
+        materia_id: 1,
+        total_banco: 2,
+        preguntas: [],
+        temas: [],
+    };
+}
+
+beforeEach(() => {
+    mocks.push.mockReset();
+    mocks.guardarSeleccion.mockReset().mockResolvedValue({
+        modo_seleccion: 'manual',
+        pregunta_ids: [1, 2],
+        criterios: [],
+        total_preguntas: 2,
+    });
+    mocks.useBancoPreguntas.mockReturnValue({
+        banco: banco(),
+        conocidas: {
+            1: preguntaSeleccionada(1, 6),
+            2: preguntaSeleccionada(2, 5),
+        },
+        cargando: false,
+        error: '',
+        recargar: vi.fn(),
+    });
+});
+
+afterEach(cleanup);
+
+describe('SeleccionPreguntas — validación de la suma de puntajes', () => {
+    it('bloquea el guardado cuando la suma supera el puntaje total', async () => {
+        mocks.useEvaluacion.mockReturnValue({
+            evaluacion: evaluacion(10),
+            cargando: false,
+            error: '',
+            recargar: vi.fn(),
+        });
+
+        render(<SeleccionPreguntas examenId={24} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+
+        expect(
+            await screen.findByText(
+                /La suma de los puntajes \(11 pts\) no puede superar el puntaje total configurado \(10 pts\)\./,
+            ),
+        ).toBeDefined();
+        expect(mocks.guardarSeleccion).not.toHaveBeenCalled();
+        expect(mocks.push).not.toHaveBeenCalled();
+    });
+
+    it('guarda los puntajes cuando la suma cabe en el total', async () => {
+        mocks.useEvaluacion.mockReturnValue({
+            evaluacion: evaluacion(11),
+            cargando: false,
+            error: '',
+            recargar: vi.fn(),
+        });
+
+        render(<SeleccionPreguntas examenId={24} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+
+        await waitFor(() => {
+            expect(mocks.guardarSeleccion).toHaveBeenCalledWith(24, {
+                modo_seleccion: 'manual',
+                pregunta_ids: [1, 2],
+                puntajes: [
+                    { pregunta_id: 1, puntaje: 6 },
+                    { pregunta_id: 2, puntaje: 5 },
+                ],
+            });
+        });
+        expect(mocks.push).toHaveBeenCalledWith(
+            '/docente/evaluaciones/24/configuracion',
+        );
     });
 });

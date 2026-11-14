@@ -2,6 +2,8 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,6 +35,8 @@ export class AuthService {
     correo: string,
     password: string,
   ) {
+    correo = correo.trim().toLowerCase();
+
     const docenteExistente = await this.docenteRepository.findOne({
       where: { correo },
     });
@@ -40,6 +44,16 @@ export class AuthService {
     if (docenteExistente) {
       throw new ConflictException(
         'Ya existe un docente con ese correo',
+      );
+    }
+
+    // Evitar que el mismo correo pertenezca a ambos roles.
+    const estudianteExistente = await this.estudianteRepository.findOne({
+      where: { correo_institucional: correo },
+    });
+    if (estudianteExistente) {
+      throw new ConflictException(
+        'Este correo ya pertenece a una cuenta estudiante.',
       );
     }
 
@@ -72,6 +86,8 @@ export class AuthService {
     correo_institucional: string,
     password: string,
   ) {
+    correo_institucional = correo_institucional.trim().toLowerCase();
+
     const estudianteExistente =
       await this.estudianteRepository.findOne({
         where: { correo_institucional },
@@ -80,6 +96,16 @@ export class AuthService {
     if (estudianteExistente) {
       throw new ConflictException(
         'Ya existe un estudiante con ese correo',
+      );
+    }
+
+    // Evitar que el mismo correo pertenezca a ambos roles.
+    const docenteExistente = await this.docenteRepository.findOne({
+      where: { correo: correo_institucional },
+    });
+    if (docenteExistente) {
+      throw new ConflictException(
+        'Este correo ya pertenece a una cuenta docente.',
       );
     }
 
@@ -112,6 +138,7 @@ export class AuthService {
     correo: string,
     password: string,
   ) {
+    correo = correo.trim().toLowerCase();
     // Primero buscamos si es DOCENTE
     
     const docente = await this.docenteRepository
@@ -199,71 +226,227 @@ export class AuthService {
     );
   }
   
-  // REGISTRAR O INICIAR SESIÓN CON GOOGLE
+  // CONSULTAR EL ESTADO DE VINCULACIÓN CON GOOGLE
+
+  async obtenerEstadoGoogle(
+    id: number,
+    tipo: 'docente' | 'estudiante',
+  ): Promise<{ vinculado: boolean }> {
+    if (tipo === 'docente') {
+      const docente = await this.docenteRepository
+        .createQueryBuilder('docente')
+        .addSelect('docente.googleSub')
+        .where('docente.docente_id = :id', { id })
+        .getOne();
+
+      if (!docente || !docente.activo) {
+        throw new UnauthorizedException('Cuenta docente no disponible.');
+      }
+
+      return { vinculado: Boolean(docente.googleSub) };
+    }
+
+    const estudiante = await this.estudianteRepository.findOne({
+      where: { estudiante_id: id, activo: true },
+    });
+
+    if (!estudiante) {
+      throw new UnauthorizedException('Cuenta estudiante no disponible.');
+    }
+
+    // En este esquema existente, el campo se utiliza como marca
+    // de que el estudiante vinculó su Google verificado.
+    return { vinculado: estudiante.correoVerificado === true };
+  }
+
+  // AUTORIZACIÓN TEMPORAL PARA VINCULAR GOOGLE DESDE UNA SESIÓN
+
+  async crearTokenVinculacion(
+    id: number,
+    tipo: 'docente' | 'estudiante',
+    estado: string,
+  ): Promise<string> {
+    return this.jwtService.signAsync(
+      { id, tipo, estado, proposito: 'vincular-google' },
+      { expiresIn: '5m' },
+    );
+  }
+
+  async verificarTokenVinculacion(
+    token: string,
+    estado: string,
+  ): Promise<{ id: number; tipo: 'docente' | 'estudiante' }> {
+    let payload: {
+      id: number;
+      tipo: string;
+      estado: string;
+      proposito: string;
+    };
+
+    try {
+      payload = await this.jwtService.verifyAsync(token);
+    } catch {
+      throw new UnauthorizedException('La vinculación con Google expiró.');
+    }
+
+    if (
+      payload.proposito !== 'vincular-google' ||
+      payload.estado !== estado ||
+      !Number.isInteger(payload.id) ||
+      (payload.tipo !== 'docente' && payload.tipo !== 'estudiante')
+    ) {
+      throw new UnauthorizedException('Solicitud de vinculación inválida.');
+    }
+
+    return {
+      id: payload.id,
+      tipo: payload.tipo as 'docente' | 'estudiante',
+    };
+  }
+
+  // VINCULAR LA CUENTA GOOGLE SELECCIONADA A LA SESIÓN ACTUAL
+
+  async vincularCuentaGoogle(
+    id: number,
+    tipo: 'docente' | 'estudiante',
+    perfil: { googleSub: string; nombre: string; correo: string },
+  ) {
+    const correo = perfil.correo.trim().toLowerCase();
+
+    if (tipo === 'docente') {
+      const docente = await this.docenteRepository
+        .createQueryBuilder('docente')
+        .addSelect('docente.googleSub')
+        .where('docente.docente_id = :id', { id })
+        .getOne();
+
+      if (!docente || !docente.activo) {
+        throw new UnauthorizedException('Cuenta docente no disponible.');
+      }
+
+      if (docente.correo.toLowerCase() !== correo) {
+        throw new BadRequestException(
+          'El correo de Google no coincide con el registrado en SafeTest.',
+        );
+      }
+
+      if (docente.googleSub && docente.googleSub !== perfil.googleSub) {
+        throw new ConflictException(
+          'La cuenta ya está vinculada a otro usuario de Google.',
+        );
+      }
+
+      const docenteVinculado = await this.docenteRepository.findOne({
+        where: { googleSub: perfil.googleSub },
+      });
+
+      if (docenteVinculado && docenteVinculado.docente_id !== id) {
+        throw new ConflictException('Esta cuenta de Google ya está vinculada.');
+      }
+
+      docente.googleSub = perfil.googleSub;
+      await this.docenteRepository.save(docente);
+
+      return this.generarTokens(
+        docente.docente_id,
+        docente.nombre,
+        docente.correo,
+        'docente',
+      );
+    }
+
+    const estudiante = await this.estudianteRepository.findOne({
+      where: { estudiante_id: id },
+    });
+
+    if (!estudiante || !estudiante.activo) {
+      throw new UnauthorizedException('Cuenta estudiante no disponible.');
+    }
+
+    if (estudiante.correo_institucional.toLowerCase() !== correo) {
+      throw new BadRequestException(
+        'El correo de Google no coincide con el registrado en SafeTest.',
+      );
+    }
+
+    // Sin modificar la tabla: el correo verificado por Google
+    // funciona como indicador de vinculación para estudiantes.
+    estudiante.correoVerificado = true;
+    await this.estudianteRepository.save(estudiante);
+
+    return this.generarTokens(
+      estudiante.estudiante_id,
+      estudiante.nombre_completo,
+      estudiante.correo_institucional,
+      'estudiante',
+    );
+  }
+
+  // INICIAR SESIÓN CON GOOGLE (SIN CREAR CUENTAS AUTOMÁTICAMENTE)
 
   async loginConGoogle(perfil: {
     googleSub: string;
     nombre: string;
     correo: string;
   }) {
-    // Primero buscamos al docente mediante su ID de Google.
-    let docente = await this.docenteRepository.findOne({
+    const correo = perfil.correo.trim().toLowerCase();
+
+    // Docentes: vinculación explícita por identificador estable de Google.
+    const docente = await this.docenteRepository.findOne({
+      where: { googleSub: perfil.googleSub },
+    });
+
+    if (docente) {
+      if (!docente.activo) {
+        throw new UnauthorizedException('Cuenta docente no disponible.');
+      }
+      return this.generarTokens(
+        docente.docente_id,
+        docente.nombre,
+        docente.correo,
+        'docente',
+      );
+    }
+
+    // Estudiantes: usamos el correo que Google ya verificó,
+    // pero solo si la vinculación se marcó previamente.
+    const estudiante = await this.estudianteRepository.findOne({
       where: {
-        googleSub: perfil.googleSub,
+        correo_institucional: correo,
+        correoVerificado: true,
       },
     });
 
-    if (!docente) {
-      // No vinculamos automáticamente cuentas tradicionales.
-      const cuentaExistente =
-        await this.docenteRepository.findOne({
-          where: { correo: perfil.correo },
-        });
-
-      if (cuentaExistente) {
-        throw new ConflictException(
-          'Este correo ya tiene una cuenta en SafeTest. ' +
-          'Inicia sesión con tu contraseña para vincular Google.',
-        );
+    if (estudiante) {
+      if (!estudiante.activo) {
+        throw new UnauthorizedException('Cuenta estudiante no disponible.');
       }
-
-      // Evitamos que Google cree una cuenta docente con
-      // el mismo correo de un estudiante registrado.
-      const estudianteExistente =
-        await this.estudianteRepository.findOne({
-          where: {
-            correo_institucional: perfil.correo,
-          },
-        });
-
-      if (estudianteExistente) {
-        throw new ConflictException(
-          'Este correo ya pertenece a una cuenta estudiante.',
-        );
-      }
-
-      // Crear un docente nuevo sin contraseña local.
-      const nuevoDocente = this.docenteRepository.create({
-        nombre: perfil.nombre,
-        correo: perfil.correo,
-        googleSub: perfil.googleSub,
-        passwordHash: null,
-      });
-
-      docente =
-        await this.docenteRepository.save(nuevoDocente);
+      return this.generarTokens(
+        estudiante.estudiante_id,
+        estudiante.nombre_completo,
+        estudiante.correo_institucional,
+        'estudiante',
+      );
     }
 
-    if (!docente.activo) {
-      throw new UnauthorizedException('Cuenta no disponible');
+    // Distinguir cuenta existente sin Google vinculado de cuenta nueva.
+    const docenteExistente = await this.docenteRepository.findOne({
+      where: { correo },
+    });
+    const estudianteExistente = await this.estudianteRepository.findOne({
+      where: { correo_institucional: correo },
+    });
+
+    if (docenteExistente || estudianteExistente) {
+      throw new ConflictException(
+        'La cuenta existe, pero Google no está vinculado. ' +
+        'Inicia sesión con tu contraseña y conecta Google desde tu perfil.',
+      );
     }
 
-    // Reutilizamos nuestro sistema JWT existente.
-    return this.generarTokens(
-      docente.docente_id,
-      docente.nombre,
-      docente.correo,
-      'docente',
+    throw new NotFoundException(
+      'No hay una cuenta de SafeTest registrada con ese correo. ' +
+      'Regístrate primero.',
     );
   }
 

@@ -154,7 +154,8 @@ function PropuestaCard({
                             }
                         >
                             · {ETIQUETAS_DIFICULTAD[contenido.dificultad]} ·{' '}
-                            {contenido.puntaje_max} puntos
+                            Puntaje máximo del inciso:{' '}
+                            {contenido.puntaje_max} pts
                         </span>
                     </h3>
                 </div>

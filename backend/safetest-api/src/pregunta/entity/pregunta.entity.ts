@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -16,6 +17,9 @@ import { ExamenPregunta } from '../../examenpregunta/entity/examenpregunta.entit
 import { ParaleloPregunta } from '../../paralelopregunta/entity/paralelopregunta.entity';
 import { AsignacionPregunta } from '../../asignacionpregunta/entity/asignacionpregunta.entity';
 
+@Index('UQ_pregunta_pregunta_tema', ['pregunta_id', 'tema_id'], {
+  unique: true,
+})
 @Entity('pregunta')
 export class Pregunta {
   @PrimaryGeneratedColumn({ name: 'pregunta_id' })

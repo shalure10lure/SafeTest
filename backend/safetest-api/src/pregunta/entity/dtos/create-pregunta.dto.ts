@@ -66,6 +66,11 @@ export class CreatePreguntaDto {
   })
   tipo_respuesta: TipoRespuesta;
 
+  /**
+   * Puntaje máximo del inciso que se crea junto con la pregunta.
+   * No es una columna de `Pregunta`: el total de la pregunta se deriva de
+   * la suma de los puntajes máximos de todos sus incisos.
+   */
   @Type(() => Number)
   @IsNumber(
     { allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 },

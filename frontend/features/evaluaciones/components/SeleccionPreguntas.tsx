@@ -1,308 +1,435 @@
-'use client';
+"use client";
 
-import { useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Copy } from 'lucide-react';
+import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Copy } from "lucide-react";
 
-import LinkButton from '@/components/ui/LinkButton';
-import { ROUTES } from '@/constants/routes';
-import { cn } from '@/lib/utils';
+import LinkButton from "@/components/ui/LinkButton";
+import { ROUTES } from "@/constants/routes";
+import { cn } from "@/lib/utils";
 
-import { useBancoPreguntas } from '../hooks/useBancoPreguntas';
-import { useEvaluacion } from '../hooks/useEvaluacion';
-import { mensajeDeError } from '../mensaje-error';
-import { evaluacionesService } from '../services/evaluaciones.service';
-import type { EvaluacionDetalle, GuardarSeleccionDto, ModoSeleccion } from '../types';
+import { formatearPuntos, parsearPuntaje, sumarPuntos } from "../formato";
+import { useBancoPreguntas } from "../hooks/useBancoPreguntas";
+import { useEvaluacion } from "../hooks/useEvaluacion";
+import { mensajeDeError } from "../mensaje-error";
+import { evaluacionesService } from "../services/evaluaciones.service";
+import type {
+  EvaluacionDetalle,
+  GuardarSeleccionDto,
+  ModoSeleccion,
+  PuntajePreguntaSeleccion,
+} from "../types";
 
-import CriteriosAleatorios, { type FilaCriterio } from './CriteriosAleatorios';
-import PanelSeleccionadas from './PanelSeleccionadas';
-import PreguntaBancoItem from './PreguntaBancoItem';
-import SelectorModo from './SelectorModo';
+import CriteriosAleatorios, { type FilaCriterio } from "./CriteriosAleatorios";
+import PanelSeleccionadas from "./PanelSeleccionadas";
+import PreguntaBancoItem from "./PreguntaBancoItem";
+import SelectorModo from "./SelectorModo";
 
 /** Quita tildes y mayúsculas para que "limite" encuentre "Límites". */
 function normalizar(texto: string): string {
-    return texto
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
-function FormularioSeleccion({ evaluacion }: { evaluacion: EvaluacionDetalle }) {
-    const router = useRouter();
+function FormularioSeleccion({
+  evaluacion,
+}: {
+  evaluacion: EvaluacionDetalle;
+}) {
+  const router = useRouter();
 
-    const materiaEvaluacionId = evaluacion.materia?.materia_id ?? null;
+  const materiaEvaluacionId = evaluacion.materia?.materia_id ?? null;
 
-    const [modo, setModo] = useState<ModoSeleccion>(evaluacion.modo_seleccion);
+  const [modo, setModo] = useState<ModoSeleccion>(evaluacion.modo_seleccion);
 
-    // Modo manual
-    const [seleccionIds, setSeleccionIds] = useState<number[]>(evaluacion.pregunta_ids);
-    const [temaId, setTemaId] = useState<number | null>(null);
-    const [busqueda, setBusqueda] = useState('');
+  // Modo manual
+  const [seleccionIds, setSeleccionIds] = useState<number[]>(
+    evaluacion.pregunta_ids,
+  );
+  /**
+   * Ediciones del puntaje por pregunta. Si una pregunta no tiene entrada, se
+   * muestra su puntaje guardado o, al agregarla, el del banco.
+   */
+  const [puntajes, setPuntajes] = useState<Record<number, string>>({});
+  const [temaId, setTemaId] = useState<number | null>(null);
+  const [busqueda, setBusqueda] = useState("");
 
-    // Modo aleatorio
-    const [filas, setFilas] = useState<FilaCriterio[]>(() =>
-        evaluacion.criterios.length > 0
-            ? evaluacion.criterios.map((criterio, indice) => ({
-                  clave: indice + 1,
-                  tema_id: criterio.tema_id,
-                  cantidad: criterio.cantidad,
-              }))
-            : [{ clave: 1, tema_id: null, cantidad: 2 }],
+  // Modo aleatorio
+  const [filas, setFilas] = useState<FilaCriterio[]>(() =>
+    evaluacion.criterios.length > 0
+      ? evaluacion.criterios.map((criterio, indice) => ({
+          clave: indice + 1,
+          tema_id: criterio.tema_id,
+          cantidad: criterio.cantidad,
+        }))
+      : [{ clave: 1, tema_id: null, cantidad: 2 }],
+  );
+  const siguienteClave = useRef(filas.length + 1);
+
+  const [guardando, setGuardando] = useState(false);
+  const [errorGuardar, setErrorGuardar] = useState("");
+
+  const { banco, conocidas, cargando, error } = useBancoPreguntas(
+    evaluacion.examen_id,
+    materiaEvaluacionId,
+    // La selección guardada se muestra aunque la pregunta ya no esté en el banco.
+    evaluacion.preguntas,
+  );
+
+  const bancoActualizado =
+    materiaEvaluacionId === null || banco?.materia_id === materiaEvaluacionId;
+
+  const visibles = useMemo(() => {
+    const preguntas = banco?.preguntas ?? [];
+    const texto = normalizar(busqueda.trim());
+
+    return preguntas.filter(
+      (pregunta) =>
+        (temaId === null || pregunta.tema.tema_id === temaId) &&
+        (!texto ||
+          normalizar(
+            `${pregunta.enunciado} ${pregunta.tema.nombre_tema}`,
+          ).includes(texto)),
     );
-    const siguienteClave = useRef(filas.length + 1);
+  }, [banco, busqueda, temaId]);
 
-    const [guardando, setGuardando] = useState(false);
-    const [errorGuardar, setErrorGuardar] = useState('');
+  function textoPuntaje(id: number): string {
+    const editado = puntajes[id];
 
-    const { banco, conocidas, cargando, error } = useBancoPreguntas(
-        evaluacion.examen_id,
-        materiaEvaluacionId,
-        // La selección guardada se muestra aunque la pregunta ya no esté en el banco.
-        evaluacion.preguntas,
+    if (editado !== undefined) return editado;
+
+    const pregunta = conocidas[id];
+
+    if (!pregunta) return "";
+
+    // Puntaje guardado en la evaluación o, al agregarla, el del banco.
+    return String(pregunta.puntaje ?? pregunta.puntos);
+  }
+
+  const items = seleccionIds.map((id) => ({
+    id,
+    pregunta: conocidas[id],
+    puntaje: textoPuntaje(id),
+  }));
+
+  function alternar(id: number) {
+    const quitar = seleccionIds.includes(id);
+
+    setSeleccionIds((actual) =>
+      quitar ? actual.filter((existente) => existente !== id) : [...actual, id],
     );
 
-    const bancoActualizado = materiaEvaluacionId === null || banco?.materia_id === materiaEvaluacionId;
-
-    const visibles = useMemo(() => {
-        const preguntas = banco?.preguntas ?? [];
-        const texto = normalizar(busqueda.trim());
-
-        return preguntas.filter(
-            (pregunta) =>
-                (temaId === null || pregunta.tema.tema_id === temaId) &&
-                (!texto || normalizar(`${pregunta.enunciado} ${pregunta.tema.nombre_tema}`).includes(texto)),
-        );
-    }, [banco, busqueda, temaId]);
-
-    const items = seleccionIds.map((id) => ({ id, pregunta: conocidas[id] }));
-
-    function alternar(id: number) {
-        setSeleccionIds((actual) =>
-            actual.includes(id) ? actual.filter((existente) => existente !== id) : [...actual, id],
-        );
+    if (quitar) {
+      // Al volver a agregarla, el puntaje inicial vuelve a ser el del banco.
+      setPuntajes((actual) => {
+        const siguientes = { ...actual };
+        delete siguientes[id];
+        return siguientes;
+      });
     }
+  }
 
-    function cambiarTema(clave: number, temaId: number | null) {
-        const disponibles = temaId ? (banco?.temas.find((tema) => tema.tema_id === temaId)?.disponibles ?? 0) : 0;
+  function cambiarPuntaje(id: number, valor: string) {
+    setPuntajes((actual) => ({ ...actual, [id]: valor }));
+  }
 
-        setFilas((actual) =>
-            actual.map((fila) => {
-                if (fila.clave !== clave) return fila;
+  function cambiarTema(clave: number, temaId: number | null) {
+    const disponibles = temaId
+      ? (banco?.temas.find((tema) => tema.tema_id === temaId)?.disponibles ?? 0)
+      : 0;
 
-                // Al elegir un tema, la cantidad no puede superar lo disponible.
-                const cantidad = temaId
-                    ? Math.min(Math.max(fila.cantidad, 1), Math.max(disponibles, 1))
-                    : fila.cantidad;
+    setFilas((actual) =>
+      actual.map((fila) => {
+        if (fila.clave !== clave) return fila;
 
-                return { ...fila, tema_id: temaId, cantidad };
-            }),
-        );
-    }
+        // Al elegir un tema, la cantidad no puede superar lo disponible.
+        const cantidad = temaId
+          ? Math.min(Math.max(fila.cantidad, 1), Math.max(disponibles, 1))
+          : fila.cantidad;
 
-    function cambiarCantidad(clave: number, cantidad: number) {
-        setFilas((actual) =>
-            actual.map((fila) => (fila.clave === clave ? { ...fila, cantidad: Math.max(1, cantidad) } : fila)),
-        );
-    }
+        return { ...fila, tema_id: temaId, cantidad };
+      }),
+    );
+  }
 
-    function agregarFila() {
-        const clave = siguienteClave.current++;
+  function cambiarCantidad(clave: number, cantidad: number) {
+    setFilas((actual) =>
+      actual.map((fila) =>
+        fila.clave === clave
+          ? { ...fila, cantidad: Math.max(1, cantidad) }
+          : fila,
+      ),
+    );
+  }
 
-        setFilas((actual) => [...actual, { clave, tema_id: null, cantidad: 2 }]);
-    }
+  function agregarFila() {
+    const clave = siguienteClave.current++;
 
-    function quitarFila(clave: number) {
-        setFilas((actual) => (actual.length === 1 ? actual : actual.filter((fila) => fila.clave !== clave)));
-    }
+    setFilas((actual) => [...actual, { clave, tema_id: null, cantidad: 2 }]);
+  }
 
-    async function guardar() {
-        setErrorGuardar('');
+  function quitarFila(clave: number) {
+    setFilas((actual) =>
+      actual.length === 1
+        ? actual
+        : actual.filter((fila) => fila.clave !== clave),
+    );
+  }
 
-        let datos: GuardarSeleccionDto;
+  async function guardar() {
+    setErrorGuardar("");
 
-        if (modo === 'manual') {
-            if (seleccionIds.length === 0) {
-                setErrorGuardar('Selecciona al menos una pregunta.');
-                return;
-            }
+    let datos: GuardarSeleccionDto;
 
-            datos = { modo_seleccion: 'manual', pregunta_ids: seleccionIds };
-        } else {
-            const criterios = filas.flatMap((fila) =>
-                fila.tema_id === null ? [] : [{ tema_id: fila.tema_id, cantidad: fila.cantidad }],
-            );
+    if (modo === "manual") {
+      if (seleccionIds.length === 0) {
+        setErrorGuardar("Selecciona al menos una pregunta.");
+        return;
+      }
 
-            if (criterios.length !== filas.length) {
-                setErrorGuardar('Selecciona un tema en cada criterio o quita las filas que no uses.');
-                return;
-            }
+      const puntajesSeleccionados: PuntajePreguntaSeleccion[] = [];
 
-            datos = { modo_seleccion: 'aleatorio', criterios };
+      for (const id of seleccionIds) {
+        const puntaje = parsearPuntaje(textoPuntaje(id));
+
+        if (puntaje === null) {
+          setErrorGuardar(
+            "Cada pregunta debe tener un puntaje mayor que cero con un máximo de 2 decimales.",
+          );
+          return;
         }
 
-        setGuardando(true);
+        puntajesSeleccionados.push({ pregunta_id: id, puntaje });
+      }
 
-        try {
-            await evaluacionesService.guardarSeleccion(evaluacion.examen_id, datos);
+      const suma = sumarPuntos(
+        puntajesSeleccionados.map((puntaje) => puntaje.puntaje),
+      );
+      const totalConfigurado = evaluacion.puntaje_total ?? null;
 
-            router.push(ROUTES.docente.evaluacionConfiguracion(evaluacion.examen_id));
-        } catch (e) {
-            setErrorGuardar(mensajeDeError(e, 'No se pudo guardar la selección. Inténtalo de nuevo.'));
-            setGuardando(false);
-        }
+      if (totalConfigurado !== null && suma > totalConfigurado) {
+        setErrorGuardar(
+          `La suma de los puntajes (${formatearPuntos(suma)} pts) no puede superar el puntaje total configurado (${formatearPuntos(totalConfigurado)} pts).`,
+        );
+        return;
+      }
+
+      datos = {
+        modo_seleccion: "manual",
+        pregunta_ids: seleccionIds,
+        puntajes: puntajesSeleccionados,
+      };
+    } else {
+      const criterios = filas.flatMap((fila) =>
+        fila.tema_id === null
+          ? []
+          : [{ tema_id: fila.tema_id, cantidad: fila.cantidad }],
+      );
+
+      if (criterios.length !== filas.length) {
+        setErrorGuardar(
+          "Selecciona un tema en cada criterio o quita las filas que no uses.",
+        );
+        return;
+      }
+
+      datos = { modo_seleccion: "aleatorio", criterios };
     }
 
-    return (
-        <div className={cn('grid gap-5', modo === 'manual' && 'lg:grid-cols-[minmax(0,1fr)_17.5rem]')}>
-            <div className="min-w-0 space-y-5">
-                <div>
-                    <h2 className="text-base font-semibold text-slate-900">Seleccionar preguntas</h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                        Elige cómo se conformará la evaluación a partir de tu banco.
-                    </p>
-                </div>
+    setGuardando(true);
 
-                <SelectorModo modo={modo} onCambiar={setModo} aleatorioDisponible />
+    try {
+      await evaluacionesService.guardarSeleccion(evaluacion.examen_id, datos);
 
-                {modo === 'manual' ? (
-                    <>
-                        <div className="flex gap-2.5 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800">
-                            <Copy className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                            <p>
-                                <strong>Reutilización:</strong> las preguntas se agregan como referencia. Seguirán
-                                disponibles en el banco y podrás usarlas en otras evaluaciones.
-                            </p>
-                        </div>
+      router.push(ROUTES.docente.evaluacionConfiguracion(evaluacion.examen_id));
+    } catch (e) {
+      setErrorGuardar(
+        mensajeDeError(
+          e,
+          "No se pudo guardar la selección. Inténtalo de nuevo.",
+        ),
+      );
+      setGuardando(false);
+    }
+  }
 
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                            <input
-                                type="search"
-                                value={busqueda}
-                                onChange={(e) => setBusqueda(e.target.value)}
-                                placeholder="Buscar en el banco..."
-                                aria-label="Buscar en el banco"
-                                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600"
-                            />
+  return (
+    <div
+      className={cn(
+        "grid gap-5",
+        modo === "manual" && "lg:grid-cols-[minmax(0,1fr)_17.5rem]",
+      )}
+    >
+      <div className="min-w-0 space-y-5">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">
+            Seleccionar preguntas
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Elige cómo se conformará la evaluación a partir de tu banco.
+          </p>
+        </div>
 
-                            <select
-                                value={temaId ?? ''}
-                                onChange={(e) => setTemaId(Number(e.target.value) || null)}
-                                aria-label="Filtrar por tema"
-                                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600 sm:w-48"
-                            >
-                                <option value="">Todos los temas</option>
-                                {banco?.temas.map((tema) => (
-                                    <option key={tema.tema_id} value={tema.tema_id}>
-                                        {tema.nombre_tema}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+        <SelectorModo modo={modo} onCambiar={setModo} aleatorioDisponible />
 
-                        <p className="text-xs text-slate-500" aria-live="polite">
-                            {visibles.length} de {banco?.preguntas.length ?? 0} preguntas en tu banco
-                        </p>
-
-                        {cargando ? (
-                            <p className="text-sm text-slate-500">Cargando preguntas...</p>
-                        ) : error ? (
-                            <p className="text-sm text-red-600" role="alert">
-                                {error}
-                            </p>
-                        ) : visibles.length === 0 ? (
-                            <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-                                {banco && banco.preguntas.length === 0
-                                    ? 'No tienes preguntas en esta materia todavía.'
-                                    : 'Ninguna pregunta coincide con la búsqueda.'}
-                            </p>
-                        ) : (
-                            <ul className="space-y-3">
-                                {visibles.map((pregunta) => (
-                                    <li key={pregunta.pregunta_id}>
-                                        <PreguntaBancoItem
-                                            pregunta={pregunta}
-                                            seleccionada={seleccionIds.includes(pregunta.pregunta_id)}
-                                            onAlternar={() => alternar(pregunta.pregunta_id)}
-                                        />
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </>
-                ) : (
-                    <CriteriosAleatorios
-                        filas={filas}
-                        temas={banco?.temas ?? []}
-                        materiaNombre={evaluacion.materia?.nombre ?? 'la materia'}
-                        totalMateria={banco?.preguntas.length ?? 0}
-                        cargando={cargando || !bancoActualizado}
-                        error={error}
-                        onCambiarTema={cambiarTema}
-                        onCambiarCantidad={cambiarCantidad}
-                        onAgregar={agregarFila}
-                        onQuitar={quitarFila}
-                    />
-                )}
-
-                {errorGuardar && (
-                    <p className="text-sm text-red-600" role="alert">
-                        {errorGuardar}
-                    </p>
-                )}
-
-                <div className="flex items-center justify-between pt-1">
-                    <LinkButton href={ROUTES.docente.evaluacionEditar(evaluacion.examen_id)}>← Anterior</LinkButton>
-
-                    <button
-                        type="button"
-                        onClick={guardar}
-                        disabled={guardando}
-                        className="inline-flex h-9 items-center justify-center rounded-lg bg-violet-600 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {guardando
-                            ? 'Guardando...'
-                            : modo === 'manual' && seleccionIds.length > 0
-                              ? `Siguiente (${seleccionIds.length}) →`
-                              : 'Siguiente →'}
-                    </button>
-                </div>
+        {modo === "manual" ? (
+          <>
+            <div className="flex gap-2.5 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800">
+              <Copy className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <p>
+                <strong>Reutilización:</strong> las preguntas se agregan como
+                referencia. Seguirán disponibles en el banco y podrás usarlas en
+                otras evaluaciones. Cada pregunta inicia con el puntaje del
+                banco y puedes ajustarlo en el panel.
+              </p>
             </div>
 
-            {modo === 'manual' && <PanelSeleccionadas items={items} onQuitar={alternar} />}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                type="search"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar en el banco..."
+                aria-label="Buscar en el banco"
+                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600"
+              />
+
+              <select
+                value={temaId ?? ""}
+                onChange={(e) => setTemaId(Number(e.target.value) || null)}
+                aria-label="Filtrar por tema"
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-violet-600 sm:w-48"
+              >
+                <option value="">Todos los temas</option>
+                {banco?.temas.map((tema) => (
+                  <option key={tema.tema_id} value={tema.tema_id}>
+                    {tema.nombre_tema}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <p className="text-xs text-slate-500" aria-live="polite">
+              {visibles.length} de {banco?.preguntas.length ?? 0} preguntas en
+              tu banco
+            </p>
+
+            {cargando ? (
+              <p className="text-sm text-slate-500">Cargando preguntas...</p>
+            ) : error ? (
+              <p className="text-sm text-red-600" role="alert">
+                {error}
+              </p>
+            ) : visibles.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                {banco && banco.preguntas.length === 0
+                  ? "No tienes preguntas en esta materia todavía."
+                  : "Ninguna pregunta coincide con la búsqueda."}
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {visibles.map((pregunta) => (
+                  <li key={pregunta.pregunta_id}>
+                    <PreguntaBancoItem
+                      pregunta={pregunta}
+                      seleccionada={seleccionIds.includes(pregunta.pregunta_id)}
+                      onAlternar={() => alternar(pregunta.pregunta_id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <CriteriosAleatorios
+            filas={filas}
+            temas={banco?.temas ?? []}
+            materiaNombre={evaluacion.materia?.nombre ?? "la materia"}
+            totalMateria={banco?.preguntas.length ?? 0}
+            cargando={cargando || !bancoActualizado}
+            error={error}
+            onCambiarTema={cambiarTema}
+            onCambiarCantidad={cambiarCantidad}
+            onAgregar={agregarFila}
+            onQuitar={quitarFila}
+          />
+        )}
+
+        {errorGuardar && (
+          <p className="text-sm text-red-600" role="alert">
+            {errorGuardar}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between pt-1">
+          <LinkButton
+            href={ROUTES.docente.evaluacionEditar(evaluacion.examen_id)}
+          >
+            ← Anterior
+          </LinkButton>
+
+          <button
+            type="button"
+            onClick={guardar}
+            disabled={guardando}
+            className="inline-flex h-9 items-center justify-center rounded-lg bg-violet-600 px-4 text-sm font-medium text-white transition-colors hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {guardando
+              ? "Guardando..."
+              : modo === "manual" && seleccionIds.length > 0
+                ? `Siguiente (${seleccionIds.length}) →`
+                : "Siguiente →"}
+          </button>
         </div>
-    );
+      </div>
+
+      {modo === "manual" && (
+        <PanelSeleccionadas
+          items={items}
+          onQuitar={alternar}
+          onCambiarPuntaje={cambiarPuntaje}
+          puntajeTotal={evaluacion.puntaje_total}
+        />
+      )}
+    </div>
+  );
 }
 
 export default function SeleccionPreguntas({ examenId }: { examenId: number }) {
-    const { evaluacion, cargando, error } = useEvaluacion(examenId);
+  const { evaluacion, cargando, error } = useEvaluacion(examenId);
 
-    if (cargando) {
-        return (
-            <p className="text-sm text-slate-500" aria-live="polite">
-                Cargando evaluación...
-            </p>
-        );
-    }
+  if (cargando) {
+    return (
+      <p className="text-sm text-slate-500" aria-live="polite">
+        Cargando evaluación...
+      </p>
+    );
+  }
 
-    if (error || !evaluacion) {
-        return (
-            <p className="text-sm text-red-600" role="alert">
-                {error || 'No se pudo cargar la evaluación.'}
-            </p>
-        );
-    }
+  if (error || !evaluacion) {
+    return (
+      <p className="text-sm text-red-600" role="alert">
+        {error || "No se pudo cargar la evaluación."}
+      </p>
+    );
+  }
 
-    if (evaluacion.estado !== 'borrador') {
-        return (
-            <p className="text-sm text-slate-600">
-                Solo puedes cambiar las preguntas de una evaluación en borrador.{' '}
-                <Link href={ROUTES.docente.evaluaciones} className="font-medium text-violet-700 underline">
-                    Volver a Mis evaluaciones
-                </Link>
-            </p>
-        );
-    }
+  if (evaluacion.estado !== "borrador") {
+    return (
+      <p className="text-sm text-slate-600">
+        Solo puedes cambiar las preguntas de una evaluación en borrador.{" "}
+        <Link
+          href={ROUTES.docente.evaluaciones}
+          className="font-medium text-violet-700 underline"
+        >
+          Volver a Mis evaluaciones
+        </Link>
+      </p>
+    );
+  }
 
-    return <FormularioSeleccion evaluacion={evaluacion} />;
+  return <FormularioSeleccion evaluacion={evaluacion} />;
 }

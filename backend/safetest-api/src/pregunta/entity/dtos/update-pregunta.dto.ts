@@ -51,6 +51,11 @@ export class UpdatePreguntaDto {
   })
   tipo_respuesta?: TipoRespuesta;
 
+  /**
+   * Puntaje máximo del inciso configurado por el formulario.
+   * No es una columna de `Pregunta`: el total de la pregunta se deriva de
+   * la suma de los puntajes máximos de todos sus incisos.
+   */
   @IsOptional()
   @Type(() => Number)
   @IsNumber(

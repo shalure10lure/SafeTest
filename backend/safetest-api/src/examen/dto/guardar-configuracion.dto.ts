@@ -1,5 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, Max, Min } from 'class-validator';
+import {
+    IsDateString,
+    IsIn,
+    IsInt,
+    IsNumber,
+    IsPositive,
+    Max,
+    Min,
+} from 'class-validator';
 
 export class GuardarConfiguracionDto {
     @IsIn(['definido', 'aleatorio'], {
@@ -23,4 +31,15 @@ export class GuardarConfiguracionDto {
         message: 'La publicación de resultados debe ser al_publicar o inmediata',
     })
     modo_entrega_nota: 'al_publicar' | 'inmediata';
+
+    @Type(() => Number)
+    @IsNumber(
+        { maxDecimalPlaces: 2 },
+        {
+            message:
+                'El puntaje total debe ser un número con un máximo de 2 decimales',
+        },
+    )
+    @IsPositive({ message: 'El puntaje total debe ser mayor que cero' })
+    puntaje_total: number;
 }

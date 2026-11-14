@@ -90,6 +90,9 @@ class Examen {
     @Column({ name: 'duracion_min', type: 'int', nullable: true })
     duracion_min: number | null;
 
+    @Column({ name: 'puntaje_total', type: 'numeric', precision: 12, scale: 2, nullable: true })
+    puntaje_total: string | null;
+
     @Column({ name: 'disponible_desde', type: 'timestamptz', nullable: true })
     disponible_desde: Date | null;
 
@@ -231,6 +234,15 @@ class ExamenPregunta {
 
     @Column({ type: 'int' })
     orden: number;
+
+    @Column({
+        name: 'puntaje',
+        type: 'numeric',
+        precision: 12,
+        scale: 2,
+        nullable: true,
+    })
+    puntaje: string | null;
 
     @ManyToOne(() => Examen, (examen) => examen.preguntas, { nullable: false })
     @JoinColumn({ name: 'examen_id' })

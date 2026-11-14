@@ -44,10 +44,13 @@ export function useBancoPreguntas(
                     const siguientes = { ...previas };
 
                     for (const pregunta of datos.preguntas) {
-                        // El banco solo devuelve preguntas activas.
+                        // El banco solo devuelve preguntas activas. Se conserva
+                        // el puntaje propio ya guardado en la evaluación.
                         siguientes[pregunta.pregunta_id] = {
                             ...pregunta,
                             activo: true,
+                            puntaje:
+                                previas[pregunta.pregunta_id]?.puntaje ?? null,
                         };
                     }
 

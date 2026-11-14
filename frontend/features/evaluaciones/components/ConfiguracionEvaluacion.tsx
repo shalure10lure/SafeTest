@@ -14,6 +14,7 @@ import {
     DURACIONES_RAPIDAS,
     formatearDuracion,
     minutosEntre,
+    parsearPuntajeTotal,
 } from '../configuracion';
 import { useEvaluacion } from '../hooks/useEvaluacion';
 import { mensajeDeError } from '../mensaje-error';
@@ -75,6 +76,11 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
     const [entrega, setEntrega] = useState<ModoEntregaNota>(
         evaluacion.modo_entrega_nota,
     );
+    const [puntajeTotal, setPuntajeTotal] = useState(
+        evaluacion.puntaje_total === null
+            ? ''
+            : String(evaluacion.puntaje_total),
+    );
 
     const [intento, setIntento] = useState(false);
     const [guardando, setGuardando] = useState(false);
@@ -118,7 +124,20 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
     const verErrorHasta =
         errorHasta !== '' && (intento || (desde !== '' && hasta !== ''));
 
-    const hayErrores = errorDuracion !== '' || errorDesde !== '' || errorHasta !== '';
+    // ----- Puntaje total -----
+    const puntajeTotalNumero = parsearPuntajeTotal(puntajeTotal);
+    const errorPuntajeTotal =
+        puntajeTotal.trim() === ''
+            ? 'Indica el puntaje total de la evaluación.'
+            : puntajeTotalNumero === null
+              ? 'Debe ser un número mayor que cero con un máximo de 2 decimales.'
+              : '';
+
+    const hayErrores =
+        errorDuracion !== '' ||
+        errorDesde !== '' ||
+        errorHasta !== '' ||
+        errorPuntajeTotal !== '';
 
     // Al elegir el inicio, se propone un fin acorde con la duración.
     function cambiarDesde(valor: string) {
@@ -135,6 +154,7 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
         setErrorGuardar('');
 
         if (hayErrores) return;
+        if (puntajeTotalNumero === null) return;
 
         if (new Date(hasta).getTime() <= Date.now()) {
             setErrorGuardar('La fecha de finalización debe ser futura.');
@@ -150,6 +170,7 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
                 disponible_desde: aIso(desde),
                 disponible_hasta: aIso(hasta),
                 modo_entrega_nota: entrega,
+                puntaje_total: puntajeTotalNumero,
             });
 
             router.push(ROUTES.docente.evaluacionAsignacion(evaluacion.examen_id));
@@ -281,6 +302,47 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
 
             <SeccionConfiguracion
                 numero={3}
+                titulo="Puntaje total"
+                descripcion="Puntaje máximo que puede obtener cada estudiante en la evaluación."
+            >
+                <div className="max-w-xs">
+                    <label
+                        htmlFor="cfg-puntaje-total"
+                        className="mb-1 block text-sm font-medium text-slate-900"
+                    >
+                        Puntaje total
+                    </label>
+                    <div className="flex items-center gap-2">
+                        <input
+                            id="cfg-puntaje-total"
+                            type="text"
+                            inputMode="decimal"
+                            value={puntajeTotal}
+                            onChange={(e) => setPuntajeTotal(e.target.value)}
+                            placeholder="Ej. 100"
+                            aria-invalid={intento && errorPuntajeTotal !== ''}
+                            className={cn(
+                                ENTRADA,
+                                'w-full',
+                                intento && errorPuntajeTotal
+                                    ? 'border-red-400'
+                                    : 'border-slate-200',
+                            )}
+                        />
+                        <span aria-hidden="true" className="text-sm text-slate-500">
+                            pts
+                        </span>
+                    </div>
+                    {intento && errorPuntajeTotal && (
+                        <p className="mt-1 text-xs text-red-600" role="alert">
+                            {errorPuntajeTotal}
+                        </p>
+                    )}
+                </div>
+            </SeccionConfiguracion>
+
+            <SeccionConfiguracion
+                numero={4}
                 titulo="Disponibilidad"
                 descripcion="Ventana en la que los estudiantes asignados podrán iniciar la evaluación."
             >
@@ -350,7 +412,7 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
                 )}
             </SeccionConfiguracion>
 
-            <SeccionConfiguracion numero={4} titulo="Publicación de resultados">
+            <SeccionConfiguracion numero={5} titulo="Publicación de resultados">
                 <OpcionesRadio
                     nombre="publicacion-resultados"
                     etiqueta="Publicación de resultados"

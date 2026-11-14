@@ -55,6 +55,7 @@ export interface GeneracionContexto {
 export interface ContenidoPropuesta {
   enunciado: string;
   dificultad: DificultadIa;
+  /** Puntaje máximo del inciso que se crea al insertar la propuesta. */
   puntaje_max: number;
   opciones?: OpcionIa[];
   valor_correcto?: number;

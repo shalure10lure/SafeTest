@@ -45,6 +45,7 @@ export default function PreguntaBancoItem({
 
                     <span className="text-[11px] text-slate-500">
                         {pregunta.materia.nombre} · {pregunta.tema.nombre_tema} ·{' '}
+                        Puntaje de la pregunta:{' '}
                         {formatearPuntos(pregunta.puntos)} pts
                     </span>
 

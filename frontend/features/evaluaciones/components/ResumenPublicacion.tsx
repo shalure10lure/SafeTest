@@ -9,13 +9,24 @@ import LinkButton from '@/components/ui/LinkButton';
 import { ROUTES } from '@/constants/routes';
 
 import { formatearDuracion, formatearFechaHora } from '../configuracion';
+import { formatearPuntos, puntajesIguales } from '../formato';
 import { mensajeDeError, problemasDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
-import type { ProblemaPublicacion, ResumenEvaluacion } from '../types';
+import type {
+    MotivoPreguntaSinPuntaje,
+    ProblemaPublicacion,
+    ResumenEvaluacion,
+} from '../types';
 import SeccionConfiguracion from './SeccionConfiguracion';
 
 /** Cuántos nombres se muestran antes de resumir con "+N más". */
 const MAX_CHIPS = 8;
+
+const MOTIVO_SIN_PUNTAJE: Record<MotivoPreguntaSinPuntaje, string> = {
+    sin_incisos: 'No tiene incisos.',
+    inciso_sin_puntaje: 'Tiene incisos sin un puntaje mayor que 0.',
+    puntaje_no_finito: 'El puntaje no es un número válido.',
+};
 
 const RUTA_PASO: Record<number, (id: number) => string> = {
     1: ROUTES.docente.evaluacionEditar,
@@ -80,6 +91,31 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
         (suma, criterio) => suma + criterio.cantidad,
         0,
     );
+    const puntajes = datos.puntajes;
+    const esAleatorio = datos.modo_seleccion === 'aleatorio';
+    const totalConfigurado = datos.puntaje_total;
+    const suma = puntajes.puntaje_total;
+    const coincideTotal =
+        puntajes.disponible && suma !== null && totalConfigurado !== null
+            ? puntajesIguales(suma, totalConfigurado)
+            : null;
+    const etiquetaPuntajeTotal = esAleatorio
+        ? publicada
+            ? 'Puntaje máximo total'
+            : 'Puntaje máximo garantizado'
+        : 'Suma de puntajes';
+    const valorPuntajeTotal =
+        puntajes.disponible && puntajes.puntaje_total !== null
+            ? `${formatearPuntos(puntajes.puntaje_total)} pts`
+            : puntajes.motivo === 'sin_instantanea'
+                ? 'Sin instantánea'
+                : puntajes.motivo === 'instantanea_invalida'
+                    ? 'Instantánea inválida'
+                    : 'No se puede garantizar';
+    const valorTotalConfigurado =
+        totalConfigurado === null
+            ? 'Sin configurar'
+            : `${formatearPuntos(totalConfigurado)} pts`;
     async function publicar() {
         setError('');
         setProblemas([]);
@@ -238,6 +274,41 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                         : 'preguntas'
                                     }`}
                             />
+                            <FilaResumen
+                                etiqueta={etiquetaPuntajeTotal}
+                                valor={valorPuntajeTotal}
+                            />
+                            <FilaResumen
+                                etiqueta="Puntaje total configurado"
+                                valor={valorTotalConfigurado}
+                            />
+                            {coincideTotal !== null && (
+                                <FilaResumen
+                                    etiqueta="Coincidencia"
+                                    valor={
+                                        <span
+                                            className={
+                                                coincideTotal
+                                                    ? 'text-emerald-700'
+                                                    : 'text-red-600'
+                                            }
+                                        >
+                                            {coincideTotal
+                                                ? 'La suma coincide'
+                                                : 'La suma no coincide'}
+                                        </span>
+                                    }
+                                />
+                            )}
+                            {puntajes.preguntas_sin_puntaje.length > 0 && (
+                                <FilaResumen
+                                    etiqueta="Preguntas sin puntaje"
+                                    valor={`${puntajes.preguntas_sin_puntaje.length} ${puntajes.preguntas_sin_puntaje.length === 1
+                                            ? 'pregunta'
+                                            : 'preguntas'
+                                        }`}
+                                />
+                            )}
                         </dl>
                     </SeccionConfiguracion>
 
@@ -366,6 +437,160 @@ function Contenido({ datos }: { datos: ResumenEvaluacion }) {
                                     ))}
                                 </ul>
                             )}
+                        </section>
+                    )}
+
+
+                    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <h3 className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+                            Distribución de puntajes
+                        </h3>
+
+                        {puntajes.temas.length === 0 ? (
+                            <p className="mt-3 text-xs text-slate-500">
+                                {puntajes.motivo === 'sin_instantanea'
+                                    ? 'No hay datos definitivos de la instantánea.'
+                                    : 'No hay preguntas seleccionadas.'}
+                            </p>
+                        ) : (
+                            <>
+                                <ul className="mt-3 space-y-2">
+                                    {puntajes.temas.map((tema) => (
+                                        <li
+                                            key={tema.tema_id}
+                                            className="flex items-baseline justify-between gap-2 text-sm"
+                                        >
+                                            <span className="min-w-0 truncate text-slate-800">
+                                                {tema.nombre_tema}
+                                            </span>
+                                            <span className="text-xs whitespace-nowrap text-violet-700 tabular-nums">
+                                                {esAleatorio
+                                                    ? `${tema.cantidad_seleccionada} de ${tema.cantidad_candidatas} preguntas`
+                                                    : `${tema.cantidad_seleccionada} ${tema.cantidad_seleccionada === 1
+                                                        ? 'pregunta'
+                                                        : 'preguntas'
+                                                    }`}
+                                                {' · '}
+                                                {tema.puntaje_maximo !== null &&
+                                                tema.garantizado
+                                                    ? `${formatearPuntos(tema.puntaje_maximo)} pts`
+                                                    : 'Sin garantía'}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+
+                                <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                                    {etiquetaPuntajeTotal}:{' '}
+                                    <strong className="text-slate-800">
+                                        {valorPuntajeTotal}
+                                    </strong>
+                                </p>
+                            </>
+                        )}
+                    </section>
+
+                    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <h3 className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+                            Puntaje por pregunta
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                            {esAleatorio
+                                ? 'Puntajes de las preguntas candidatas.'
+                                : 'Puntaje asignado a cada pregunta seleccionada.'}
+                        </p>
+
+                        {puntajes.preguntas.length === 0 ? (
+                            <p className="mt-3 text-xs text-slate-500">
+                                No hay detalle de preguntas disponible.
+                            </p>
+                        ) : (
+                            <ul className="mt-3 max-h-60 space-y-2 overflow-y-auto">
+                                {puntajes.preguntas.map((pregunta) => (
+                                    <li
+                                        key={pregunta.pregunta_id}
+                                        className="flex items-baseline justify-between gap-3 text-sm"
+                                    >
+                                        <span className="min-w-0 truncate text-slate-800">
+                                            {pregunta.enunciado ??
+                                                `Pregunta #${pregunta.pregunta_id}`}
+                                        </span>
+                                        <span className="shrink-0 text-xs whitespace-nowrap text-violet-700 tabular-nums">
+                                            {pregunta.puntaje_maximo === null
+                                                ? 'Sin puntaje'
+                                                : `${formatearPuntos(pregunta.puntaje_maximo)} pts`}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+
+                    {!puntajes.disponible && (
+                        <section
+                            className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"
+                            role="alert"
+                        >
+                            <h3 className="text-xs font-semibold tracking-wider uppercase">
+                                {puntajes.motivo === 'sin_instantanea'
+                                    ? 'Sin instantánea'
+                                    : 'No se puede garantizar el puntaje'}
+                            </h3>
+                            {puntajes.detalle && (
+                                <p className="mt-2 text-xs">{puntajes.detalle}</p>
+                            )}
+                            {puntajes.temas.some((tema) => !tema.garantizado) && (
+                                <ul className="mt-3 space-y-2">
+                                    {puntajes.temas
+                                        .filter((tema) => !tema.garantizado)
+                                        .map((tema) => (
+                                            <li
+                                                key={tema.tema_id}
+                                                className="rounded-lg bg-white/70 px-2.5 py-2 text-xs"
+                                            >
+                                                <span className="block font-medium text-slate-800">
+                                                    {tema.nombre_tema}
+                                                </span>
+                                                {tema.detalle && (
+                                                    <span className="mt-1 block text-amber-800">
+                                                        {tema.detalle}
+                                                    </span>
+                                                )}
+                                            </li>
+                                        ))}
+                                </ul>
+                            )}
+                        </section>
+                    )}
+
+                    {puntajes.preguntas_sin_puntaje.length > 0 && (
+                        <section
+                            className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"
+                            role="alert"
+                        >
+                            <h3 className="text-xs font-semibold tracking-wider uppercase">
+                                Preguntas sin puntaje válido
+                            </h3>
+                            <p className="mt-2 text-xs">
+                                Corrige su puntaje antes de publicar. La
+                                distribución no incluye estos puntos.
+                            </p>
+                            <ul className="mt-3 space-y-2">
+                                {puntajes.preguntas_sin_puntaje.map((pregunta) => (
+                                    <li
+                                        key={pregunta.pregunta_id}
+                                        className="rounded-lg bg-white/70 px-2.5 py-2 text-xs"
+                                    >
+                                        <span className="line-clamp-2 block text-slate-800">
+                                            {pregunta.enunciado}
+                                        </span>
+                                        <span className="mt-1 block text-amber-800">
+                                            {MOTIVO_SIN_PUNTAJE[pregunta.motivo] ??
+                                                'El puntaje no es válido.'}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
                         </section>
                     )}
 

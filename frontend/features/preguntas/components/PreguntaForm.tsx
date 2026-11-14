@@ -521,7 +521,8 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
 
                     <Campo
                         id="puntaje"
-                        etiqueta="Puntaje máximo"
+                        etiqueta="Puntaje máximo del inciso"
+                        ayuda="Se guarda en el inciso que crea este formulario. El puntaje de la pregunta es la suma de los puntajes máximos de sus incisos."
                         error={mostrar(
                             'puntaje',
                             erroresGenerales.puntaje,
@@ -543,14 +544,7 @@ export default function PreguntaForm({ pregunta }: PreguntaFormProps) {
                                     erroresGenerales.puntaje,
                                 ),
                             )}
-                            aria-describedby={
-                                mostrar(
-                                    'puntaje',
-                                    erroresGenerales.puntaje,
-                                )
-                                    ? 'puntaje-descripcion'
-                                    : undefined
-                            }
+                            aria-describedby="puntaje-descripcion"
                             className={cn(
                                 ENTRADA,
                                 mostrar(
