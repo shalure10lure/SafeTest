@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
     ArrayMaxSize,
+    ArrayMinSize,
     ArrayUnique,
     IsArray,
     IsIn,
@@ -31,6 +32,7 @@ export class GuardarSeleccionDto {
     // Solo se exige en modo manual.
     @ValidateIf((dto: GuardarSeleccionDto) => dto.modo_seleccion === 'manual')
     @IsArray()
+    @ArrayMinSize(1)
     @ArrayMaxSize(200)
     @ArrayUnique()
     @Type(() => Number)
@@ -41,6 +43,7 @@ export class GuardarSeleccionDto {
     // Solo se exige en modo aleatorio.
     @ValidateIf((dto: GuardarSeleccionDto) => dto.modo_seleccion === 'aleatorio')
     @IsArray()
+    @ArrayMinSize(1)
     @ArrayMaxSize(50)
     @ValidateNested({ each: true })
     @Type(() => CriterioTemaDto)

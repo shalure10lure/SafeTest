@@ -249,6 +249,8 @@ export interface UpdateEvaluacionDto {
 export interface EvaluacionActualizada extends EvaluacionDetalle {
     /** `true` si al cambiar de materia se borraron los criterios por tema. */
     criterios_reiniciados: boolean;
+    /** `true` si al cambiar de materia se borraron las preguntas seleccionadas. */
+    preguntas_reiniciadas: boolean;
 }
 
 export interface GuardarConfiguracionDto {
