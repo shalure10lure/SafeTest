@@ -87,6 +87,77 @@ export class ExamenService {
         private readonly temaRepository: Repository<Tema>,
     ) { }
 
+    private logEtapaInicio(etapa: string, contexto: Record<string, unknown> = {}) {
+        if (process.env.NODE_ENV === 'production') {
+            return;
+        }
+
+        console.debug('[examen.consultar] inicio', {
+            etapa,
+            ...contexto,
+        });
+    }
+
+    private logEtapaFin(etapa: string, contexto: Record<string, unknown> = {}) {
+        if (process.env.NODE_ENV === 'production') {
+            return;
+        }
+
+        console.debug('[examen.consultar] fin', {
+            etapa,
+            ...contexto,
+        });
+    }
+
+    private logEtapaError(
+        etapa: string,
+        error: unknown,
+        contexto: Record<string, unknown> = {},
+    ) {
+        if (process.env.NODE_ENV === 'production') {
+            return;
+        }
+
+        const errorType = error instanceof Error ? error.name : typeof error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+
+        console.error('[examen.consultar] error', {
+            etapa,
+            errorType,
+            errorMessage,
+            stack: errorStack,
+            ...contexto,
+        });
+    }
+
+    private async ejecutarEtapa<T>(
+        etapa: string,
+        accion: () => Promise<T>,
+        contexto: Record<string, unknown> = {},
+    ): Promise<T> {
+        this.logEtapaInicio(etapa, contexto);
+
+        try {
+            const resultado = await accion();
+            const count = Array.isArray(resultado)
+                ? resultado.length
+                : typeof resultado === 'object' && resultado !== null
+                    ? Object.keys(resultado as object).length
+                    : undefined;
+
+            this.logEtapaFin(etapa, {
+                ...contexto,
+                count,
+            });
+
+            return resultado;
+        } catch (error) {
+            this.logEtapaError(etapa, error, contexto);
+            throw error;
+        }
+    }
+
     // La materia, el periodo y el paralelo deben ser del docente,
     // la materia debe estar asociada al periodo y el paralelo
     // debe corresponder a esa materia y a ese periodo.
@@ -1616,23 +1687,29 @@ export class ExamenService {
     // CONSULTAR EVALUACIONES (una o todas las del docente)
 
     private async consultar(docenteId: number, examenId?: number) {
-        const consulta = this.examenRepository
-            .createQueryBuilder('examen')
-            .leftJoinAndSelect('examen.materia', 'materia')
-            .leftJoinAndSelect('examen.semestre', 'semestre')
-            .leftJoinAndSelect('examen.paralelos', 'paraleloExamen')
-            .leftJoinAndSelect('paraleloExamen.paralelo', 'paralelo')
-            .where(
-                '(examen.docente_id = :docenteId OR materia.docente_id = :docenteId OR semestre.docente_id = :docenteId)',
-                { docenteId },
-            )
-            .orderBy('examen.examen_id', 'DESC');
+        const examenes = await this.ejecutarEtapa(
+            'consulta_principal',
+            async () => {
+                const consulta = this.examenRepository
+                    .createQueryBuilder('examen')
+                    .leftJoinAndSelect('examen.materia', 'materia')
+                    .leftJoinAndSelect('examen.semestre', 'semestre')
+                    .leftJoinAndSelect('examen.paralelos', 'paraleloExamen')
+                    .leftJoinAndSelect('paraleloExamen.paralelo', 'paralelo')
+                    .where(
+                        '(examen.docente_id = :docenteId OR materia.docente_id = :docenteId OR semestre.docente_id = :docenteId)',
+                        { docenteId },
+                    )
+                    .orderBy('examen.examen_id', 'DESC');
 
-        if (examenId !== undefined) {
-            consulta.andWhere('examen.examen_id = :examenId', { examenId });
-        }
+                if (examenId !== undefined) {
+                    consulta.andWhere('examen.examen_id = :examenId', { examenId });
+                }
 
-        const examenes = await consulta.getMany();
+                return consulta.getMany();
+            },
+            { docenteId, examenId },
+        );
 
         if (examenes.length === 0) {
             return [];
@@ -1641,50 +1718,65 @@ export class ExamenService {
         const ids = examenes.map((examen) => examen.examen_id);
 
         // Preguntas = filas de examen_pregunta de cada evaluación.
-        const filasPreguntas = await this.dataSource
-            .getRepository(ExamenPregunta)
-            .createQueryBuilder('ep')
-            .select('ep.examen_id', 'examen_id')
-            .addSelect('COUNT(*)', 'total')
-            .where('ep.examen_id IN (:...ids)', { ids })
-            .groupBy('ep.examen_id')
-            .getRawMany<{ examen_id: number; total: string }>();
+        const filasPreguntas = await this.ejecutarEtapa(
+            'preguntas',
+            async () =>
+                this.dataSource
+                    .getRepository(ExamenPregunta)
+                    .createQueryBuilder('ep')
+                    .select('ep.examen_id', 'examen_id')
+                    .addSelect('COUNT(*)', 'total')
+                    .where('ep.examen_id IN (:...ids)', { ids })
+                    .groupBy('ep.examen_id')
+                    .getRawMany<{ examen_id: number; total: string }>(),
+            { docenteId, examenId, countIds: ids.length },
+        );
 
         // Inscritos activos = estudiantes activos de todos los paralelos.
-        const filasInscritos = await this.inscripcionRepository
-            .createQueryBuilder('inscripcion')
-            .innerJoin(
-                ParaleloExamen,
-                'pe',
-                'pe.paralelo_id = inscripcion.paralelo_id',
-            )
-            .innerJoin(
-                Estudiante,
-                'estudiante',
-                'estudiante.estudiante_id = inscripcion.estudiante_id',
-            )
-            .select('pe.examen_id', 'examen_id')
-            .addSelect('COUNT(DISTINCT inscripcion.estudiante_id)', 'total')
-            .where('pe.examen_id IN (:...ids)', { ids })
-            .andWhere('estudiante.activo = true')
-            .groupBy('pe.examen_id')
-            .getRawMany<{ examen_id: number; total: string }>();
+        const filasInscritos = await this.ejecutarEtapa(
+            'inscripciones',
+            async () =>
+                this.inscripcionRepository
+                    .createQueryBuilder('inscripcion')
+                    .innerJoin(
+                        ParaleloExamen,
+                        'pe',
+                        'pe.paralelo_id = inscripcion.paralelo_id',
+                    )
+                    .innerJoin(
+                        Estudiante,
+                        'estudiante',
+                        'estudiante.estudiante_id = inscripcion.estudiante_id',
+                    )
+                    .select('pe.examen_id', 'examen_id')
+                    .addSelect('COUNT(DISTINCT inscripcion.estudiante_id)', 'total')
+                    .where('pe.examen_id IN (:...ids)', { ids })
+                    .andWhere('estudiante.activo = true')
+                    .groupBy('pe.examen_id')
+                    .getRawMany<{ examen_id: number; total: string }>(),
+            { docenteId, examenId, countIds: ids.length },
+        );
 
         // Estudiantes activos elegidos uno por uno.
-        const filasEspecificos = await this.dataSource
-            .getRepository(ExamenEstudiante)
-            .createQueryBuilder('ee')
-            .innerJoin(
-                Estudiante,
-                'estudiante',
-                'estudiante.estudiante_id = ee.estudiante_id',
-            )
-            .select('ee.examen_id', 'examen_id')
-            .addSelect('COUNT(*)', 'total')
-            .where('ee.examen_id IN (:...ids)', { ids })
-            .andWhere('estudiante.activo = true')
-            .groupBy('ee.examen_id')
-            .getRawMany<{ examen_id: number; total: string }>();
+        const filasEspecificos = await this.ejecutarEtapa(
+            'estudiantes',
+            async () =>
+                this.dataSource
+                    .getRepository(ExamenEstudiante)
+                    .createQueryBuilder('ee')
+                    .innerJoin(
+                        Estudiante,
+                        'estudiante',
+                        'estudiante.estudiante_id = ee.estudiante_id',
+                    )
+                    .select('ee.examen_id', 'examen_id')
+                    .addSelect('COUNT(*)', 'total')
+                    .where('ee.examen_id IN (:...ids)', { ids })
+                    .andWhere('estudiante.activo = true')
+                    .groupBy('ee.examen_id')
+                    .getRawMany<{ examen_id: number; total: string }>(),
+            { docenteId, examenId, countIds: ids.length },
+        );
 
         const preguntasPorExamen = new Map(
             filasPreguntas.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
@@ -1700,76 +1792,87 @@ export class ExamenService {
 
         // En modo aleatorio las preguntas aún no están elegidas:
         // se muestran las cantidades pedidas en los criterios.
-        const filasCriterios = await this.dataSource
-            .getRepository(ExamenTema)
-            .createQueryBuilder('et')
-            .select('et.examen_id', 'examen_id')
-            .addSelect('SUM(et.cantidad)', 'total')
-            .where('et.examen_id IN (:...ids)', { ids })
-            .groupBy('et.examen_id')
-            .getRawMany<{ examen_id: number; total: string }>();
+        const filasCriterios = await this.ejecutarEtapa(
+            'temas',
+            async () =>
+                this.dataSource
+                    .getRepository(ExamenTema)
+                    .createQueryBuilder('et')
+                    .select('et.examen_id', 'examen_id')
+                    .addSelect('SUM(et.cantidad)', 'total')
+                    .where('et.examen_id IN (:...ids)', { ids })
+                    .groupBy('et.examen_id')
+                    .getRawMany<{ examen_id: number; total: string }>(),
+            { docenteId, examenId, countIds: ids.length },
+        );
 
         const criteriosPorExamen = new Map(
             filasCriterios.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
         );
 
-        return examenes.map((examen) => {
-            const materia = examen.materia ?? null;
-            const semestre = examen.semestre ?? null;
-            const paralelos = (examen.paralelos ?? []).flatMap((item) => {
-                if (!item?.paralelo) {
-                    return [];
-                }
-
-                return [{
-                    paralelo_id: item.paralelo.paralelo_id,
-                    nombre_paralelo: item.paralelo.nombre_paralelo,
-                }];
-            });
-
-            return {
-                examen_id: examen.examen_id,
-                titulo: examen.titulo,
-                instrucciones: examen.instrucciones,
-                estado: examen.estado,
-                fecha: examen.disponible_desde,
-                modo_seleccion: examen.modo_seleccion,
-                orden_preguntas: examen.orden_preguntas,
-                duracion_min: examen.duracion_min,
-                // numeric llega como texto desde PostgreSQL; el contrato es numérico.
-                puntaje_total:
-                    examen.puntaje_total === null
-                        ? null
-                        : Number(examen.puntaje_total),
-                disponible_desde: examen.disponible_desde,
-                disponible_hasta: examen.disponible_hasta,
-                modo_entrega_nota: examen.modo_entrega_nota,
-                modo_asignacion: examen.modo_asignacion,
-                // NULL = las respuestas correctas aún no se publicaron.
-                resultados_publicados_en: examen.resultados_publicados_en,
-                materia: materia
-                    ? {
-                        materia_id: materia.materia_id,
-                        nombre: materia.nombre,
+        const resultado = await this.ejecutarEtapa(
+            'transformacion_final',
+            async () => examenes.map((examen) => {
+                const materia = examen.materia ?? null;
+                const semestre = examen.semestre ?? null;
+                const paralelos = (examen.paralelos ?? []).flatMap((item) => {
+                    if (!item?.paralelo) {
+                        return [];
                     }
-                    : null,
-                semestre: semestre
-                    ? {
-                        semestre_id: semestre.semestre_id,
-                        gestion: semestre.gestion,
-                    }
-                    : null,
-                paralelos,
-                total_preguntas:
-                    examen.modo_seleccion === 'aleatorio'
-                        ? (criteriosPorExamen.get(examen.examen_id) ?? 0)
-                        : (preguntasPorExamen.get(examen.examen_id) ?? 0),
-                total_inscritos:
-                    examen.modo_asignacion === 'estudiantes'
-                        ? (especificosPorExamen.get(examen.examen_id) ?? 0)
-                        : (inscritosPorExamen.get(examen.examen_id) ?? 0),
-            };
-        });
+
+                    return [{
+                        paralelo_id: item.paralelo.paralelo_id,
+                        nombre_paralelo: item.paralelo.nombre_paralelo,
+                    }];
+                });
+
+                return {
+                    examen_id: examen.examen_id,
+                    titulo: examen.titulo,
+                    instrucciones: examen.instrucciones,
+                    estado: examen.estado,
+                    fecha: examen.disponible_desde,
+                    modo_seleccion: examen.modo_seleccion,
+                    orden_preguntas: examen.orden_preguntas,
+                    duracion_min: examen.duracion_min,
+                    // numeric llega como texto desde PostgreSQL; el contrato es numérico.
+                    puntaje_total:
+                        examen.puntaje_total === null
+                            ? null
+                            : Number(examen.puntaje_total),
+                    disponible_desde: examen.disponible_desde,
+                    disponible_hasta: examen.disponible_hasta,
+                    modo_entrega_nota: examen.modo_entrega_nota,
+                    modo_asignacion: examen.modo_asignacion,
+                    // NULL = las respuestas correctas aún no se publicaron.
+                    resultados_publicados_en: examen.resultados_publicados_en,
+                    materia: materia
+                        ? {
+                            materia_id: materia.materia_id,
+                            nombre: materia.nombre,
+                        }
+                        : null,
+                    semestre: semestre
+                        ? {
+                            semestre_id: semestre.semestre_id,
+                            gestion: semestre.gestion,
+                        }
+                        : null,
+                    paralelos,
+                    total_preguntas:
+                        examen.modo_seleccion === 'aleatorio'
+                            ? (criteriosPorExamen.get(examen.examen_id) ?? 0)
+                            : (preguntasPorExamen.get(examen.examen_id) ?? 0),
+                    total_inscritos:
+                        examen.modo_asignacion === 'estudiantes'
+                            ? (especificosPorExamen.get(examen.examen_id) ?? 0)
+                            : (inscritosPorExamen.get(examen.examen_id) ?? 0),
+                };
+            }),
+            { docenteId, examenId, countExamenes: examenes.length },
+        );
+
+        return resultado;
     }
 
     async findAll(docenteId: number) {
