@@ -1,8 +1,4 @@
-import {
-    BadRequestException,
-    Injectable,
-    NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 
@@ -85,7 +81,7 @@ export class ExamenService {
 
         @InjectRepository(Tema)
         private readonly temaRepository: Repository<Tema>,
-    ) { }
+    ) {}
 
     private logEtapaInicio(etapa: string, contexto: Record<string, unknown> = {}) {
         if (process.env.NODE_ENV === 'production') {
@@ -176,9 +172,7 @@ export class ExamenService {
         });
 
         if (!materia) {
-            throw new BadRequestException(
-                'La materia no existe o no pertenece al docente.',
-            );
+            throw new BadRequestException('La materia no existe o no pertenece al docente.');
         }
 
         const semestre = await this.semestreRepository.findOne({
@@ -187,19 +181,13 @@ export class ExamenService {
         });
 
         if (!semestre) {
-            throw new BadRequestException(
-                'El periodo académico no existe o no pertenece al docente.',
-            );
+            throw new BadRequestException('El periodo académico no existe o no pertenece al docente.');
         }
 
-        const materiaAsociada = semestre.materias?.some(
-            (item) => item.materia_id === dto.materia_id,
-        );
+        const materiaAsociada = semestre.materias?.some((item) => item.materia_id === dto.materia_id);
 
         if (!materiaAsociada) {
-            throw new BadRequestException(
-                'La materia no está asociada al periodo académico seleccionado.',
-            );
+            throw new BadRequestException('La materia no está asociada al periodo académico seleccionado.');
         }
 
         const paralelo = await this.paraleloRepository.findOne({
@@ -207,18 +195,11 @@ export class ExamenService {
         });
 
         if (!paralelo) {
-            throw new BadRequestException(
-                'El paralelo no existe o no pertenece al docente.',
-            );
+            throw new BadRequestException('El paralelo no existe o no pertenece al docente.');
         }
 
-        if (
-            paralelo.materia_id !== dto.materia_id ||
-            paralelo.semestre_id !== dto.semestre_id
-        ) {
-            throw new BadRequestException(
-                'El paralelo no corresponde a la materia y al periodo seleccionados.',
-            );
+        if (paralelo.materia_id !== dto.materia_id || paralelo.semestre_id !== dto.semestre_id) {
+            throw new BadRequestException('El paralelo no corresponde a la materia y al periodo seleccionados.');
         }
     }
 
@@ -228,9 +209,7 @@ export class ExamenService {
         const titulo = dto.titulo.trim();
 
         if (!titulo) {
-            throw new BadRequestException(
-                'El nombre de la evaluación es obligatorio.',
-            );
+            throw new BadRequestException('El nombre de la evaluación es obligatorio.');
         }
 
         await this.validarRelaciones(dto, docenteId);
@@ -264,148 +243,129 @@ export class ExamenService {
     // EDITAR LA INFORMACIÓN GENERAL (paso 1)
 
     async update(examenId: number, dto: UpdateExamenDto, docenteId: number) {
-        const criteriosReiniciados = await this.dataSource.transaction(
-            async (manager) => {
-                // Se bloquea la fila del examen para serializar la edición con
-                // `guardarAsignacion` y `publicar`, y se revalida el estado
-                // dentro de la transacción.
-                const examenBloqueado = await manager
-                    .getRepository(Examen)
-                    .createQueryBuilder('examen')
-                    .where('examen.examen_id = :examenId', { examenId })
-                    .andWhere('examen.docente_id = :docenteId', { docenteId })
-                    .setLock('pessimistic_write')
-                    .getOne();
+        const resultadoReinicio = await this.dataSource.transaction(async (manager) => {
+            // Se bloquea la fila del examen para serializar la edición con
+            // `guardarAsignacion` y `publicar`, y se revalida el estado
+            // dentro de la transacción.
+            const examenBloqueado = await manager
+                .getRepository(Examen)
+                .createQueryBuilder('examen')
+                .where('examen.examen_id = :examenId', { examenId })
+                .andWhere('examen.docente_id = :docenteId', { docenteId })
+                .setLock('pessimistic_write')
+                .getOne();
 
-                if (!examenBloqueado) {
-                    throw new NotFoundException(
-                        'La evaluación no existe.',
-                    );
-                }
+            if (!examenBloqueado) {
+                throw new NotFoundException('La evaluación no existe.');
+            }
 
-                if (examenBloqueado.estado !== 'borrador') {
-                    throw new BadRequestException(
-                        'Solo se puede editar la información de una evaluación en borrador.',
-                    );
-                }
+            if (examenBloqueado.estado !== 'borrador') {
+                throw new BadRequestException('Solo se puede editar la información de una evaluación en borrador.');
+            }
 
-                // Las relaciones se cargan sin join de bloqueo para evitar el
-                // error de PostgreSQL al bloquear el lado nullable de un outer
-                // join.
-                const examen = await manager
-                    .getRepository(Examen)
-                    .findOne({
-                        where: { examen_id: examenId },
-                        relations: { paralelos: true },
-                    });
+            // Las relaciones se cargan sin join de bloqueo para evitar el
+            // error de PostgreSQL al bloquear el lado nullable de un outer
+            // join.
+            const examen = await manager.getRepository(Examen).findOne({
+                where: { examen_id: examenId },
+                relations: { paralelos: true },
+            });
 
-                if (!examen) {
-                    throw new NotFoundException('La evaluación no existe.');
-                }
+            if (!examen) {
+                throw new NotFoundException('La evaluación no existe.');
+            }
 
-                const titulo =
-                    dto.titulo !== undefined
-                        ? dto.titulo.trim()
-                        : (examen.titulo ?? '');
+            const titulo = dto.titulo !== undefined ? dto.titulo.trim() : (examen.titulo ?? '');
 
-                if (!titulo) {
-                    throw new BadRequestException(
-                        'El nombre de la evaluación es obligatorio.',
-                    );
-                }
+            if (!titulo) {
+                throw new BadRequestException('El nombre de la evaluación es obligatorio.');
+            }
 
-                const instrucciones =
-                    dto.instrucciones !== undefined
-                        ? dto.instrucciones.trim() || null
-                        : examen.instrucciones;
+            const instrucciones =
+                dto.instrucciones !== undefined ? dto.instrucciones.trim() || null : examen.instrucciones;
 
-                // Lo que no se envía se conserva.
-                const materiaId = dto.materia_id ?? examen.materia_id;
-                const semestreId = dto.semestre_id ?? examen.semestre_id;
-                const paralelosActuales = (examen.paralelos ?? []).map(
-                    (item) => item.paralelo_id,
-                );
-                const paraleloId = dto.paralelo_id ?? paralelosActuales[0];
+            // Lo que no se envía se conserva.
+            const materiaId = dto.materia_id ?? examen.materia_id;
+            const semestreId = dto.semestre_id ?? examen.semestre_id;
+            const paralelosActuales = (examen.paralelos ?? []).map((item) => item.paralelo_id);
+            const paraleloId = dto.paralelo_id ?? paralelosActuales[0];
 
-                if (materiaId === null || paraleloId === undefined) {
-                    throw new BadRequestException(
-                        'La evaluación no tiene materia o paralelo asociado.',
-                    );
-                }
+            if (materiaId === null || paraleloId === undefined) {
+                throw new BadRequestException('La evaluación no tiene materia o paralelo asociado.');
+            }
 
-                // Se valida el conjunto final: materia, periodo y paralelo coherentes.
-                await this.validarRelaciones(
-                    {
-                        materia_id: materiaId,
-                        semestre_id: semestreId,
-                        paralelo_id: paraleloId,
-                    },
-                    docenteId,
-                );
+            // Se valida el conjunto final: materia, periodo y paralelo coherentes.
+            await this.validarRelaciones(
+                {
+                    materia_id: materiaId,
+                    semestre_id: semestreId,
+                    paralelo_id: paraleloId,
+                },
+                docenteId,
+            );
 
-                const cambiaMateria = materiaId !== examen.materia_id;
-                const cambiaContexto =
-                    cambiaMateria || semestreId !== examen.semestre_id;
-                const cambiaParalelo =
-                    !paralelosActuales.includes(paraleloId);
+            const cambiaMateria = materiaId !== examen.materia_id;
+            const cambiaContexto = cambiaMateria || semestreId !== examen.semestre_id;
+            const cambiaParalelo = !paralelosActuales.includes(paraleloId);
 
-                await manager.update(
-                    Examen,
-                    { examen_id: examenId },
-                    {
-                        titulo,
-                        instrucciones,
-                        materia_id: materiaId,
-                        semestre_id: semestreId,
-                    },
-                );
+            await manager.update(
+                Examen,
+                { examen_id: examenId },
+                {
+                    titulo,
+                    instrucciones,
+                    materia_id: materiaId,
+                    semestre_id: semestreId,
+                },
+            );
 
-                // Si no cambia el contexto ni el paralelo, no se toca la
-                // asignación (paso 4). Si cambia, vuelve al paralelo elegido.
-                if (cambiaContexto || cambiaParalelo) {
-                    await manager.delete(ParaleloExamen, {
-                        examen_id: examenId,
-                    });
-                    await manager.insert(ParaleloExamen, {
-                        paralelo_id: paraleloId,
-                        examen_id: examenId,
-                    });
-                    await manager.delete(ExamenEstudiante, {
-                        examen_id: examenId,
-                    });
-                    await manager.update(
-                        Examen,
-                        { examen_id: examenId },
-                        { modo_asignacion: 'paralelos' },
-                    );
-                }
+            // Si no cambia el contexto ni el paralelo, no se toca la
+            // asignación (paso 4). Si cambia, vuelve al paralelo elegido.
+            if (cambiaContexto || cambiaParalelo) {
+                await manager.delete(ParaleloExamen, {
+                    examen_id: examenId,
+                });
+                await manager.insert(ParaleloExamen, {
+                    paralelo_id: paraleloId,
+                    examen_id: examenId,
+                });
+                await manager.delete(ExamenEstudiante, {
+                    examen_id: examenId,
+                });
+                await manager.update(Examen, { examen_id: examenId }, { modo_asignacion: 'paralelos' });
+            }
 
-                // Los criterios por tema pertenecen a la materia anterior.
-                if (cambiaMateria) {
-                    const borrados = await manager.delete(ExamenTema, {
-                        examen_id: examenId,
-                    });
+            // Los criterios por tema pertenecen a la materia anterior.
+            if (cambiaMateria) {
+                const preguntasBorradas = await manager.delete(ExamenPregunta, {
+                    examen_id: examenId,
+                });
+                const criteriosBorrados = await manager.delete(ExamenTema, {
+                    examen_id: examenId,
+                });
 
-                    return (borrados.affected ?? 0) > 0;
-                }
+                return {
+                    criteriosReiniciados: (criteriosBorrados.affected ?? 0) > 0,
+                    preguntasReiniciadas: (preguntasBorradas.affected ?? 0) > 0,
+                };
+            }
 
-                return false;
-            },
-        );
+            return {
+                criteriosReiniciados: false,
+                preguntasReiniciadas: false,
+            };
+        });
 
         return {
             ...(await this.findOne(examenId, docenteId)),
-            criterios_reiniciados: criteriosReiniciados,
+            criterios_reiniciados: resultadoReinicio.criteriosReiniciados,
+            preguntas_reiniciadas: resultadoReinicio.preguntasReiniciadas,
         };
     }
 
     // GUARDAR LA CONFIGURACIÓN (paso 3)
 
-    async guardarConfiguracion(
-        examenId: number,
-        dto: GuardarConfiguracionDto,
-        docenteId: number,
-    ) {
+    async guardarConfiguracion(examenId: number, dto: GuardarConfiguracionDto, docenteId: number) {
         const examen = await this.examenRepository.findOne({
             where: { examen_id: examenId, docente_id: docenteId },
         });
@@ -415,24 +375,18 @@ export class ExamenService {
         }
 
         if (examen.estado !== 'borrador') {
-            throw new BadRequestException(
-                'Solo se puede configurar una evaluación en borrador.',
-            );
+            throw new BadRequestException('Solo se puede configurar una evaluación en borrador.');
         }
 
         const desde = new Date(dto.disponible_desde);
         const hasta = new Date(dto.disponible_hasta);
 
         if (hasta.getTime() <= desde.getTime()) {
-            throw new BadRequestException(
-                'La fecha de finalización debe ser posterior a la de inicio.',
-            );
+            throw new BadRequestException('La fecha de finalización debe ser posterior a la de inicio.');
         }
 
         if (hasta.getTime() <= Date.now()) {
-            throw new BadRequestException(
-                'La fecha de finalización debe ser futura.',
-            );
+            throw new BadRequestException('La fecha de finalización debe ser futura.');
         }
 
         const ventanaMin = (hasta.getTime() - desde.getTime()) / 60000;
@@ -480,9 +434,7 @@ export class ExamenService {
         const materiaId = examen.materia_id;
 
         if (materiaId === null) {
-            throw new BadRequestException(
-                'La evaluación no tiene una materia asociada.',
-            );
+            throw new BadRequestException('La evaluación no tiene una materia asociada.');
         }
 
         // Solo los paralelos del docente de la misma materia y periodo.
@@ -499,33 +451,26 @@ export class ExamenService {
             paralelos.length === 0
                 ? []
                 : await this.inscripcionRepository
-                    .createQueryBuilder('inscripcion')
-                    .innerJoinAndSelect('inscripcion.estudiante', 'estudiante')
-                    .where('inscripcion.paralelo_id IN (:...paraleloIds)', {
-                        paraleloIds: paralelos.map(
-                            (item) => item.paralelo_id,
-                        ),
-                    })
-                    .andWhere('estudiante.activo = :activo', { activo: true })
-                    .getMany();
+                      .createQueryBuilder('inscripcion')
+                      .innerJoinAndSelect('inscripcion.estudiante', 'estudiante')
+                      .where('inscripcion.paralelo_id IN (:...paraleloIds)', {
+                          paraleloIds: paralelos.map((item) => item.paralelo_id),
+                      })
+                      .andWhere('estudiante.activo = :activo', { activo: true })
+                      .getMany();
 
-        const paralelosAsignados = new Set(
-            (examen.paralelos ?? []).map((item) => item.paralelo_id),
-        );
-        const estudiantesAsignados = new Set(
-            (examen.estudiantes ?? []).map((item) => item.estudiante_id),
-        );
+        const paralelosAsignados = new Set((examen.paralelos ?? []).map((item) => item.paralelo_id));
+        const estudiantesAsignados = new Set((examen.estudiantes ?? []).map((item) => item.estudiante_id));
 
         return {
             examen_id: examen.examen_id,
             estado: examen.estado,
-            modo_asignacion:
-                examen.modo_asignacion === 'estudiantes' ? 'estudiantes' : 'paralelos',
+            modo_asignacion: examen.modo_asignacion === 'estudiantes' ? 'estudiantes' : 'paralelos',
             materia: examen.materia
                 ? {
-                    materia_id: examen.materia.materia_id,
-                    nombre: examen.materia.nombre,
-                }
+                      materia_id: examen.materia.materia_id,
+                      nombre: examen.materia.nombre,
+                  }
                 : null,
             semestre: {
                 semestre_id: examen.semestre.semestre_id,
@@ -538,9 +483,7 @@ export class ExamenService {
                         estudiante_id: item.estudiante.estudiante_id,
                         nombre_completo: item.estudiante.nombre_completo,
                         correo_institucional: item.estudiante.correo_institucional,
-                        seleccionado: estudiantesAsignados.has(
-                            item.estudiante.estudiante_id,
-                        ),
+                        seleccionado: estudiantesAsignados.has(item.estudiante.estudiante_id),
                     }))
                     .sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo));
 
@@ -557,18 +500,9 @@ export class ExamenService {
 
     // GUARDAR LA ASIGNACIÓN (paso 4)
 
-    async guardarAsignacion(
-        examenId: number,
-        dto: GuardarAsignacionDto,
-        docenteId: number,
-    ) {
-        if (
-            dto.modo_asignacion !== 'paralelos' &&
-            dto.modo_asignacion !== 'estudiantes'
-        ) {
-            throw new BadRequestException(
-                'El modo de asignación debe ser paralelos o estudiantes.',
-            );
+    async guardarAsignacion(examenId: number, dto: GuardarAsignacionDto, docenteId: number) {
+        if (dto.modo_asignacion !== 'paralelos' && dto.modo_asignacion !== 'estudiantes') {
+            throw new BadRequestException('El modo de asignación debe ser paralelos o estudiantes.');
         }
 
         // La validación y la escritura comparten transacción y bloquean la fila
@@ -587,17 +521,13 @@ export class ExamenService {
             }
 
             if (examen.estado !== 'borrador') {
-                throw new BadRequestException(
-                    'Solo se puede cambiar la asignación de una evaluación en borrador.',
-                );
+                throw new BadRequestException('Solo se puede cambiar la asignación de una evaluación en borrador.');
             }
 
             const materiaId = examen.materia_id;
 
             if (materiaId === null) {
-                throw new BadRequestException(
-                    'La evaluación no tiene una materia asociada.',
-                );
+                throw new BadRequestException('La evaluación no tiene una materia asociada.');
             }
 
             // Paralelos del docente de la misma materia y periodo de la evaluación.
@@ -614,9 +544,7 @@ export class ExamenService {
                 const paraleloIds = [...new Set(dto.paralelo_ids ?? [])];
 
                 if (paraleloIds.length === 0) {
-                    throw new BadRequestException(
-                        'Selecciona al menos un paralelo.',
-                    );
+                    throw new BadRequestException('Selecciona al menos un paralelo.');
                 }
 
                 if (!paraleloIds.every((id) => idsValidos.includes(id))) {
@@ -644,11 +572,7 @@ export class ExamenService {
                     );
                 }
 
-                await manager.update(
-                    Examen,
-                    { examen_id: examenId },
-                    { modo_asignacion: 'paralelos' },
-                );
+                await manager.update(Examen, { examen_id: examenId }, { modo_asignacion: 'paralelos' });
 
                 await manager.delete(ParaleloExamen, { examen_id: examenId });
                 await manager.insert(
@@ -670,38 +594,33 @@ export class ExamenService {
             const estudianteIds = [...new Set(dto.estudiante_ids ?? [])];
 
             if (estudianteIds.length === 0) {
-                throw new BadRequestException(
-                    'Selecciona al menos un estudiante.',
-                );
+                throw new BadRequestException('Selecciona al menos un estudiante.');
             }
 
             const inscripciones =
                 idsValidos.length === 0
                     ? []
                     : await manager
-                        .getRepository(Inscripcion)
-                        .createQueryBuilder('inscripcion')
-                        .innerJoin('inscripcion.estudiante', 'estudiante')
-                        .select('inscripcion.estudiante_id', 'estudiante_id')
-                        .addSelect('inscripcion.paralelo_id', 'paralelo_id')
-                        .where('inscripcion.paralelo_id IN (:...idsValidos)', {
-                            idsValidos,
-                        })
-                        .andWhere(
-                            'inscripcion.estudiante_id IN (:...estudianteIds)',
-                            { estudianteIds },
-                        )
-                        .andWhere('estudiante.activo = :activo', {
-                            activo: true,
-                        })
-                        .getRawMany<{
-                            estudiante_id: number;
-                            paralelo_id: number;
-                        }>();
+                          .getRepository(Inscripcion)
+                          .createQueryBuilder('inscripcion')
+                          .innerJoin('inscripcion.estudiante', 'estudiante')
+                          .select('inscripcion.estudiante_id', 'estudiante_id')
+                          .addSelect('inscripcion.paralelo_id', 'paralelo_id')
+                          .where('inscripcion.paralelo_id IN (:...idsValidos)', {
+                              idsValidos,
+                          })
+                          .andWhere('inscripcion.estudiante_id IN (:...estudianteIds)', {
+                              estudianteIds,
+                          })
+                          .andWhere('estudiante.activo = :activo', {
+                              activo: true,
+                          })
+                          .getRawMany<{
+                              estudiante_id: number;
+                              paralelo_id: number;
+                          }>();
 
-            const encontrados = new Set(
-                inscripciones.map((item) => Number(item.estudiante_id)),
-            );
+            const encontrados = new Set(inscripciones.map((item) => Number(item.estudiante_id)));
 
             if (!estudianteIds.every((id) => encontrados.has(id))) {
                 throw new BadRequestException(
@@ -712,17 +631,9 @@ export class ExamenService {
             // La evaluación queda vinculada a los paralelos de esos estudiantes
             // como contexto. En este modo el acceso se decide solo por
             // examen_estudiante.
-            const paraleloIds = [
-                ...new Set(
-                    inscripciones.map((item) => Number(item.paralelo_id)),
-                ),
-            ];
+            const paraleloIds = [...new Set(inscripciones.map((item) => Number(item.paralelo_id)))];
 
-            await manager.update(
-                Examen,
-                { examen_id: examenId },
-                { modo_asignacion: 'estudiantes' },
-            );
+            await manager.update(Examen, { examen_id: examenId }, { modo_asignacion: 'estudiantes' });
 
             await manager.delete(ParaleloExamen, { examen_id: examenId });
             await manager.insert(
@@ -1057,9 +968,7 @@ export class ExamenService {
             }
 
             if (examenBloqueado.estado !== 'borrador') {
-                throw new BadRequestException(
-                    'Solo se puede publicar una evaluación en borrador.',
-                );
+                throw new BadRequestException('Solo se puede publicar una evaluación en borrador.');
             }
 
             // Las relaciones se cargan dentro de la misma transacción. No se
@@ -1074,10 +983,7 @@ export class ExamenService {
                 throw new NotFoundException('La evaluación no existe.');
             }
 
-            const problemas = await this.problemasParaPublicar(
-                examen,
-                manager,
-            );
+            const problemas = await this.problemasParaPublicar(examen, manager);
 
             if (problemas.length > 0) {
                 throw new BadRequestException({
@@ -1110,9 +1016,7 @@ export class ExamenService {
             );
 
             if (resultado.affected === 0) {
-                throw new BadRequestException(
-                    'La evaluación ya no está en borrador.',
-                );
+                throw new BadRequestException('La evaluación ya no está en borrador.');
             }
 
             return { examen_id: examenId, estado: 'publicado' };
@@ -1152,9 +1056,7 @@ export class ExamenService {
             return [];
         }
 
-        const paraleloIds = (examen.paralelos ?? []).map(
-            (item) => item.paralelo_id,
-        );
+        const paraleloIds = (examen.paralelos ?? []).map((item) => item.paralelo_id);
 
         if (paraleloIds.length === 0) return [];
 
@@ -1170,10 +1072,7 @@ export class ExamenService {
             .getMany();
 
         // Un estudiante puede estar en más de un paralelo de la evaluación.
-        const unicos = new Map<
-            number,
-            { estudiante_id: number; nombre_completo: string }
-        >();
+        const unicos = new Map<number, { estudiante_id: number; nombre_completo: string }>();
 
         for (const fila of filas) {
             unicos.set(fila.estudiante.estudiante_id, {
@@ -1571,9 +1470,7 @@ export class ExamenService {
 
         // Paso 2: preguntas.
         if (examen.modo_seleccion === 'manual') {
-            const total = await manager
-                .getRepository(ExamenPregunta)
-                .count({ where: { examen_id: examen.examen_id } });
+            const total = await manager.getRepository(ExamenPregunta).count({ where: { examen_id: examen.examen_id } });
 
             if (total === 0) {
                 problemas.push({
@@ -1581,11 +1478,33 @@ export class ExamenService {
                     mensaje: 'Agrega al menos una pregunta a la evaluación.',
                 });
             } else {
+                const validas = await manager
+                    .getRepository(ExamenPregunta)
+                    .createQueryBuilder('examenPregunta')
+                    .innerJoin('examenPregunta.pregunta', 'pregunta')
+                    .innerJoin('pregunta.tema', 'tema')
+                    .innerJoin('tema.materia', 'materia')
+                    .where('examenPregunta.examen_id = :examenId', {
+                        examenId: examen.examen_id,
+                    })
+                    .andWhere('pregunta.activo = :activo', { activo: true })
+                    .andWhere('materia.materia_id = :materiaId', {
+                        materiaId: examen.materia_id,
+                    })
+                    .andWhere('materia.docente_id = :docenteId', {
+                        docenteId: examen.docente_id,
+                    })
+                    .getCount();
+
+                if (validas !== total) {
+                    problemas.push({
+                        paso: 2,
+                        mensaje:
+                            'Todas las preguntas deben estar activas y pertenecer al docente y a la materia actuales de la evaluación.',
+                    });
+                }
                 problemas.push(
-                    ...(await this.problemasDePuntaje(
-                        examen,
-                        manager,
-                    )),
+                    ...(await this.problemasDePuntaje(examen, manager)),
                 );
             }
         } else if (examen.modo_seleccion === 'aleatorio') {
@@ -1625,11 +1544,7 @@ export class ExamenService {
             });
         }
 
-        if (
-            examen.duracion_min === null ||
-            examen.duracion_min < 5 ||
-            examen.duracion_min > 720
-        ) {
+        if (examen.duracion_min === null || examen.duracion_min < 5 || examen.duracion_min > 720) {
             problemas.push({
                 paso: 3,
                 mensaje: 'Define una duración entre 5 minutos y 12 horas.',
@@ -1648,22 +1563,17 @@ export class ExamenService {
             if (hasta <= desde) {
                 problemas.push({
                     paso: 3,
-                    mensaje:
-                        'La fecha de finalización debe ser posterior a la de inicio.',
+                    mensaje: 'La fecha de finalización debe ser posterior a la de inicio.',
                 });
             } else if (hasta <= Date.now()) {
                 problemas.push({
                     paso: 3,
                     mensaje: 'La fecha de finalización debe ser futura.',
                 });
-            } else if (
-                examen.duracion_min !== null &&
-                (hasta - desde) / 60000 < examen.duracion_min
-            ) {
+            } else if (examen.duracion_min !== null && (hasta - desde) / 60000 < examen.duracion_min) {
                 problemas.push({
                     paso: 3,
-                    mensaje:
-                        'La ventana de disponibilidad no puede ser menor que la duración de la evaluación.',
+                    mensaje: 'La ventana de disponibilidad no puede ser menor que la duración de la evaluación.',
                 });
             }
         }
@@ -1778,13 +1688,9 @@ export class ExamenService {
             { docenteId, examenId, countIds: ids.length },
         );
 
-        const preguntasPorExamen = new Map(
-            filasPreguntas.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
-        );
+        const preguntasPorExamen = new Map(filasPreguntas.map((fila) => [Number(fila.examen_id), Number(fila.total)]));
 
-        const inscritosPorExamen = new Map(
-            filasInscritos.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
-        );
+        const inscritosPorExamen = new Map(filasInscritos.map((fila) => [Number(fila.examen_id), Number(fila.total)]));
 
         const especificosPorExamen = new Map(
             filasEspecificos.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
@@ -1806,9 +1712,7 @@ export class ExamenService {
             { docenteId, examenId, countIds: ids.length },
         );
 
-        const criteriosPorExamen = new Map(
-            filasCriterios.map((fila) => [Number(fila.examen_id), Number(fila.total)]),
-        );
+        const criteriosPorExamen = new Map(filasCriterios.map((fila) => [Number(fila.examen_id), Number(fila.total)]));
 
         const resultado = await this.ejecutarEtapa(
             'transformacion_final',
@@ -1871,7 +1775,7 @@ export class ExamenService {
             }),
             { docenteId, examenId, countExamenes: examenes.length },
         );
-
+        return resultado;
         return resultado;
     }
 
@@ -1999,9 +1903,7 @@ export class ExamenService {
             .groupBy('ep.pregunta_id')
             .getRawMany<{ pregunta_id: number; total: string }>();
 
-        const usosPorPregunta = new Map(
-            filasUsos.map((fila) => [Number(fila.pregunta_id), Number(fila.total)]),
-        );
+        const usosPorPregunta = new Map(filasUsos.map((fila) => [Number(fila.pregunta_id), Number(fila.total)]));
 
         const porId = new Map(
             filas.map((fila) => [
@@ -2043,11 +1945,7 @@ export class ExamenService {
 
     // BANCO DE PREGUNTAS PARA ARMAR LA EVALUACIÓN
 
-    async getBanco(
-        examenId: number,
-        docenteId: number,
-        materiaIdSolicitada?: number,
-    ) {
+    async getBanco(examenId: number, docenteId: number, materiaIdSolicitada?: number) {
         const examen = await this.examenRepository.findOne({
             where: { examen_id: examenId, docente_id: docenteId },
         });
@@ -2056,12 +1954,14 @@ export class ExamenService {
             throw new NotFoundException('La evaluación no existe.');
         }
 
-        const materiaId = materiaIdSolicitada ?? examen.materia_id;
+        if (materiaIdSolicitada !== undefined && materiaIdSolicitada !== examen.materia_id) {
+            throw new BadRequestException('El banco debe corresponder a la materia de la evaluación.');
+        }
+
+        const materiaId = examen.materia_id;
 
         if (materiaId === null || materiaId === undefined) {
-            throw new BadRequestException(
-                'La evaluación no tiene una materia asociada.',
-            );
+            throw new BadRequestException('La evaluación no tiene una materia asociada.');
         }
 
         const materia = await this.materiaRepository.findOne({
@@ -2069,9 +1969,7 @@ export class ExamenService {
         });
 
         if (!materia) {
-            throw new BadRequestException(
-                'La materia no existe o no pertenece al docente.',
-            );
+            throw new BadRequestException('La materia no existe o no pertenece al docente.');
         }
 
         // Todas las preguntas activas del docente (de todas sus materias).
@@ -2122,22 +2020,20 @@ export class ExamenService {
             idsPreguntas.length === 0
                 ? []
                 : await this.dataSource
-                    .getRepository(ExamenPregunta)
-                    .createQueryBuilder('ep')
-                    .select('ep.pregunta_id', 'pregunta_id')
-                    .addSelect('COUNT(*)', 'total')
-                    .where('ep.pregunta_id IN (:...ids)', { ids: idsPreguntas })
-                    .andWhere('ep.examen_id <> :examenId', { examenId })
-                    .groupBy('ep.pregunta_id')
-                    .getRawMany<{ pregunta_id: number; total: string }>();
+                      .getRepository(ExamenPregunta)
+                      .createQueryBuilder('ep')
+                      .select('ep.pregunta_id', 'pregunta_id')
+                      .addSelect('COUNT(*)', 'total')
+                      .where('ep.pregunta_id IN (:...ids)', {
+                          ids: idsPreguntas,
+                      })
+                      .andWhere('ep.examen_id <> :examenId', { examenId })
+                      .groupBy('ep.pregunta_id')
+                      .getRawMany<{ pregunta_id: number; total: string }>();
 
-        const usosPorPregunta = new Map(
-            filasUsos.map((fila) => [Number(fila.pregunta_id), Number(fila.total)]),
-        );
+        const usosPorPregunta = new Map(filasUsos.map((fila) => [Number(fila.pregunta_id), Number(fila.total)]));
 
-        const preguntasMateria = filas.filter(
-            (fila) => Number(fila.materia_id) === materiaId,
-        );
+        const preguntasMateria = filas.filter((fila) => Number(fila.materia_id) === materiaId);
 
         const temas = await this.temaRepository.find({
             where: { materia_id: materiaId },
@@ -2167,9 +2063,7 @@ export class ExamenService {
             temas: temas.map((tema) => ({
                 tema_id: tema.tema_id,
                 nombre_tema: tema.nombre_tema,
-                disponibles: preguntasMateria.filter(
-                    (fila) => Number(fila.tema_id) === tema.tema_id,
-                ).length,
+                disponibles: preguntasMateria.filter((fila) => Number(fila.tema_id) === tema.tema_id).length,
             })),
         };
     }
@@ -2209,8 +2103,20 @@ export class ExamenService {
                 );
             }
 
+            if (examen.materia_id === null) {
+                throw new BadRequestException(
+                    'La evaluación no tiene una materia asociada.',
+                );
+            }
+
             if (dto.modo_seleccion === 'manual') {
                 const ids = dto.pregunta_ids ?? [];
+                if (ids.length === 0) {
+                    throw new BadRequestException(
+                        'Selecciona al menos una pregunta.',
+                    );
+                }
+
                 const puntajesSolicitados = new Map(
                     (dto.puntajes ?? []).map((fila) => [
                         fila.pregunta_id,
@@ -2227,7 +2133,12 @@ export class ExamenService {
                     );
                 }
 
-                await this.validarPreguntasManual(ids, docenteId, manager);
+                await this.validarPreguntasManual(
+                    ids,
+                    docenteId,
+                    examen.materia_id,
+                    manager,
+                );
                 const puntajesBanco = await this.obtenerPuntajesBanco(
                     ids,
                     manager,
@@ -2281,6 +2192,11 @@ export class ExamenService {
             }
 
             const criterios = dto.criterios ?? [];
+            if (criterios.length === 0) {
+                throw new BadRequestException(
+                    'Selecciona al menos un criterio de tema.',
+                );
+            }
 
             await this.validarCriterios(criterios, examen, manager);
             await manager.delete(ExamenPregunta, { examen_id: examenId });
@@ -2484,7 +2400,8 @@ export class ExamenService {
     private async validarPreguntasManual(
         ids: number[],
         docenteId: number,
-        manager: EntityManager = this.dataSource.manager,
+        materiaId: number,
+        manager: EntityManager,
     ) {
         if (ids.length === 0) return;
 
@@ -2496,11 +2413,12 @@ export class ExamenService {
             .where('pregunta.pregunta_id IN (:...ids)', { ids })
             .andWhere('pregunta.activo = true')
             .andWhere('materia.docente_id = :docenteId', { docenteId })
+            .andWhere('materia.materia_id = :materiaId', { materiaId })
             .getCount();
 
         if (validas !== ids.length) {
             throw new BadRequestException(
-                'Alguna pregunta no existe, está inactiva o no pertenece al docente.',
+                'Alguna pregunta no existe, está inactiva o no pertenece a la materia de la evaluación.',
             );
         }
     }
@@ -2512,20 +2430,14 @@ export class ExamenService {
         examen: Examen,
         manager: EntityManager = this.dataSource.manager,
     ) {
-        if (criterios.length === 0) return;
-
         if (examen.materia_id === null) {
-            throw new BadRequestException(
-                'La evaluación no tiene una materia asociada.',
-            );
+            throw new BadRequestException('La evaluación no tiene una materia asociada.');
         }
 
         const idsTemas = criterios.map((criterio) => criterio.tema_id);
 
         if (new Set(idsTemas).size !== idsTemas.length) {
-            throw new BadRequestException(
-                'No repitas el mismo tema en los criterios.',
-            );
+            throw new BadRequestException('No repitas el mismo tema en los criterios.');
         }
 
         const temas = await manager.getRepository(Tema).find({
@@ -2533,9 +2445,7 @@ export class ExamenService {
         });
 
         if (temas.length !== idsTemas.length) {
-            throw new BadRequestException(
-                'Algún tema no pertenece a la materia de la evaluación.',
-            );
+            throw new BadRequestException('Algún tema no pertenece a la materia de la evaluación.');
         }
 
         for (const criterio of criterios) {
@@ -2556,9 +2466,7 @@ export class ExamenService {
             .groupBy('pregunta.tema_id')
             .getRawMany<{ tema_id: number; total: string }>();
 
-        const disponibles = new Map(
-            filas.map((fila) => [Number(fila.tema_id), Number(fila.total)]),
-        );
+        const disponibles = new Map(filas.map((fila) => [Number(fila.tema_id), Number(fila.total)]));
 
         for (const criterio of criterios) {
             const hay = disponibles.get(criterio.tema_id) ?? 0;
