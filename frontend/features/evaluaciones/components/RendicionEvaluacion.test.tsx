@@ -310,7 +310,7 @@ describe('RendicionEvaluacion', () => {
         expect(segunda.checked).toBe(true);
     });
 
-    it('al cambiar de modelo guarda solo sus fórmulas y valores nuevos', () => {
+    it('genera campos según el modelo y al cambiar guarda solo fórmulas y valores nuevos', () => {
         const guardarProcedimiento = vi.fn().mockResolvedValue({});
         mockUsePreguntasRendicion.mockReturnValue(
             crearEstado({
@@ -330,10 +330,12 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '3' } },
         );
 
         fireEvent.change(selector, { target: { value: '4' } });
@@ -347,11 +349,14 @@ describe('RendicionEvaluacion', () => {
                 name: 'Seleccionar fórmula 201',
             }),
         );
-        fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
+        expect(
+            screen.queryByRole('spinbutton', {
+                name: 'Valor de Y (inciso a)',
             }),
-            { target: { value: '{"x": 8}' } },
+        ).toBeNull();
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '8' } },
         );
         fireEvent.click(
             screen.getByRole('button', { name: 'Guardar procedimiento' }),
@@ -364,7 +369,93 @@ describe('RendicionEvaluacion', () => {
         });
     });
 
-    it('acepta los valores de variables como un objeto JSON', () => {
+    it('conserva los borradores independientes al cambiar de modelo A → B → A', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        const selector = screen.getByRole('combobox', {
+            name: 'Modelo del inciso a',
+        });
+        fireEvent.change(selector, { target: { value: '3' } });
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '12' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '24' } },
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Resultado final del inciso a',
+            }),
+            { target: { value: '36' } },
+        );
+
+        fireEvent.change(selector, { target: { value: '4' } });
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 201',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '7' } },
+        );
+
+        fireEvent.change(selector, { target: { value: '3' } });
+        expect(
+            (
+                screen.getByRole('spinbutton', {
+                    name: 'Valor de X (inciso a)',
+                }) as HTMLInputElement
+            ).value,
+        ).toBe('12');
+        expect(
+            (
+                screen.getByRole('spinbutton', {
+                    name: 'Valor de Y (inciso a)',
+                }) as HTMLInputElement
+            ).value,
+        ).toBe('24');
+        expect(
+            (
+                screen.getByRole('textbox', {
+                    name: 'Resultado final del inciso a',
+                }) as HTMLInputElement
+            ).value,
+        ).toBe('36');
+        expect(
+            (
+                screen.getByRole('checkbox', {
+                    name: 'Seleccionar fórmula 101',
+                }) as HTMLInputElement
+            ).checked,
+        ).toBe(true);
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+        expect(guardarProcedimiento).toHaveBeenCalledExactlyOnceWith(21, 'a', {
+            modelo_id: 3,
+            formula_ids: [101],
+            valores: { x: 12, y: 24 },
+            resultado_final: '36',
+        });
+    });
+
+    it('presenta un campo numérico por variable con etiqueta legible', () => {
         mockUsePreguntasRendicion.mockReturnValue(
             crearEstado({ preguntas: [preguntaConModelos()] }),
         );
@@ -374,12 +465,14 @@ describe('RendicionEvaluacion', () => {
             screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
             { target: { value: '3' } },
         );
-        fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3}' } },
-        );
+        const valorX = screen.getByRole('spinbutton', {
+            name: 'Valor de X (inciso a)',
+        }) as HTMLInputElement;
+        const valorY = screen.getByRole('spinbutton', {
+            name: 'Valor de Y (inciso a)',
+        }) as HTMLInputElement;
+        fireEvent.change(valorX, { target: { value: '2' } });
+        fireEvent.change(valorY, { target: { value: '3' } });
         fireEvent.change(
             screen.getByRole('textbox', {
                 name: 'Resultado final del inciso a',
@@ -387,13 +480,9 @@ describe('RendicionEvaluacion', () => {
             { target: { value: '5' } },
         );
 
-        expect(
-            (
-                screen.getByRole('textbox', {
-                    name: 'Valores de variables del inciso a',
-                }) as HTMLTextAreaElement
-            ).value,
-        ).toBe('{"x": 2, "y": 3}');
+        expect(valorX.type).toBe('number');
+        expect(valorX.value).toBe('2');
+        expect(valorY.value).toBe('3');
         expect(
             (
                 screen.getByRole('textbox', {
@@ -401,6 +490,104 @@ describe('RendicionEvaluacion', () => {
                 }) as HTMLInputElement
             ).value,
         ).toBe('5');
+    });
+
+    it('humaniza claves compuestas y conserva sus claves exactas al guardar', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        const modelosConNombres: ModeloPermitidoRendicion[] = [
+            {
+                ...modelosPermitidos[0],
+                variables: {
+                    masa: { descripcion: 'No se asume metadata visual' },
+                    masa_molar: { unidad: 'g/mol' },
+                },
+            },
+        ];
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos(modelosConNombres)],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        expect(
+            screen.getByRole('spinbutton', {
+                name: 'Valor de Masa molar (inciso a)',
+            }),
+        ).toBeTruthy();
+
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', {
+                name: 'Valor de Masa (inciso a)',
+            }),
+            { target: { value: '36' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', {
+                name: 'Valor de Masa molar (inciso a)',
+            }),
+            { target: { value: '18' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+
+        expect(guardarProcedimiento).toHaveBeenCalledWith(21, 'a', {
+            modelo_id: 3,
+            formula_ids: [101],
+            valores: { masa: 36, masa_molar: 18 },
+        });
+    });
+
+    it('rechaza valores numéricos vacíos o inválidos con ayuda en español', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: 'no-numérico' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '3' } },
+        );
+
+        expect(
+            screen.getByText(/introduce un valor numérico válido para x/i),
+        ).toBeTruthy();
+        expect(
+            (
+                screen.getByRole('button', {
+                    name: 'Guardar procedimiento',
+                }) as HTMLButtonElement
+            ).disabled,
+        ).toBe(true);
+        expect(guardarProcedimiento).not.toHaveBeenCalled();
     });
 
     it('guarda el procedimiento con el payload esperado después de completarlo', () => {
@@ -428,10 +615,12 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '3' } },
         );
         fireEvent.change(
             screen.getByRole('textbox', {
@@ -470,13 +659,6 @@ describe('RendicionEvaluacion', () => {
                 name: 'Seleccionar fórmula 101',
             }),
         );
-        fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{}' } },
-        );
-
         expect(
             (
                 screen.getByRole('button', {
@@ -507,12 +689,11 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2' } },
         );
 
+        expect(screen.getByText(/valor numérico válido para Y/i)).toBeTruthy();
         expect(
             (
                 screen.getByRole('button', {
@@ -523,7 +704,7 @@ describe('RendicionEvaluacion', () => {
         expect(guardarProcedimiento).not.toHaveBeenCalled();
     });
 
-    it('rechaza claves de valores que no están configuradas', () => {
+    it('envía únicamente los valores numéricos de las variables del modelo', () => {
         const guardarProcedimiento = vi.fn().mockResolvedValue({});
         mockUsePreguntasRendicion.mockReturnValue(
             crearEstado({
@@ -543,20 +724,26 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3, "z": 4}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2.5' } },
         );
-
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '-3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
         expect(
-            (
-                screen.getByRole('button', {
-                    name: 'Guardar procedimiento',
-                }) as HTMLButtonElement
-            ).disabled,
-        ).toBe(true);
-        expect(guardarProcedimiento).not.toHaveBeenCalled();
+            screen.queryByRole('spinbutton', {
+                name: 'Valor de Z (inciso a)',
+            }),
+        ).toBeNull();
+        expect(guardarProcedimiento).toHaveBeenCalledWith(21, 'a', {
+            modelo_id: 3,
+            formula_ids: [101],
+            valores: { x: 2.5, y: -3 },
+        });
     });
 
     it('no indica que se guardó hasta que termine el PATCH', () => {
@@ -585,10 +772,12 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '3' } },
         );
         fireEvent.click(
             screen.getByRole('button', { name: 'Guardar procedimiento' }),
@@ -625,11 +814,18 @@ describe('RendicionEvaluacion', () => {
         ).toBe(true);
         expect(
             (
-                screen.getByRole('textbox', {
-                    name: 'Valores de variables del inciso a',
-                }) as HTMLTextAreaElement
+                screen.getByRole('spinbutton', {
+                    name: 'Valor de X (inciso a)',
+                }) as HTMLInputElement
             ).value,
-        ).toContain('"x": 2');
+        ).toBe('2');
+        expect(
+            (
+                screen.getByRole('spinbutton', {
+                    name: 'Valor de Y (inciso a)',
+                }) as HTMLInputElement
+            ).value,
+        ).toBe('3');
         expect(screen.getByText('Procedimiento guardado.')).toBeTruthy();
     });
 
@@ -697,10 +893,12 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '3' } },
         );
         fireEvent.click(
             screen.getByRole('button', { name: 'Guardar procedimiento' }),
@@ -739,10 +937,12 @@ describe('RendicionEvaluacion', () => {
             }),
         );
         fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Valores de variables del inciso a',
-            }),
-            { target: { value: '{"x": 2, "y": 3}' } },
+            screen.getByRole('spinbutton', { name: 'Valor de X (inciso a)' }),
+            { target: { value: '2' } },
+        );
+        fireEvent.change(
+            screen.getByRole('spinbutton', { name: 'Valor de Y (inciso a)' }),
+            { target: { value: '3' } },
         );
         fireEvent.click(
             screen.getByRole('button', { name: 'Guardar procedimiento' }),

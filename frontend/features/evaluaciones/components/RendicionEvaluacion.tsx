@@ -27,11 +27,15 @@ import { infoTipoPregunta } from '../tipos-pregunta';
 import FormulaRenderizada from '@/features/preguntas/components/FormulaRenderizada';
 import RecursosRendicion from './RecursosRendicion';
 
-interface BorradorProcedimiento {
-    modeloId: number | '';
+interface BorradorModeloProcedimiento {
     formulaIds: number[];
-    valoresJson: string;
+    valores: Record<string, string>;
     resultadoFinal: string;
+}
+
+interface BorradorProcedimiento extends BorradorModeloProcedimiento {
+    modeloId: number | '';
+    borradoresPorModelo?: Record<number, BorradorModeloProcedimiento>;
 }
 
 interface EstadoGuardadoLocal {
@@ -49,20 +53,14 @@ function claveOperacionRendicion(
     return `${examenId}:${preguntaId}:${letra}`;
 }
 
-function parsearObjetoJson(valor: string): Record<string, unknown> | null {
-    try {
-        const parseado: unknown = JSON.parse(valor);
-        if (
-            typeof parseado !== 'object' ||
-            parseado === null ||
-            Array.isArray(parseado)
-        ) {
-            return null;
-        }
-        return parseado as Record<string, unknown>;
-    } catch {
-        return null;
-    }
+function etiquetaVariable(clave: string): string {
+    const nombre = clave
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .trim();
+    return nombre
+        ? nombre.charAt(0).toLocaleUpperCase('es') + nombre.slice(1)
+        : clave;
 }
 
 function coincidenValores(
@@ -456,32 +454,63 @@ function ControlProcedimientoInciso({
     const modeloSeleccionado = modelos.find(
         (modelo) => modelo.modelo_id === modeloSeleccionadoId,
     );
+    const borradorDelModelo =
+        typeof modeloSeleccionadoId === 'number'
+            ? borrador?.borradoresPorModelo?.[modeloSeleccionadoId]
+            : undefined;
     const procedimientoDelModelo =
         procedimiento?.modelo_id === modeloSeleccionadoId
             ? procedimiento
             : undefined;
     const formulaIds =
-        borrador?.formulaIds ?? procedimientoDelModelo?.formula_ids ?? [];
-    const valoresJson =
-        borrador?.valoresJson ??
-        JSON.stringify(procedimientoDelModelo?.valores ?? {}, null, 2);
+        borradorDelModelo?.formulaIds ??
+        (borrador?.modeloId === modeloSeleccionadoId
+            ? borrador.formulaIds
+            : undefined) ??
+        procedimientoDelModelo?.formula_ids ??
+        [];
     const resultadoFinal =
-        borrador?.resultadoFinal ??
+        borradorDelModelo?.resultadoFinal ??
+        (borrador?.modeloId === modeloSeleccionadoId
+            ? borrador.resultadoFinal
+            : undefined) ??
         procedimientoDelModelo?.resultado_final ??
         '';
-    const valores = parsearObjetoJson(valoresJson);
     const clavesConfiguracion = modeloSeleccionado
         ? Object.keys(modeloSeleccionado.variables)
         : [];
+    const valoresEntrada =
+        borradorDelModelo?.valores ??
+        (borrador?.modeloId === modeloSeleccionadoId
+            ? borrador.valores
+            : undefined) ??
+        Object.fromEntries(
+            clavesConfiguracion.map((clave) => {
+                const valor = procedimientoDelModelo?.valores[clave];
+                return [
+                    clave,
+                    valor === null || valor === undefined ? '' : String(valor),
+                ];
+            }),
+        );
     const valoresCompletos =
-        valores !== null &&
-        (clavesConfiguracion.length === 0 || Object.keys(valores).length > 0) &&
-        (clavesConfiguracion.length === 0 ||
-            (Object.keys(valores).length === clavesConfiguracion.length &&
-                clavesConfiguracion.every((clave) =>
-                    Object.hasOwn(valores, clave),
-                ))) &&
-        Object.values(valores).every((valor) => valor !== null && valor !== '');
+        Object.keys(valoresEntrada).length === clavesConfiguracion.length &&
+        clavesConfiguracion.every((clave) => {
+            const valor = valoresEntrada[clave]?.trim();
+            return (
+                valor !== undefined &&
+                valor !== '' &&
+                Number.isFinite(Number(valor))
+            );
+        });
+    const valores = valoresCompletos
+        ? Object.fromEntries(
+              clavesConfiguracion.map((clave) => [
+                  clave,
+                  Number(valoresEntrada[clave]),
+              ]),
+          )
+        : null;
     const procedimientoGuardado =
         borrador === undefined ||
         (procedimientoDelModelo !== undefined &&
@@ -509,6 +538,21 @@ function ControlProcedimientoInciso({
                 : {}),
         };
         void guardar(payload);
+    };
+
+    const actualizarBorradorDelModelo = (
+        siguiente: BorradorModeloProcedimiento,
+    ) => {
+        actualizaBorrador({
+            modeloId: modeloSeleccionado?.modelo_id ?? '',
+            ...siguiente,
+            borradoresPorModelo: {
+                ...borrador?.borradoresPorModelo,
+                ...(modeloSeleccionado
+                    ? { [modeloSeleccionado.modelo_id]: siguiente }
+                    : {}),
+            },
+        });
     };
 
     if (modelos.length === 0 && !procedimiento) {
@@ -569,11 +613,52 @@ function ControlProcedimientoInciso({
                     value={modeloSeleccionadoId}
                     onChange={(evento) => {
                         const modeloId = Number(evento.target.value);
+                        const modelo = modelos.find(
+                            (item) => item.modelo_id === modeloId,
+                        );
+                        const borradorPrevio =
+                            borrador?.borradoresPorModelo?.[modeloId];
+                        const procedimientoPrevio =
+                            procedimiento?.modelo_id === modeloId
+                                ? procedimiento
+                                : undefined;
+                        const siguiente = borradorPrevio ?? {
+                            formulaIds: procedimientoPrevio?.formula_ids ?? [],
+                            valores:
+                                procedimientoPrevio !== undefined
+                                    ? Object.fromEntries(
+                                          Object.keys(
+                                              modelo?.variables ?? {},
+                                          ).map((clave) => [
+                                              clave,
+                                              procedimientoPrevio.valores[
+                                                  clave
+                                              ] === null ||
+                                              procedimientoPrevio.valores[
+                                                  clave
+                                              ] === undefined
+                                                  ? ''
+                                                  : String(
+                                                        procedimientoPrevio
+                                                            .valores[clave],
+                                                    ),
+                                          ]),
+                                      )
+                                    : Object.fromEntries(
+                                          Object.keys(
+                                              modelo?.variables ?? {},
+                                          ).map((clave) => [clave, '']),
+                                      ),
+                            resultadoFinal:
+                                procedimientoPrevio?.resultado_final ?? '',
+                        };
                         actualizaBorrador({
                             modeloId,
-                            formulaIds: [],
-                            valoresJson: '{}',
-                            resultadoFinal: '',
+                            ...siguiente,
+                            borradoresPorModelo: {
+                                ...borrador?.borradoresPorModelo,
+                                [modeloId]: siguiente,
+                            },
                         });
                     }}
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
@@ -624,11 +709,9 @@ function ControlProcedimientoInciso({
                                                               id !==
                                                               formula.formula_id,
                                                       );
-                                                actualizaBorrador({
-                                                    modeloId:
-                                                        modeloSeleccionado.modelo_id,
+                                                actualizarBorradorDelModelo({
                                                     formulaIds: siguientes,
-                                                    valoresJson,
+                                                    valores: valoresEntrada,
                                                     resultadoFinal,
                                                 });
                                             }}
@@ -655,45 +738,61 @@ function ControlProcedimientoInciso({
                         )}
                     </fieldset>
 
-                    <label className="block space-y-1.5">
-                        <span className="text-xs font-medium text-slate-700">
-                            Valores de variables (JSON)
-                        </span>
-                        <textarea
-                            aria-label={`Valores de variables del inciso ${inciso.letra}`}
-                            value={valoresJson}
-                            onChange={(evento) =>
-                                actualizaBorrador({
-                                    modeloId: modeloSeleccionado.modelo_id,
-                                    formulaIds,
-                                    valoresJson: evento.target.value,
-                                    resultadoFinal,
-                                })
-                            }
-                            rows={3}
-                            spellCheck={false}
-                            placeholder='{"x": 2}'
-                            className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
-                        />
-                        <span className="block text-xs text-slate-500">
-                            Claves de configuración del modelo:{' '}
-                            {clavesConfiguracion.length > 0
-                                ? clavesConfiguracion.join(', ')
-                                : 'ninguna'}
-                        </span>
-                        {valores === null && (
-                            <span className="block text-xs text-red-700">
-                                Introduce un objeto JSON válido.
-                            </span>
+                    <fieldset className="space-y-3">
+                        <legend className="text-xs font-medium text-slate-700">
+                            Valores de las variables
+                        </legend>
+                        {clavesConfiguracion.length > 0 ? (
+                            clavesConfiguracion.map((clave) => {
+                                const valor = valoresEntrada[clave] ?? '';
+                                const numeroValido =
+                                    valor.trim() !== '' &&
+                                    Number.isFinite(Number(valor));
+                                const nombreVariable = etiquetaVariable(clave);
+                                return (
+                                    <label
+                                        key={clave}
+                                        className="block max-w-xl space-y-1.5"
+                                    >
+                                        <span className="text-xs font-medium text-slate-700">
+                                            {nombreVariable}
+                                        </span>
+                                        <input
+                                            aria-label={`Valor de ${nombreVariable} (inciso ${inciso.letra})`}
+                                            type="number"
+                                            step="any"
+                                            inputMode="decimal"
+                                            required
+                                            aria-invalid={!numeroValido}
+                                            value={valor}
+                                            onChange={(evento) =>
+                                                actualizarBorradorDelModelo({
+                                                    formulaIds,
+                                                    valores: {
+                                                        ...valoresEntrada,
+                                                        [clave]:
+                                                            evento.target.value,
+                                                    },
+                                                    resultadoFinal,
+                                                })
+                                            }
+                                            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+                                        />
+                                        {!numeroValido && (
+                                            <span className="block text-xs text-red-700">
+                                                Introduce un valor numérico
+                                                válido para {nombreVariable}.
+                                            </span>
+                                        )}
+                                    </label>
+                                );
+                            })
+                        ) : (
+                            <p className="text-sm text-slate-600">
+                                Este modelo no requiere valores de variables.
+                            </p>
                         )}
-                        {valores !== null &&
-                            clavesConfiguracion.length > 0 &&
-                            Object.keys(valores).length === 0 && (
-                                <span className="block text-xs text-red-700">
-                                    Introduce valores para este modelo.
-                                </span>
-                            )}
-                    </label>
+                    </fieldset>
 
                     <label className="block max-w-sm space-y-1.5">
                         <span className="text-xs font-medium text-slate-700">
@@ -704,10 +803,9 @@ function ControlProcedimientoInciso({
                             type="text"
                             value={resultadoFinal}
                             onChange={(evento) =>
-                                actualizaBorrador({
-                                    modeloId: modeloSeleccionado.modelo_id,
+                                actualizarBorradorDelModelo({
                                     formulaIds,
-                                    valoresJson,
+                                    valores: valoresEntrada,
                                     resultadoFinal: evento.target.value,
                                 })
                             }
