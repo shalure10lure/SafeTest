@@ -2,13 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-    ArrowLeft,
-    ArrowRight,
-    CheckCircle2,
-    ShieldCheck,
-} from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Badge, Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -21,12 +16,72 @@ import {
 import { mensajeDeError } from '../mensaje-error';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import type {
+    GuardarProcedimientoRendicion,
     IncisoRendicionEstudiante,
+    ModeloPermitidoRendicion,
     PreguntaRendicionEstudiante,
+    ProcedimientoRendicion,
     RespuestaRendicion,
 } from '../types';
 import { infoTipoPregunta } from '../tipos-pregunta';
+import FormulaRenderizada from '@/features/preguntas/components/FormulaRenderizada';
 import RecursosRendicion from './RecursosRendicion';
+
+interface BorradorProcedimiento {
+    modeloId: number | '';
+    formulaIds: number[];
+    valoresJson: string;
+    resultadoFinal: string;
+}
+
+interface EstadoGuardadoLocal {
+    guardando: boolean;
+    pendientes: number;
+    guardado?: boolean;
+    error?: string;
+}
+
+function claveOperacionRendicion(
+    examenId: number,
+    preguntaId: number,
+    letra: string,
+): string {
+    return `${examenId}:${preguntaId}:${letra}`;
+}
+
+function parsearObjetoJson(valor: string): Record<string, unknown> | null {
+    try {
+        const parseado: unknown = JSON.parse(valor);
+        if (
+            typeof parseado !== 'object' ||
+            parseado === null ||
+            Array.isArray(parseado)
+        ) {
+            return null;
+        }
+        return parseado as Record<string, unknown>;
+    } catch {
+        return null;
+    }
+}
+
+function coincidenValores(
+    primero: Record<string, unknown>,
+    segundo: Record<string, unknown>,
+): boolean {
+    const ordenar = (valor: unknown): unknown => {
+        if (Array.isArray(valor)) return valor.map(ordenar);
+        if (typeof valor !== 'object' || valor === null) return valor;
+        return Object.fromEntries(
+            Object.entries(valor)
+                .sort(([claveA], [claveB]) => claveA.localeCompare(claveB))
+                .map(([clave, contenido]) => [clave, ordenar(contenido)]),
+        );
+    };
+    return (
+        JSON.stringify(ordenar(primero)) === JSON.stringify(ordenar(segundo))
+    );
+}
 
 function EstadoCarga() {
     return (
@@ -373,6 +428,337 @@ function ControlRespuestaInciso({
     );
 }
 
+function ControlProcedimientoInciso({
+    preguntaId,
+    inciso,
+    modelos,
+    procedimiento,
+    borrador,
+    actualizaBorrador,
+    guardar,
+    guardando,
+    guardadoLocal,
+    error,
+}: {
+    preguntaId: number;
+    inciso: IncisoRendicionEstudiante;
+    modelos: ModeloPermitidoRendicion[];
+    procedimiento?: ProcedimientoRendicion;
+    borrador?: BorradorProcedimiento;
+    actualizaBorrador: (borrador: BorradorProcedimiento) => void;
+    guardar: (procedimiento: GuardarProcedimientoRendicion) => Promise<unknown>;
+    guardando: boolean;
+    guardadoLocal: boolean;
+    error?: string;
+}) {
+    const modeloSeleccionadoId =
+        borrador?.modeloId ?? procedimiento?.modelo_id ?? '';
+    const modeloSeleccionado = modelos.find(
+        (modelo) => modelo.modelo_id === modeloSeleccionadoId,
+    );
+    const procedimientoDelModelo =
+        procedimiento?.modelo_id === modeloSeleccionadoId
+            ? procedimiento
+            : undefined;
+    const formulaIds =
+        borrador?.formulaIds ?? procedimientoDelModelo?.formula_ids ?? [];
+    const valoresJson =
+        borrador?.valoresJson ??
+        JSON.stringify(procedimientoDelModelo?.valores ?? {}, null, 2);
+    const resultadoFinal =
+        borrador?.resultadoFinal ??
+        procedimientoDelModelo?.resultado_final ??
+        '';
+    const valores = parsearObjetoJson(valoresJson);
+    const clavesConfiguracion = modeloSeleccionado
+        ? Object.keys(modeloSeleccionado.variables)
+        : [];
+    const valoresCompletos =
+        valores !== null &&
+        (clavesConfiguracion.length === 0 || Object.keys(valores).length > 0) &&
+        (clavesConfiguracion.length === 0 ||
+            (Object.keys(valores).length === clavesConfiguracion.length &&
+                clavesConfiguracion.every((clave) =>
+                    Object.hasOwn(valores, clave),
+                ))) &&
+        Object.values(valores).every((valor) => valor !== null && valor !== '');
+    const procedimientoGuardado =
+        borrador === undefined ||
+        (procedimientoDelModelo !== undefined &&
+            formulaIds.length === procedimientoDelModelo.formula_ids.length &&
+            formulaIds.every((id) =>
+                procedimientoDelModelo.formula_ids.includes(id),
+            ) &&
+            valores !== null &&
+            coincidenValores(valores, procedimientoDelModelo.valores) &&
+            resultadoFinal === (procedimientoDelModelo.resultado_final ?? ''));
+    const puedeGuardar =
+        modeloSeleccionado !== undefined &&
+        formulaIds.length > 0 &&
+        valoresCompletos &&
+        !guardando;
+
+    const guardarProcedimientoActual = () => {
+        if (!puedeGuardar || !modeloSeleccionado || !valores) return;
+        const payload: GuardarProcedimientoRendicion = {
+            modelo_id: modeloSeleccionado.modelo_id,
+            formula_ids: formulaIds,
+            valores,
+            ...(resultadoFinal !== ''
+                ? { resultado_final: resultadoFinal }
+                : {}),
+        };
+        void guardar(payload);
+    };
+
+    if (modelos.length === 0 && !procedimiento) {
+        return (
+            <p className="text-sm text-slate-500" role="status">
+                No hay modelos permitidos para este inciso.
+            </p>
+        );
+    }
+
+    if (!modeloSeleccionado && procedimiento) {
+        return (
+            <section
+                aria-label={`Procedimiento guardado del inciso ${inciso.letra}`}
+                className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4"
+            >
+                <h3 className="text-sm font-semibold text-slate-800">
+                    Procedimiento guardado
+                </h3>
+                <p className="text-sm text-slate-600">
+                    El modelo {procedimiento.modelo_id} ya no está disponible
+                    para selección.
+                </p>
+                <p className="text-xs text-slate-600">
+                    Fórmulas guardadas:{' '}
+                    {procedimiento.formula_ids.join(', ') || 'ninguna'}
+                </p>
+                <p className="text-xs text-slate-600">
+                    Resultado final:{' '}
+                    {procedimiento.resultado_final ?? 'No registrado'}
+                </p>
+                <div>
+                    <p className="text-xs font-medium text-slate-600">
+                        Valores históricos
+                    </p>
+                    <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                        {JSON.stringify(procedimiento.valores, null, 2)}
+                    </pre>
+                </div>
+            </section>
+        );
+    }
+
+    return (
+        <section
+            aria-label={`Procedimiento matemático del inciso ${inciso.letra}`}
+            className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
+        >
+            <h3 className="text-sm font-semibold text-slate-900">
+                Procedimiento matemático
+            </h3>
+            <label className="block max-w-xl space-y-1.5">
+                <span className="text-xs font-medium text-slate-700">
+                    Modelo
+                </span>
+                <select
+                    aria-label={`Modelo del inciso ${inciso.letra}`}
+                    value={modeloSeleccionadoId}
+                    onChange={(evento) => {
+                        const modeloId = Number(evento.target.value);
+                        actualizaBorrador({
+                            modeloId,
+                            formulaIds: [],
+                            valoresJson: '{}',
+                            resultadoFinal: '',
+                        });
+                    }}
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+                >
+                    <option value="">Selecciona un modelo</option>
+                    {modelos.map((modelo) => (
+                        <option key={modelo.modelo_id} value={modelo.modelo_id}>
+                            {modelo.nombre}
+                        </option>
+                    ))}
+                </select>
+            </label>
+
+            {modeloSeleccionado && (
+                <>
+                    {modeloSeleccionado.descripcion && (
+                        <p className="text-sm leading-5 text-slate-600">
+                            {modeloSeleccionado.descripcion}
+                        </p>
+                    )}
+
+                    <fieldset className="space-y-2">
+                        <legend className="text-xs font-medium text-slate-700">
+                            Fórmulas permitidas
+                        </legend>
+                        {modeloSeleccionado.formulas_permitidas.length > 0 ? (
+                            modeloSeleccionado.formulas_permitidas.map(
+                                (formula) => (
+                                    <label
+                                        key={formula.formula_id}
+                                        className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-700"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            aria-label={`Seleccionar fórmula ${formula.formula_id}`}
+                                            checked={formulaIds.includes(
+                                                formula.formula_id,
+                                            )}
+                                            onChange={(evento) => {
+                                                const siguientes = evento.target
+                                                    .checked
+                                                    ? [
+                                                          ...formulaIds,
+                                                          formula.formula_id,
+                                                      ]
+                                                    : formulaIds.filter(
+                                                          (id) =>
+                                                              id !==
+                                                              formula.formula_id,
+                                                      );
+                                                actualizaBorrador({
+                                                    modeloId:
+                                                        modeloSeleccionado.modelo_id,
+                                                    formulaIds: siguientes,
+                                                    valoresJson,
+                                                    resultadoFinal,
+                                                });
+                                            }}
+                                            className="mt-1 size-4 shrink-0 accent-blue-700"
+                                        />
+                                        <span className="min-w-0 flex-1">
+                                            <span className="mb-1 block text-xs text-slate-500">
+                                                Fórmula {formula.formula_id}
+                                            </span>
+                                            <span className="sr-only">
+                                                {formula.expresion}
+                                            </span>
+                                            <FormulaRenderizada
+                                                latex={formula.expresion}
+                                            />
+                                        </span>
+                                    </label>
+                                ),
+                            )
+                        ) : (
+                            <p className="text-sm text-slate-500" role="status">
+                                Este modelo no tiene fórmulas permitidas.
+                            </p>
+                        )}
+                    </fieldset>
+
+                    <label className="block space-y-1.5">
+                        <span className="text-xs font-medium text-slate-700">
+                            Valores de variables (JSON)
+                        </span>
+                        <textarea
+                            aria-label={`Valores de variables del inciso ${inciso.letra}`}
+                            value={valoresJson}
+                            onChange={(evento) =>
+                                actualizaBorrador({
+                                    modeloId: modeloSeleccionado.modelo_id,
+                                    formulaIds,
+                                    valoresJson: evento.target.value,
+                                    resultadoFinal,
+                                })
+                            }
+                            rows={3}
+                            spellCheck={false}
+                            placeholder='{"x": 2}'
+                            className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+                        />
+                        <span className="block text-xs text-slate-500">
+                            Claves de configuración del modelo:{' '}
+                            {clavesConfiguracion.length > 0
+                                ? clavesConfiguracion.join(', ')
+                                : 'ninguna'}
+                        </span>
+                        {valores === null && (
+                            <span className="block text-xs text-red-700">
+                                Introduce un objeto JSON válido.
+                            </span>
+                        )}
+                        {valores !== null &&
+                            clavesConfiguracion.length > 0 &&
+                            Object.keys(valores).length === 0 && (
+                                <span className="block text-xs text-red-700">
+                                    Introduce valores para este modelo.
+                                </span>
+                            )}
+                    </label>
+
+                    <label className="block max-w-sm space-y-1.5">
+                        <span className="text-xs font-medium text-slate-700">
+                            Resultado final (opcional)
+                        </span>
+                        <input
+                            aria-label={`Resultado final del inciso ${inciso.letra}`}
+                            type="text"
+                            value={resultadoFinal}
+                            onChange={(evento) =>
+                                actualizaBorrador({
+                                    modeloId: modeloSeleccionado.modelo_id,
+                                    formulaIds,
+                                    valoresJson,
+                                    resultadoFinal: evento.target.value,
+                                })
+                            }
+                            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+                        />
+                    </label>
+                </>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+                <Button
+                    type="button"
+                    disabled={!puedeGuardar}
+                    onClick={guardarProcedimientoActual}
+                    className="min-h-9 bg-blue-700 text-white hover:bg-blue-800"
+                >
+                    {guardando
+                        ? 'Guardando procedimiento…'
+                        : 'Guardar procedimiento'}
+                </Button>
+                {guardando ? (
+                    <p role="status" className="text-xs text-slate-500">
+                        Guardando procedimiento…
+                    </p>
+                ) : error ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                        <p role="alert" className="text-xs text-red-700">
+                            No se pudo guardar el procedimiento: {error}
+                        </p>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={guardarProcedimientoActual}
+                            disabled={!puedeGuardar}
+                            className="min-h-8 border-red-200 px-2.5 text-xs text-red-700 hover:bg-red-50"
+                        >
+                            Reintentar procedimiento
+                        </Button>
+                    </div>
+                ) : guardadoLocal ||
+                  (procedimientoGuardado &&
+                      procedimientoDelModelo !== undefined) ? (
+                    <p role="status" className="text-xs text-emerald-700">
+                        Procedimiento guardado.
+                    </p>
+                ) : null}
+            </div>
+        </section>
+    );
+}
+
 function PreguntaActiva({
     examenId,
     pregunta,
@@ -380,9 +766,13 @@ function PreguntaActiva({
     total,
     respuestasLocales,
     respuestasBorrador,
-    incisosGuardando,
-    erroresGuardado,
+    procedimientosLocales,
+    borradoresProcedimientos,
+    estadosRespuestaLocal,
+    estadosProcedimientoLocal,
     cambiarRespuesta,
+    actualizarProcedimientoBorrador,
+    guardarProcedimiento,
 }: {
     examenId: number;
     pregunta: PreguntaRendicionEstudiante;
@@ -390,13 +780,24 @@ function PreguntaActiva({
     total: number;
     respuestasLocales: Record<string, RespuestaRendicion>;
     respuestasBorrador: Record<string, RespuestaRendicion>;
-    incisosGuardando: string[];
-    erroresGuardado: Record<string, string>;
+    procedimientosLocales: Record<string, ProcedimientoRendicion>;
+    borradoresProcedimientos: Record<string, BorradorProcedimiento>;
+    estadosRespuestaLocal: Record<string, EstadoGuardadoLocal>;
+    estadosProcedimientoLocal: Record<string, EstadoGuardadoLocal>;
     cambiarRespuesta: (
         preguntaId: number,
         letra: string,
         respuesta: RespuestaRendicion,
     ) => void;
+    actualizarProcedimientoBorrador: (
+        clave: string,
+        borrador: BorradorProcedimiento,
+    ) => void;
+    guardarProcedimiento: (
+        preguntaId: number,
+        letra: string,
+        procedimiento: GuardarProcedimientoRendicion,
+    ) => Promise<unknown>;
 }) {
     const tipo = infoTipoPregunta(pregunta.tipo_respuesta);
 
@@ -425,6 +826,15 @@ function PreguntaActiva({
                         const respuestaActual =
                             respuestasBorrador[clave] ??
                             respuestasLocales[clave];
+                        const claveOperacion = claveOperacionRendicion(
+                            examenId,
+                            pregunta.pregunta_id,
+                            inciso.letra,
+                        );
+                        const estadoRespuesta =
+                            estadosRespuestaLocal[claveOperacion];
+                        const estadoProcedimiento =
+                            estadosProcedimientoLocal[claveOperacion];
 
                         return (
                             <section
@@ -446,11 +856,13 @@ function PreguntaActiva({
                                     preguntaId={pregunta.pregunta_id}
                                     inciso={inciso}
                                     respuesta={respuestaActual}
-                                    guardando={incisosGuardando.includes(clave)}
+                                    guardando={
+                                        estadoRespuesta?.guardando ?? false
+                                    }
                                     guardada={
                                         respuestasLocales[clave] !== undefined
                                     }
-                                    error={erroresGuardado[clave]}
+                                    error={estadoRespuesta?.error}
                                     cambiarRespuesta={cambiarRespuesta}
                                     reintentar={() =>
                                         respuestaActual !== undefined &&
@@ -460,6 +872,37 @@ function PreguntaActiva({
                                             respuestaActual,
                                         )
                                     }
+                                />
+                                <ControlProcedimientoInciso
+                                    preguntaId={pregunta.pregunta_id}
+                                    inciso={inciso}
+                                    modelos={inciso.modelos_permitidos ?? []}
+                                    procedimiento={procedimientosLocales[clave]}
+                                    borrador={
+                                        borradoresProcedimientos[
+                                            `${examenId}:${clave}`
+                                        ]
+                                    }
+                                    actualizaBorrador={(borrador) =>
+                                        actualizarProcedimientoBorrador(
+                                            `${examenId}:${clave}`,
+                                            borrador,
+                                        )
+                                    }
+                                    guardar={(procedimiento) =>
+                                        guardarProcedimiento(
+                                            pregunta.pregunta_id,
+                                            inciso.letra,
+                                            procedimiento,
+                                        )
+                                    }
+                                    guardando={
+                                        estadoProcedimiento?.guardando ?? false
+                                    }
+                                    guardadoLocal={
+                                        estadoProcedimiento?.guardado ?? false
+                                    }
+                                    error={estadoProcedimiento?.error}
                                 />
                             </section>
                         );
@@ -650,9 +1093,9 @@ export default function RendicionEvaluacion({
         error,
         recargar,
         respuestasLocales,
-        incisosGuardando,
-        erroresGuardado,
+        procedimientosLocales,
         guardarRespuesta,
+        guardarProcedimiento,
         esperarGuardadosPendientes,
     } = usePreguntasRendicion(examenId);
     const router = useRouter();
@@ -660,19 +1103,42 @@ export default function RendicionEvaluacion({
     const [respuestasBorrador, setRespuestasBorrador] = useState<
         Record<string, RespuestaRendicion>
     >({});
+    const [borradoresProcedimientos, setBorradoresProcedimientos] = useState<
+        Record<string, BorradorProcedimiento>
+    >({});
+    const [estadosRespuestaLocal, setEstadosRespuestaLocal] = useState<
+        Record<string, EstadoGuardadoLocal>
+    >({});
+    const [estadosProcedimientoLocal, setEstadosProcedimientoLocal] = useState<
+        Record<string, EstadoGuardadoLocal>
+    >({});
+    const montado = useRef(false);
     const [confirmandoFinalizacion, setConfirmandoFinalizacion] =
         useState(false);
     const [finalizando, setFinalizando] = useState(false);
     const [errorFinalizacion, setErrorFinalizacion] = useState('');
 
-    const estadoGuardado: EstadoGuardado =
-        Object.keys(erroresGuardado).length > 0
-            ? 'sin_guardar'
-            : incisosGuardando.length > 0
-              ? 'guardando'
-              : 'guardado';
+    const prefijoOperacion = `${examenId}:`;
+    const estadosLocales = [
+        ...Object.entries(estadosRespuestaLocal),
+        ...Object.entries(estadosProcedimientoLocal),
+    ].filter(([clave]) => clave.startsWith(prefijoOperacion));
+    const estadoGuardado: EstadoGuardado = estadosLocales.some(
+        ([, estado]) => estado.error,
+    )
+        ? 'sin_guardar'
+        : estadosLocales.some(([, estado]) => estado.guardando)
+          ? 'guardando'
+          : 'guardado';
 
     // Avisa antes de cerrar o recargar la pestaña si algo aún no se guardó.
+    useEffect(() => {
+        montado.current = true;
+        return () => {
+            montado.current = false;
+        };
+    }, []);
+
     useEffect(() => {
         if (estadoGuardado === 'guardado') return;
 
@@ -706,7 +1172,125 @@ export default function RendicionEvaluacion({
             ...actuales,
             [clave]: respuesta,
         }));
-        void guardarRespuesta(preguntaId, letra, respuesta);
+        const claveOperacion = claveOperacionRendicion(
+            examenId,
+            preguntaId,
+            letra,
+        );
+        setEstadosRespuestaLocal((actuales) => ({
+            ...actuales,
+            [claveOperacion]: {
+                guardando: true,
+                pendientes: (actuales[claveOperacion]?.pendientes ?? 0) + 1,
+            },
+        }));
+        void guardarRespuesta(preguntaId, letra, respuesta)
+            .then((resultado) => {
+                if (!montado.current) return;
+                setEstadosRespuestaLocal((actuales) => ({
+                    ...actuales,
+                    [claveOperacion]: {
+                        pendientes: Math.max(
+                            0,
+                            (actuales[claveOperacion]?.pendientes ?? 1) - 1,
+                        ),
+                        guardando:
+                            (actuales[claveOperacion]?.pendientes ?? 1) > 1,
+                        ...(resultado === null
+                            ? { error: 'No se pudo guardar la respuesta.' }
+                            : {}),
+                    },
+                }));
+            })
+            .catch(() => {
+                if (!montado.current) return;
+                setEstadosRespuestaLocal((actuales) => ({
+                    ...actuales,
+                    [claveOperacion]: {
+                        pendientes: Math.max(
+                            0,
+                            (actuales[claveOperacion]?.pendientes ?? 1) - 1,
+                        ),
+                        guardando:
+                            (actuales[claveOperacion]?.pendientes ?? 1) > 1,
+                        error: 'No se pudo guardar la respuesta.',
+                    },
+                }));
+            });
+    };
+
+    const actualizarProcedimientoBorrador = (
+        clave: string,
+        borrador: BorradorProcedimiento,
+    ) => {
+        setBorradoresProcedimientos((actuales) => ({
+            ...actuales,
+            [clave]: borrador,
+        }));
+    };
+
+    const guardarProcedimientoDeInciso = async (
+        preguntaId: number,
+        letra: string,
+        procedimiento: GuardarProcedimientoRendicion,
+    ) => {
+        const claveOperacion = claveOperacionRendicion(
+            examenId,
+            preguntaId,
+            letra,
+        );
+        setEstadosProcedimientoLocal((actuales) => ({
+            ...actuales,
+            [claveOperacion]: {
+                guardando: true,
+                pendientes: (actuales[claveOperacion]?.pendientes ?? 0) + 1,
+            },
+        }));
+
+        try {
+            const resultado = await guardarProcedimiento(
+                preguntaId,
+                letra,
+                procedimiento,
+            );
+            if (montado.current) {
+                setEstadosProcedimientoLocal((actuales) => ({
+                    ...actuales,
+                    [claveOperacion]: {
+                        pendientes: Math.max(
+                            0,
+                            (actuales[claveOperacion]?.pendientes ?? 1) - 1,
+                        ),
+                        guardando:
+                            (actuales[claveOperacion]?.pendientes ?? 1) > 1,
+                        guardado: resultado !== null,
+                        ...(resultado === null
+                            ? {
+                                  error: 'No se pudo guardar el procedimiento.',
+                              }
+                            : {}),
+                    },
+                }));
+            }
+            return resultado;
+        } catch {
+            if (montado.current) {
+                setEstadosProcedimientoLocal((actuales) => ({
+                    ...actuales,
+                    [claveOperacion]: {
+                        pendientes: Math.max(
+                            0,
+                            (actuales[claveOperacion]?.pendientes ?? 1) - 1,
+                        ),
+                        guardando:
+                            (actuales[claveOperacion]?.pendientes ?? 1) > 1,
+                        guardado: false,
+                        error: 'No se pudo guardar el procedimiento.',
+                    },
+                }));
+            }
+            return null;
+        }
     };
 
     const abrirConfirmacion = () => {
@@ -779,9 +1363,15 @@ export default function RendicionEvaluacion({
                         total={preguntas.length}
                         respuestasLocales={respuestasLocales}
                         respuestasBorrador={respuestasBorrador}
-                        incisosGuardando={incisosGuardando}
-                        erroresGuardado={erroresGuardado}
+                        procedimientosLocales={procedimientosLocales}
+                        borradoresProcedimientos={borradoresProcedimientos}
+                        estadosRespuestaLocal={estadosRespuestaLocal}
+                        estadosProcedimientoLocal={estadosProcedimientoLocal}
                         cambiarRespuesta={cambiarRespuesta}
+                        actualizarProcedimientoBorrador={
+                            actualizarProcedimientoBorrador
+                        }
+                        guardarProcedimiento={guardarProcedimientoDeInciso}
                     />
                     <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
                         <Button
@@ -831,8 +1421,8 @@ export default function RendicionEvaluacion({
                             ¿Terminaste?
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                            Revisa tus respuestas antes de finalizar: después
-                            no podrás modificarlas.
+                            Revisa tus respuestas antes de finalizar: después no
+                            podrás modificarlas.
                         </p>
                         <Button
                             type="button"

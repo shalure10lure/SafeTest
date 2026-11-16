@@ -14,6 +14,7 @@ import type {
     EvaluacionPublicada,
     GuardarAsignacionDto,
     GuardarConfiguracionDto,
+    GuardarProcedimientoRendicion,
     GuardarSeleccionDto,
     InstruccionesEvaluacionEstudiante,
     PublicacionRespuestas,
@@ -78,9 +79,12 @@ class EvaluacionesService extends BaseService {
         id: number,
         preguntaId: number,
         letra: string,
-        respuesta: RespuestaRendicion,
+        respuesta: RespuestaRendicion | GuardarProcedimientoRendicion,
     ) {
-        return this.patch<RespuestaGuardadaEstudiante, RespuestaRendicion>(
+        return this.patch<
+            RespuestaGuardadaEstudiante,
+            RespuestaRendicion | GuardarProcedimientoRendicion
+        >(
             `/${id}/estudiante/rendicion/respuestas/${preguntaId}/${encodeURIComponent(letra)}`,
             respuesta,
         );

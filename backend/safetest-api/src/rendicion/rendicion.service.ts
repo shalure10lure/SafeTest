@@ -11,13 +11,17 @@ import type { EntityManager } from 'typeorm';
 
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
 import { ExamenPregunta } from '../examenpregunta/entity/examenpregunta.entity';
+import { FormulaElegida } from '../formulaelegida/entity/formulaelegida.entity';
 import { Inciso } from '../inciso/entity/inciso.entity';
+import { ModeloFormula } from '../modeloformula/entity/modeloformula.entity';
 import { Opcion } from '../opcion/entity/opcion.entity';
 import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
 import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
+import { PreguntaModelo } from '../preguntamodelo/entity/preguntamodelo.entity';
 import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
+import { RespuestaModelo } from '../respuestamodelo/entity/respuestamodelo.entity';
 import { ExamenAccesoService } from '../examen/examen-acceso.service';
 import { CorreccionRendicionService } from '../reglacorreccion/correccion-rendicion.service';
 import { ExamenPoolSnapshot } from '../examenpoolsnapshot/entity/examen-pool-snapshot.entity';
@@ -28,8 +32,10 @@ import type { IniciarRendicionDto } from './dto/iniciar-rendicion.dto';
 import type { GuardarRespuestaEstudianteDto } from './dto/guardar-respuesta-estudiante.dto';
 import type {
   IncisoRendicionEstudianteDto,
+  ModeloPermitidoRendicionDto,
   PreguntaRendicionEstudianteDto,
   PreguntasRendicionEstudianteDto,
+  ProcedimientoRendicionDto,
 } from './dto/preguntas-rendicion-estudiante.dto';
 import type { RendicionEstudianteDto } from './dto/rendicion-estudiante.dto';
 import type { RendicionFinalizadaEstudianteDto } from './dto/rendicion-finalizada-estudiante.dto';
@@ -54,8 +60,7 @@ export class RendicionService {
     private readonly dataSource: DataSource,
     private readonly examenAccesoService: ExamenAccesoService,
     private readonly correccionRendicionService: CorreccionRendicionService,
-  ) { }
-
+  ) {}
 
   async iniciarORecuperar(
     examenId: number,
@@ -148,11 +153,7 @@ export class RendicionService {
           );
         }
 
-        await this.verificarTiempoActivo(
-          manager,
-          rendicion,
-          examenId,
-        );
+        await this.verificarTiempoActivo(manager, rendicion, examenId);
 
         const preguntas = await this.seleccionarPreguntas(
           manager,
@@ -195,7 +196,6 @@ export class RendicionService {
       );
     }
   }
-
 
   async consultarPreguntasActivas(
     examenId: number,
@@ -276,7 +276,13 @@ export class RendicionService {
           );
         }
 
-        const [respuestas, opcionesMarcadas] = await Promise.all([
+        const [
+          respuestas,
+          opcionesMarcadas,
+          respuestasModelo,
+          formulasElegidas,
+          preguntasModelo,
+        ] = await Promise.all([
           manager.getRepository(RespuestaInciso).find({
             where: {
               estudiante_id: estudianteId,
@@ -301,7 +307,209 @@ export class RendicionService {
               nro_opcion: true,
             },
           }),
+          manager.getRepository(RespuestaModelo).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: In(ids),
+            },
+            select: {
+              estudiante_id: true,
+              examen_id: true,
+              pregunta_id: true,
+              letra: true,
+              modelo_id: true,
+              valores: true,
+              resultado_final: true,
+            },
+          }),
+          manager.getRepository(FormulaElegida).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: In(ids),
+            },
+            select: {
+              estudiante_id: true,
+              examen_id: true,
+              pregunta_id: true,
+              letra: true,
+              formula_id: true,
+            },
+          }),
+          manager.getRepository(PreguntaModelo).find({
+            where: {
+              pregunta_id: In(ids),
+            },
+            relations: { modelo: true },
+            select: {
+              pregunta_id: true,
+              modelo_id: true,
+              modelo: {
+                modelo_id: true,
+                nombre: true,
+                descripcion: true,
+                variables: true,
+                activo: true,
+              },
+            },
+          }),
         ]);
+
+        const modelosActivosPorPregunta = new Map<
+          number,
+          ModeloPermitidoRendicionDto[]
+        >();
+        const modelosPorPregunta = new Map<
+          string,
+          NonNullable<(typeof preguntasModelo)[number]['modelo']>
+        >();
+        const modelosActivos = new Map<
+          number,
+          NonNullable<(typeof preguntasModelo)[number]['modelo']>
+        >();
+
+        for (const asociacion of preguntasModelo) {
+          const modelo = asociacion.modelo;
+          if (!modelo) continue;
+
+          modelosPorPregunta.set(
+            `${asociacion.pregunta_id}:${modelo.modelo_id}`,
+            modelo,
+          );
+          if (!modelo.activo) continue;
+
+          modelosActivos.set(modelo.modelo_id, modelo);
+          const modelos = modelosActivosPorPregunta.get(
+            asociacion.pregunta_id,
+          ) ?? [];
+          modelos.push({
+            modelo_id: modelo.modelo_id,
+            nombre: modelo.nombre,
+            descripcion: modelo.descripcion,
+            variables: modelo.variables,
+            formulas_permitidas: [],
+          });
+          modelosActivosPorPregunta.set(asociacion.pregunta_id, modelos);
+        }
+
+        const modelosConProcedimiento = new Set(
+          respuestasModelo.map((respuesta) => respuesta.modelo_id),
+        );
+        const modelosConFormulas = new Set([
+          ...modelosActivos.keys(),
+          ...modelosConProcedimiento,
+        ]);
+        const formulasPorModelo = new Map<number, Set<number>>();
+        const formulasDisponibles = new Map<
+          number,
+          { formula_id: number; expresion: string }[]
+        >();
+        if (modelosConFormulas.size > 0) {
+          const asociacionesFormula = await manager
+            .getRepository(ModeloFormula)
+            .find({
+              where: { modelo_id: In([...modelosConFormulas]) },
+              relations: { formula: true },
+              select: {
+                modelo_id: true,
+                formula_id: true,
+                formula: {
+                  formula_id: true,
+                  expresion: true,
+                },
+              },
+            });
+
+          for (const asociacion of asociacionesFormula) {
+            const formulaIds =
+              formulasPorModelo.get(asociacion.modelo_id) ?? new Set<number>();
+            formulaIds.add(asociacion.formula_id);
+            formulasPorModelo.set(asociacion.modelo_id, formulaIds);
+
+            if (modelosActivos.has(asociacion.modelo_id)) {
+              const formulas =
+                formulasDisponibles.get(asociacion.modelo_id) ?? [];
+              formulas.push({
+                formula_id: asociacion.formula.formula_id,
+                expresion: asociacion.formula.expresion,
+              });
+              formulasDisponibles.set(asociacion.modelo_id, formulas);
+            }
+          }
+        }
+
+        for (const [preguntaId, modelos] of modelosActivosPorPregunta) {
+          modelosActivosPorPregunta.set(
+            preguntaId,
+            modelos.map((modelo) => ({
+              ...modelo,
+              formulas_permitidas: formulasDisponibles.get(modelo.modelo_id) ?? [],
+            })),
+          );
+        }
+
+        const formulasElegidasPorProcedimiento = new Map<string, number[]>();
+        for (const formula of formulasElegidas) {
+          const clave = this.claveProcedimiento(
+            formula.estudiante_id,
+            formula.examen_id,
+            formula.pregunta_id,
+            formula.letra,
+          );
+          const formulaIds =
+            formulasElegidasPorProcedimiento.get(clave) ?? [];
+          formulaIds.push(formula.formula_id);
+          formulasElegidasPorProcedimiento.set(clave, formulaIds);
+        }
+
+        const procedimientosPorInciso = new Map<
+          string,
+          ProcedimientoRendicionDto
+        >();
+        const procedimientosValidosPorInciso = new Set<string>();
+        for (const respuestaModelo of respuestasModelo) {
+          const clave = this.claveProcedimiento(
+            respuestaModelo.estudiante_id,
+            respuestaModelo.examen_id,
+            respuestaModelo.pregunta_id,
+            respuestaModelo.letra,
+          );
+          procedimientosPorInciso.set(clave, {
+            modelo_id: respuestaModelo.modelo_id,
+            valores: respuestaModelo.valores,
+            resultado_final: respuestaModelo.resultado_final,
+            formula_ids: (
+              formulasElegidasPorProcedimiento.get(clave) ?? []
+            )
+              .filter((formulaId) =>
+                formulasPorModelo
+                  .get(respuestaModelo.modelo_id)
+                  ?.has(formulaId),
+              )
+              .sort((a, b) => a - b),
+          });
+          const formulaIds =
+            formulasElegidasPorProcedimiento.get(clave) ?? [];
+          const modelo = modelosPorPregunta.get(
+            `${respuestaModelo.pregunta_id}:${respuestaModelo.modelo_id}`,
+          );
+          if (
+            this.procedimientoValido(
+              modelo?.variables,
+              respuestaModelo.valores,
+              formulaIds,
+              formulasPorModelo.get(respuestaModelo.modelo_id),
+            )
+          ) {
+            procedimientosValidosPorInciso.add(
+              this.claveInciso(
+                respuestaModelo.pregunta_id,
+                respuestaModelo.letra,
+              ),
+            );
+          }
+        }
 
         const respuestasPorInciso = new Map(
           respuestas.map((respuesta) => [
@@ -339,18 +547,31 @@ export class RendicionService {
           examen_id: examenId,
           preguntas: preguntas.map((pregunta) => ({
             ...pregunta,
-            incisos: pregunta.incisos.map((inciso) =>
-              this.conRespuestaGuardada(
-                inciso,
+            incisos: pregunta.incisos.map((inciso) => {
+              const claveProcedimiento = this.claveProcedimiento(
+                estudianteId,
+                examenId,
                 pregunta.pregunta_id,
-                respuestasPorInciso,
-                opcionesPorInciso,
-              ),
-            ),
+                inciso.letra,
+              );
+              return {
+                ...this.conRespuestaGuardada(
+                  inciso,
+                  pregunta.pregunta_id,
+                  respuestasPorInciso,
+                  opcionesPorInciso,
+                ),
+                modelos_permitidos:
+                  modelosActivosPorPregunta.get(pregunta.pregunta_id) ?? [],
+                procedimiento:
+                  procedimientosPorInciso.get(claveProcedimiento) ?? null,
+              };
+            }),
             estado_respuesta: this.preguntaRespondida(
               pregunta,
               respuestasPorInciso,
               opcionesPorInciso,
+              procedimientosValidosPorInciso,
             )
               ? 'respondida'
               : 'pendiente',
@@ -365,7 +586,6 @@ export class RendicionService {
       );
     }
   }
-
 
   /**
    * Comprueba que la pregunta pertenece a la rendición en curso del estudiante
@@ -392,7 +612,11 @@ export class RendicionService {
           );
         }
 
-        await this.verificarTiempoActivo(manager, rendicion, examenId);
+        await this.verificarTiempoActivo(
+          manager,
+          rendicion,
+          examenId,
+        );
 
         const asignacion = await manager
           .getRepository(AsignacionPregunta)
@@ -481,6 +705,11 @@ export class RendicionService {
         }
 
         const tipo = inciso.tipo_respuesta;
+        const tieneDatosModelo =
+          dto.modelo_id !== undefined ||
+          dto.formula_ids !== undefined ||
+          dto.valores !== undefined ||
+          dto.resultado_final !== undefined;
 
         const esTipoDeOpciones =
           tipo === 'opcion_unica' ||
@@ -493,44 +722,53 @@ export class RendicionService {
 
         if (esTipoDeOpciones) {
           if (
+            dto.opciones === undefined &&
+            dto.respuesta_texto === undefined &&
+            tieneDatosModelo
+          ) {
+            // Una selección HU-23 puede enviarse sin una respuesta ordinaria.
+          } else if (
             dto.opciones === undefined ||
             dto.respuesta_texto !== undefined
           ) {
             throw new BadRequestException(
               'Envía únicamente la lista de opciones seleccionadas.',
             );
+          } else {
+            await this.validarOpciones(
+              manager,
+              preguntaId,
+              letra,
+              tipo,
+              dto.opciones,
+            );
           }
-
-          await this.validarOpciones(
-            manager,
-            preguntaId,
-            letra,
-            tipo,
-            dto.opciones,
-          );
         } else if (usaRespuestaTexto) {
           if (
+            dto.respuesta_texto === undefined &&
+            dto.opciones === undefined &&
+            tieneDatosModelo
+          ) {
+            // Una selección HU-23 puede enviarse sin una respuesta ordinaria.
+          } else if (
             dto.respuesta_texto === undefined ||
             dto.opciones !== undefined
           ) {
             throw new BadRequestException(
               'Envía únicamente la respuesta en texto.',
             );
+          } else {
+            this.validarRespuestaTexto(tipo, dto.respuesta_texto);
           }
-
-          this.validarRespuestaTexto(
-            tipo,
-            dto.respuesta_texto,
-          );
         } else {
           throw new BadRequestException(
             'El tipo de respuesta de este inciso no está habilitado.',
           );
         }
 
-        const respuestaTexto = usaRespuestaTexto
-          ? dto.respuesta_texto?.trim() || null
-          : null;
+        if (tieneDatosModelo) {
+          await this.validarSeleccionModelo(manager, preguntaId, dto);
+        }
 
         const claveRespuesta = {
           estudiante_id: estudianteId,
@@ -541,36 +779,87 @@ export class RendicionService {
 
         const guardadoEn = new Date();
 
-        await manager.getRepository(RespuestaInciso).upsert(
-          {
-            ...claveRespuesta,
-            respuesta_texto: respuestaTexto,
-            guardado_en: guardadoEn,
-          },
-          [
-            'estudiante_id',
-            'examen_id',
-            'pregunta_id',
-            'letra',
-          ],
-        );
+        const respuestaRepository =
+          manager.getRepository(RespuestaInciso);
+        const tieneRespuestaTradicional =
+          dto.respuesta_texto !== undefined ||
+          dto.opciones !== undefined;
 
-        const opcionMarcadaRepository =
-          manager.getRepository(OpcionMarcada);
-
-        await opcionMarcadaRepository.delete(claveRespuesta);
-
-        if (
-          esTipoDeOpciones &&
-          dto.opciones &&
-          dto.opciones.length > 0
-        ) {
-          await opcionMarcadaRepository.insert(
-            dto.opciones.map((nro_opcion) => ({
+        if (tieneRespuestaTradicional) {
+          await respuestaRepository.upsert(
+            {
               ...claveRespuesta,
-              nro_opcion,
-            })),
+              respuesta_texto:
+                usaRespuestaTexto && dto.respuesta_texto !== undefined
+                  ? dto.respuesta_texto.trim() || null
+                  : null,
+              guardado_en: guardadoEn,
+            },
+            [
+              'estudiante_id',
+              'examen_id',
+              'pregunta_id',
+              'letra',
+            ],
           );
+        } else if (tieneDatosModelo) {
+          const respuestaExistente = await respuestaRepository.findOne({
+            where: claveRespuesta,
+            select: { estudiante_id: true },
+          });
+
+          if (!respuestaExistente) {
+            await respuestaRepository.insert({
+              ...claveRespuesta,
+              respuesta_texto: null,
+              guardado_en: guardadoEn,
+            });
+          }
+        }
+
+        if (dto.opciones !== undefined) {
+          const opcionMarcadaRepository =
+            manager.getRepository(OpcionMarcada);
+          await opcionMarcadaRepository.delete(claveRespuesta);
+
+          if (esTipoDeOpciones && dto.opciones.length > 0) {
+            await opcionMarcadaRepository.insert(
+              dto.opciones.map((nro_opcion) => ({
+                ...claveRespuesta,
+                nro_opcion,
+              })),
+            );
+          }
+        }
+
+        if (tieneDatosModelo) {
+          const formulaIds = dto.formula_ids!;
+          const claveProcedimiento = {
+            estudiante_id: estudianteId,
+            examen_id: examenId,
+            pregunta_id: preguntaId,
+            letra,
+          };
+
+          await manager.getRepository(RespuestaModelo).save({
+            ...claveProcedimiento,
+            modelo_id: dto.modelo_id!,
+            valores: dto.valores ?? {},
+            resultado_final: dto.resultado_final ?? null,
+          });
+
+          const formulasElegidasRepository =
+            manager.getRepository(FormulaElegida);
+          await formulasElegidasRepository.delete(claveProcedimiento);
+
+          if (formulaIds.length > 0) {
+            await formulasElegidasRepository.insert(
+              formulaIds.map((formula_id) => ({
+                ...claveProcedimiento,
+                formula_id,
+              })),
+            );
+          }
         }
 
         const incisosPregunta = await manager
@@ -583,33 +872,48 @@ export class RendicionService {
             },
           });
 
-        const [respuestasPregunta, opcionesPregunta] =
+        const [respuestasPregunta, opcionesPregunta, respuestasModeloPregunta] =
           await Promise.all([
-            manager.getRepository(RespuestaInciso).find({
-              where: {
-                estudiante_id: estudianteId,
-                examen_id: examenId,
-                pregunta_id: preguntaId,
-              },
-              select: {
-                pregunta_id: true,
-                letra: true,
-                respuesta_texto: true,
-              },
-            }),
-            manager.getRepository(OpcionMarcada).find({
-              where: {
-                estudiante_id: estudianteId,
-                examen_id: examenId,
-                pregunta_id: preguntaId,
-              },
-              select: {
-                pregunta_id: true,
-                letra: true,
-                nro_opcion: true,
-              },
-            }),
-          ]);
+          manager.getRepository(RespuestaInciso).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: preguntaId,
+            },
+            select: {
+              pregunta_id: true,
+              letra: true,
+              respuesta_texto: true,
+            },
+          }),
+          manager.getRepository(OpcionMarcada).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: preguntaId,
+            },
+            select: {
+              pregunta_id: true,
+              letra: true,
+              nro_opcion: true,
+            },
+          }),
+          manager.getRepository(RespuestaModelo).find({
+            where: {
+              estudiante_id: estudianteId,
+              examen_id: examenId,
+              pregunta_id: preguntaId,
+            },
+            select: {
+              estudiante_id: true,
+              examen_id: true,
+              pregunta_id: true,
+              letra: true,
+              modelo_id: true,
+              valores: true,
+            },
+          }),
+        ]);
 
         const respuestasPorInciso = new Map(
           respuestasPregunta.map((respuesta) => [
@@ -636,6 +940,94 @@ export class RendicionService {
           opcionesPorInciso.set(clave, seleccionadas);
         }
 
+        const formulasPorModeloPregunta = new Map<number, Set<number>>();
+        const procedimientosValidosPorInciso = new Set<string>();
+        if (respuestasModeloPregunta.length > 0) {
+          const [formulasElegidasPregunta, preguntasModeloPregunta] =
+            await Promise.all([
+              manager.getRepository(FormulaElegida).find({
+                where: {
+                  estudiante_id: estudianteId,
+                  examen_id: examenId,
+                  pregunta_id: preguntaId,
+                },
+                select: {
+                  estudiante_id: true,
+                  examen_id: true,
+                  pregunta_id: true,
+                  letra: true,
+                  formula_id: true,
+                },
+              }),
+              manager.getRepository(PreguntaModelo).find({
+                where: { pregunta_id: preguntaId },
+                relations: { modelo: true },
+                select: {
+                  pregunta_id: true,
+                  modelo_id: true,
+                  modelo: {
+                    modelo_id: true,
+                    variables: true,
+                  },
+                },
+              }),
+            ]);
+          const modeloIds = [
+            ...new Set(
+              respuestasModeloPregunta.map(
+                (respuesta) => respuesta.modelo_id,
+              ),
+            ),
+          ];
+          const formulasModeloPregunta = await manager
+            .getRepository(ModeloFormula)
+            .find({
+              where: { modelo_id: In(modeloIds) },
+              select: { modelo_id: true, formula_id: true },
+            });
+          for (const formula of formulasModeloPregunta) {
+            const ids =
+              formulasPorModeloPregunta.get(formula.modelo_id) ??
+              new Set<number>();
+            ids.add(formula.formula_id);
+            formulasPorModeloPregunta.set(formula.modelo_id, ids);
+          }
+          const modelosPorPreguntaPregunta = new Map(
+            preguntasModeloPregunta.map((asociacion) => [
+              `${asociacion.pregunta_id}:${asociacion.modelo_id}`,
+              asociacion.modelo?.variables,
+            ]),
+          );
+          const formulasElegidasPorInciso = new Map<string, number[]>();
+          for (const formula of formulasElegidasPregunta) {
+            const clave = this.claveInciso(
+              formula.pregunta_id,
+              formula.letra,
+            );
+            const ids = formulasElegidasPorInciso.get(clave) ?? [];
+            ids.push(formula.formula_id);
+            formulasElegidasPorInciso.set(clave, ids);
+          }
+          for (const respuestaModelo of respuestasModeloPregunta) {
+            const clave = this.claveInciso(
+              respuestaModelo.pregunta_id,
+              respuestaModelo.letra,
+            );
+            if (
+              this.procedimientoValido(
+                modelosPorPreguntaPregunta.get(
+                  `${respuestaModelo.pregunta_id}:${respuestaModelo.modelo_id}`,
+                ),
+                respuestaModelo.valores,
+                formulasElegidasPorInciso.get(clave) ?? [],
+                formulasPorModeloPregunta.get(respuestaModelo.modelo_id),
+              )
+            ) {
+              procedimientosValidosPorInciso.add(clave);
+            }
+          }
+        }
+
         const preguntaRespondida = this.preguntaRespondida(
           {
             pregunta_id: preguntaId,
@@ -643,6 +1035,7 @@ export class RendicionService {
           },
           respuestasPorInciso,
           opcionesPorInciso,
+          procedimientosValidosPorInciso,
         );
 
         // Si el tiempo terminó durante el guardado,
@@ -671,6 +1064,110 @@ export class RendicionService {
       );
     }
   }
+
+  private async validarSeleccionModelo(
+    manager: EntityManager,
+    preguntaId: number,
+    dto: GuardarRespuestaEstudianteDto,
+  ): Promise<void> {
+    if (
+      !Number.isInteger(dto.modelo_id) ||
+      dto.modelo_id! < 1 ||
+      !Array.isArray(dto.formula_ids)
+    ) {
+      throw new BadRequestException(
+        'Envía un modelo y la lista de fórmulas seleccionadas.',
+      );
+    }
+
+    if (
+      dto.formula_ids.some(
+        (formulaId) => !Number.isInteger(formulaId) || formulaId < 1,
+      ) ||
+      new Set(dto.formula_ids).size !== dto.formula_ids.length
+    ) {
+      throw new BadRequestException(
+        'Los identificadores de fórmulas deben ser válidos y no repetirse.',
+      );
+    }
+
+    if (
+      dto.valores !== undefined &&
+      (typeof dto.valores !== 'object' ||
+        dto.valores === null ||
+        Array.isArray(dto.valores))
+    ) {
+      throw new BadRequestException(
+        'Los valores del procedimiento deben ser un objeto JSON.',
+      );
+    }
+
+    if (
+      dto.resultado_final !== undefined &&
+      typeof dto.resultado_final !== 'string'
+    ) {
+      throw new BadRequestException('El resultado final debe ser texto.');
+    }
+
+    if (dto.formula_ids.length === 0) {
+      throw new BadRequestException(
+        'Selecciona al menos una fórmula permitida para el modelo.',
+      );
+    }
+
+    const preguntaModelo = await manager
+      .getRepository(PreguntaModelo)
+      .findOne({
+        where: {
+          pregunta_id: preguntaId,
+          modelo_id: dto.modelo_id,
+          modelo: { activo: true },
+        },
+        relations: { modelo: true },
+        select: {
+          pregunta_id: true,
+          modelo_id: true,
+          modelo: {
+            modelo_id: true,
+            variables: true,
+            activo: true,
+          },
+        },
+      });
+
+    if (!preguntaModelo?.modelo || !preguntaModelo.modelo.activo) {
+      throw new BadRequestException(
+        'El modelo seleccionado no está permitido para esta pregunta.',
+      );
+    }
+
+    const valores = dto.valores ?? {};
+    if (
+      !this.clavesVariablesValidas(
+        preguntaModelo.modelo.variables,
+        valores,
+      )
+    ) {
+      throw new BadRequestException(
+        'Los valores deben incluir exactamente las variables configuradas para el modelo.',
+      );
+    }
+
+    const formulasPermitidas = await manager.getRepository(ModeloFormula).find({
+      where: {
+        modelo_id: dto.modelo_id,
+        formula_id: In(dto.formula_ids),
+      },
+      select: { formula_id: true },
+    });
+
+    if (formulasPermitidas.length !== dto.formula_ids.length) {
+      throw new BadRequestException(
+        'Una o más fórmulas no pertenecen al modelo seleccionado.',
+      );
+    }
+  }
+
   private async validarOpciones(
     manager: EntityManager,
     preguntaId: number,
@@ -773,6 +1270,8 @@ export class RendicionService {
           enunciado_inciso: fila.enunciado_inciso,
           tipo_respuesta: fila.tipo_respuesta,
           opciones: [],
+          modelos_permitidos: [],
+          procedimiento: null,
         };
         pregunta.incisos.push(inciso);
       }
@@ -838,6 +1337,7 @@ export class RendicionService {
     },
     respuestas: Map<string, string | null>,
     opciones: Map<string, Set<number>>,
+    procedimientosValidos: Set<string> = new Set(),
   ): boolean {
     if (pregunta.incisos.length === 0) return false;
 
@@ -845,12 +1345,65 @@ export class RendicionService {
       const clave = this.claveInciso(pregunta.pregunta_id, inciso.letra);
       const texto = respuestas.get(clave)?.trim() ?? '';
       const opcionesMarcadas = opciones.get(clave)?.size ?? 0;
+      if (
+        procedimientosValidos.has(clave) &&
+        this.tipoAdmiteProcedimiento(inciso.tipo_respuesta)
+      ) {
+        return true;
+      }
       return this.incisoRespondido(
         inciso.tipo_respuesta,
         texto,
         opcionesMarcadas,
       );
     });
+  }
+
+  private procedimientoValido(
+    variables: Record<string, unknown> | undefined,
+    valores: Record<string, unknown>,
+    formulaIds: number[],
+    formulasPermitidas: Set<number> | undefined,
+  ): boolean {
+    return (
+      variables !== undefined &&
+      formulaIds.length > 0 &&
+      formulaIds.every((formulaId) => formulasPermitidas?.has(formulaId)) &&
+      this.clavesVariablesValidas(variables, valores)
+    );
+  }
+
+  private tipoAdmiteProcedimiento(tipo: string): boolean {
+    return (
+      tipo === 'opcion_unica' ||
+      tipo === 'opcion_multiple' ||
+      tipo === 'verdadero_falso' ||
+      tipo === 'desarrollo' ||
+      tipo === 'numerica'
+    );
+  }
+
+  private clavesVariablesValidas(
+    variables: Record<string, unknown>,
+    valores: Record<string, unknown>,
+  ): boolean {
+    if (
+      typeof variables !== 'object' ||
+      variables === null ||
+      Array.isArray(variables) ||
+      typeof valores !== 'object' ||
+      valores === null ||
+      Array.isArray(valores)
+    ) {
+      return false;
+    }
+
+    const clavesVariables = Object.keys(variables);
+    const clavesValores = Object.keys(valores);
+    return (
+      clavesVariables.length === clavesValores.length &&
+      clavesVariables.every((clave) => Object.hasOwn(valores, clave))
+    );
   }
 
   private incisoRespondido(
@@ -881,6 +1434,15 @@ export class RendicionService {
 
   private claveInciso(preguntaId: number, letra: string): string {
     return `${preguntaId}:${letra}`;
+  }
+
+  private claveProcedimiento(
+    estudianteId: number,
+    examenId: number,
+    preguntaId: number,
+    letra: string,
+  ): string {
+    return `${estudianteId}:${examenId}:${preguntaId}:${letra}`;
   }
 
   private async recuperarExistente(
@@ -1010,7 +1572,6 @@ export class RendicionService {
     throw error;
   }
 
-
   private calcularFechaLimite(
     fechaInicio: Date,
     duracionMin: number | null,
@@ -1034,8 +1595,6 @@ export class RendicionService {
 
     return new Date(Math.min(...limites));
   }
-
-
 
   async finalizarSiVencida(
     examenId: number,
@@ -1184,7 +1743,6 @@ export class RendicionService {
     });
   }
 
-
   async obtenerEstadoRendicion(
     examenId: number,
     estudianteId: number,
@@ -1241,10 +1799,10 @@ export class RendicionService {
 
     const fechaLimite = rendicion.fecha_inicio
       ? this.calcularFechaLimite(
-        rendicion.fecha_inicio,
-        examen.duracion_min,
-        examen.disponible_hasta,
-      )
+          rendicion.fecha_inicio,
+          examen.duracion_min,
+          examen.disponible_hasta,
+        )
       : null;
 
     const ahora = new Date();

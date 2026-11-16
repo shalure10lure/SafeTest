@@ -10,6 +10,26 @@ export type RespuestaGuardadaIncisoDto =
   | { opciones: number[] }
   | { respuesta_texto: string };
 
+export interface FormulaPermitidaRendicionDto {
+  formula_id: number;
+  expresion: string;
+}
+
+export interface ModeloPermitidoRendicionDto {
+  modelo_id: number;
+  nombre: string;
+  descripcion: string | null;
+  variables: Record<string, unknown>;
+  formulas_permitidas: FormulaPermitidaRendicionDto[];
+}
+
+export interface ProcedimientoRendicionDto {
+  modelo_id: number;
+  valores: Record<string, unknown>;
+  resultado_final: string | null;
+  formula_ids: number[];
+}
+
 export class IncisoRendicionEstudianteDto {
   letra: string;
   enunciado_inciso: string;
@@ -17,6 +37,8 @@ export class IncisoRendicionEstudianteDto {
   opciones: OpcionRendicionEstudianteDto[];
   /** Solo aparece si el estudiante ya respondió este inciso. */
   respuesta?: RespuestaGuardadaIncisoDto;
+  modelos_permitidos: ModeloPermitidoRendicionDto[];
+  procedimiento: ProcedimientoRendicionDto | null;
 }
 
 export class PreguntaRendicionEstudianteDto {

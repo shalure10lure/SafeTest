@@ -9,7 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RendicionEvaluacion from './RendicionEvaluacion';
 import { usePreguntasRendicion } from '../hooks/usePreguntasRendicion';
-import type { PreguntaRendicionEstudiante } from '../types';
+import type {
+    ModeloPermitidoRendicion,
+    PreguntaRendicionEstudiante,
+    ProcedimientoRendicion,
+} from '../types';
 
 const mocks = vi.hoisted(() => ({
     replace: vi.fn(),
@@ -70,6 +74,49 @@ const preguntas: PreguntaRendicionEstudiante[] = [
     },
 ];
 
+const modelosPermitidos: ModeloPermitidoRendicion[] = [
+    {
+        modelo_id: 3,
+        nombre: 'Modelo lineal',
+        descripcion: 'Descripción del modelo lineal.',
+        variables: { x: { tipo: 'numero' }, y: { tipo: 'numero' } },
+        formulas_permitidas: [
+            { formula_id: 101, expresion: 'x + y' },
+            { formula_id: 102, expresion: 'x - y' },
+        ],
+    },
+    {
+        modelo_id: 4,
+        nombre: 'Modelo cuadrático',
+        descripcion: 'Descripción del modelo cuadrático.',
+        variables: { x: { tipo: 'numero' } },
+        formulas_permitidas: [{ formula_id: 201, expresion: 'x^2' }],
+    },
+];
+
+function preguntaConModelos(
+    modelos: ModeloPermitidoRendicion[] = modelosPermitidos,
+): PreguntaRendicionEstudiante {
+    return {
+        ...preguntas[0],
+        incisos: [
+            {
+                ...preguntas[0].incisos[0],
+                modelos_permitidos: modelos,
+            },
+        ],
+    };
+}
+
+function procedimientoGuardado(): ProcedimientoRendicion {
+    return {
+        modelo_id: 3,
+        valores: { x: 2, y: 3 },
+        resultado_final: '5',
+        formula_ids: [101, 102],
+    };
+}
+
 const mockUsePreguntasRendicion = vi.mocked(usePreguntasRendicion);
 
 /** Estado del hook con valores seguros por defecto; cada prueba ajusta lo suyo. */
@@ -82,12 +129,12 @@ function crearEstado(
         error: '',
         recargar: vi.fn(),
         respuestasLocales: {},
+        procedimientosLocales: {},
         incisosGuardando: [],
         erroresGuardado: {},
         guardarRespuesta: vi.fn().mockResolvedValue(null),
-        esperarGuardadosPendientes: vi
-            .fn()
-            .mockResolvedValue({ fallidos: [] }),
+        guardarProcedimiento: vi.fn().mockResolvedValue(null),
+        esperarGuardadosPendientes: vi.fn().mockResolvedValue({ fallidos: [] }),
         ...cambios,
     };
 }
@@ -178,6 +225,543 @@ describe('RendicionEvaluacion', () => {
                 }) as HTMLInputElement
             ).checked,
         ).toBe(true);
+    });
+
+    it('muestra los modelos permitidos para el inciso', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ preguntas: [preguntaConModelos()] }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+
+        const selector = screen.getByRole('combobox', {
+            name: 'Modelo del inciso a',
+        });
+        expect(selector.textContent).toContain('Modelo lineal');
+        expect(selector.textContent).toContain('Modelo cuadrático');
+    });
+
+    it('selecciona un modelo y presenta su descripción', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ preguntas: [preguntaConModelos()] }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+
+        expect(screen.getByText('Descripción del modelo lineal.')).toBeTruthy();
+        expect(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        ).toBeTruthy();
+    });
+
+    it('muestra únicamente las fórmulas permitidas del modelo seleccionado', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ preguntas: [preguntaConModelos()] }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '4' } },
+        );
+
+        expect(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 201',
+            }),
+        ).toBeTruthy();
+        expect(
+            screen.queryByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        ).toBeNull();
+        expect(
+            screen.getByText('Descripción del modelo cuadrático.'),
+        ).toBeTruthy();
+    });
+
+    it('permite seleccionar varias fórmulas permitidas', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ preguntas: [preguntaConModelos()] }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        const primera = screen.getByRole('checkbox', {
+            name: 'Seleccionar fórmula 101',
+        }) as HTMLInputElement;
+        const segunda = screen.getByRole('checkbox', {
+            name: 'Seleccionar fórmula 102',
+        }) as HTMLInputElement;
+
+        fireEvent.click(primera);
+        fireEvent.click(segunda);
+
+        expect(primera.checked).toBe(true);
+        expect(segunda.checked).toBe(true);
+    });
+
+    it('al cambiar de modelo guarda solo sus fórmulas y valores nuevos', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        const selector = screen.getByRole('combobox', {
+            name: 'Modelo del inciso a',
+        });
+        fireEvent.change(selector, { target: { value: '3' } });
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3}' } },
+        );
+
+        fireEvent.change(selector, { target: { value: '4' } });
+        expect(
+            screen.queryByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        ).toBeNull();
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 201',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 8}' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+
+        expect(guardarProcedimiento).toHaveBeenCalledExactlyOnceWith(21, 'a', {
+            modelo_id: 4,
+            formula_ids: [201],
+            valores: { x: 8 },
+        });
+    });
+
+    it('acepta los valores de variables como un objeto JSON', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ preguntas: [preguntaConModelos()] }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3}' } },
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Resultado final del inciso a',
+            }),
+            { target: { value: '5' } },
+        );
+
+        expect(
+            (
+                screen.getByRole('textbox', {
+                    name: 'Valores de variables del inciso a',
+                }) as HTMLTextAreaElement
+            ).value,
+        ).toBe('{"x": 2, "y": 3}');
+        expect(
+            (
+                screen.getByRole('textbox', {
+                    name: 'Resultado final del inciso a',
+                }) as HTMLInputElement
+            ).value,
+        ).toBe('5');
+    });
+
+    it('guarda el procedimiento con el payload esperado después de completarlo', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 102',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3}' } },
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Resultado final del inciso a',
+            }),
+            { target: { value: '5' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+
+        expect(guardarProcedimiento).toHaveBeenCalledExactlyOnceWith(21, 'a', {
+            modelo_id: 3,
+            formula_ids: [101, 102],
+            valores: { x: 2, y: 3 },
+            resultado_final: '5',
+        });
+    });
+
+    it('no envía el procedimiento sin valores cuando el modelo declara claves', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{}' } },
+        );
+
+        expect(
+            (
+                screen.getByRole('button', {
+                    name: 'Guardar procedimiento',
+                }) as HTMLButtonElement
+            ).disabled,
+        ).toBe(true);
+        expect(guardarProcedimiento).not.toHaveBeenCalled();
+    });
+
+    it('rechaza valores cuando faltan claves configuradas', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2}' } },
+        );
+
+        expect(
+            (
+                screen.getByRole('button', {
+                    name: 'Guardar procedimiento',
+                }) as HTMLButtonElement
+            ).disabled,
+        ).toBe(true);
+        expect(guardarProcedimiento).not.toHaveBeenCalled();
+    });
+
+    it('rechaza claves de valores que no están configuradas', () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue({});
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3, "z": 4}' } },
+        );
+
+        expect(
+            (
+                screen.getByRole('button', {
+                    name: 'Guardar procedimiento',
+                }) as HTMLButtonElement
+            ).disabled,
+        ).toBe(true);
+        expect(guardarProcedimiento).not.toHaveBeenCalled();
+    });
+
+    it('no indica que se guardó hasta que termine el PATCH', () => {
+        let resolver!: (respuesta: null) => void;
+        const guardarProcedimiento = vi.fn(
+            () =>
+                new Promise<null>((resolve) => {
+                    resolver = resolve;
+                }),
+        );
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3}' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+
+        expect(guardarProcedimiento).toHaveBeenCalledOnce();
+        expect(screen.queryByText('Procedimiento guardado.')).toBeNull();
+        resolver(null);
+    });
+
+    it('recupera y presenta un procedimiento previamente guardado', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                procedimientosLocales: { '21:a': procedimientoGuardado() },
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+
+        expect(
+            (
+                screen.getByRole('combobox', {
+                    name: 'Modelo del inciso a',
+                }) as HTMLSelectElement
+            ).value,
+        ).toBe('3');
+        expect(
+            (
+                screen.getByRole('checkbox', {
+                    name: 'Seleccionar fórmula 101',
+                }) as HTMLInputElement
+            ).checked,
+        ).toBe(true);
+        expect(
+            (
+                screen.getByRole('textbox', {
+                    name: 'Valores de variables del inciso a',
+                }) as HTMLTextAreaElement
+            ).value,
+        ).toContain('"x": 2');
+        expect(screen.getByText('Procedimiento guardado.')).toBeTruthy();
+    });
+
+    it('muestra todos los valores históricos cuando el modelo ya no está disponible', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos([modelosPermitidos[1]])],
+                procedimientosLocales: {
+                    '21:a': procedimientoGuardado(),
+                },
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+
+        expect(screen.getByText(/modelo 3 ya no está disponible/)).toBeTruthy();
+        expect(screen.getByText(/101, 102/)).toBeTruthy();
+        expect(
+            screen.getByText(
+                (_, elemento) =>
+                    elemento?.tagName === 'P' &&
+                    elemento.textContent?.includes('Resultado final: 5') ===
+                        true,
+            ),
+        ).toBeTruthy();
+        expect(screen.getByText(/"x": 2/)).toBeTruthy();
+        expect(screen.getByText(/"y": 3/)).toBeTruthy();
+        expect(
+            screen.queryByRole('combobox', { name: 'Modelo del inciso a' }),
+        ).toBeNull();
+        expect(
+            screen.queryByRole('button', { name: 'Guardar procedimiento' }),
+        ).toBeNull();
+    });
+
+    it('muestra cuando un inciso no tiene modelos permitidos', () => {
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ preguntas: [preguntaConModelos([])] }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+
+        expect(
+            screen.getByText('No hay modelos permitidos para este inciso.'),
+        ).toBeTruthy();
+    });
+
+    it('muestra el error HU-23 sin presentarlo como error de respuesta HU-22', async () => {
+        const guardarProcedimiento = vi.fn().mockResolvedValue(null);
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3}' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+
+        await waitFor(() =>
+            expect(screen.getByRole('alert').textContent).toContain(
+                'No se pudo guardar el procedimiento.',
+            ),
+        );
+        expect(
+            screen.queryByText('No se pudo guardar la respuesta.'),
+        ).toBeNull();
+    });
+
+    it('permite reintentar HU-23 después de un error', async () => {
+        const guardarProcedimiento = vi
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ estado_respuesta: 'pendiente' });
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({
+                preguntas: [preguntaConModelos()],
+                guardarProcedimiento,
+            }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.change(
+            screen.getByRole('combobox', { name: 'Modelo del inciso a' }),
+            { target: { value: '3' } },
+        );
+        fireEvent.click(
+            screen.getByRole('checkbox', {
+                name: 'Seleccionar fórmula 101',
+            }),
+        );
+        fireEvent.change(
+            screen.getByRole('textbox', {
+                name: 'Valores de variables del inciso a',
+            }),
+            { target: { value: '{"x": 2, "y": 3}' } },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Guardar procedimiento' }),
+        );
+        await waitFor(() =>
+            expect(screen.getByRole('alert').textContent).toContain(
+                'No se pudo guardar el procedimiento.',
+            ),
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Reintentar procedimiento',
+            }),
+        );
+        await waitFor(() =>
+            expect(guardarProcedimiento).toHaveBeenCalledTimes(2),
+        );
+        expect(screen.getByText('Procedimiento guardado.')).toBeTruthy();
     });
 
     it('permite respuestas independientes múltiples, verdadero/falso, desarrollo y numérica', () => {
@@ -289,14 +873,15 @@ describe('RendicionEvaluacion', () => {
     });
 
     it('avisa antes de cerrar la pestaña mientras hay un guardado en curso', () => {
-        mockUsePreguntasRendicion.mockReturnValue({
-            ...mockUsePreguntasRendicion(12),
-            incisosGuardando: ['21:a'],
-        });
+        const guardarRespuesta = vi.fn(() => new Promise<null>(() => {}));
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ guardarRespuesta }),
+        );
         const agregar = vi.spyOn(window, 'addEventListener');
         const quitar = vi.spyOn(window, 'removeEventListener');
 
         const { unmount } = render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(screen.getByRole('radio', { name: 'Alternativa uno' }));
 
         expect(screen.getByText('Guardando respuestas…')).toBeTruthy();
         expect(
@@ -311,58 +896,68 @@ describe('RendicionEvaluacion', () => {
         quitar.mockRestore();
     });
 
-    it('marca respuestas sin guardar cuando falla un guardado', () => {
-        mockUsePreguntasRendicion.mockReturnValue({
-            ...mockUsePreguntasRendicion(12),
-            erroresGuardado: { '21:a': 'Sin conexión' },
-        });
-
-        render(<RendicionEvaluacion examenId={12} />);
-
-        expect(
-            screen.getByText(
-                'Hay respuestas sin guardar. Usa «Reintentar guardado».',
-            ),
-        ).toBeTruthy();
-    });
-
-    it('muestra errores de guardado sin ocultar el control', () => {
-        mockUsePreguntasRendicion.mockReturnValueOnce(
-            crearEstado({
-                erroresGuardado: { '21:a': 'Verifica tu conexión.' },
-            }),
+    it('marca respuestas sin guardar cuando falla un guardado', async () => {
+        const guardarRespuesta = vi.fn().mockResolvedValue(null);
+        mockUsePreguntasRendicion.mockReturnValue(
+            crearEstado({ guardarRespuesta }),
         );
 
         render(<RendicionEvaluacion examenId={12} />);
 
-        expect(screen.getByRole('alert').textContent).toContain(
-            'Verifica tu conexión.',
+        fireEvent.click(screen.getByRole('radio', { name: 'Alternativa uno' }));
+        await waitFor(() =>
+            expect(
+                screen.getByText(
+                    'Hay respuestas sin guardar. Usa «Reintentar guardado».',
+                ),
+            ).toBeTruthy(),
+        );
+    });
+
+    it('muestra un error de HU-22 sin ocultar el control de respuesta', async () => {
+        const guardarRespuesta = vi.fn().mockResolvedValue(null);
+        mockUsePreguntasRendicion.mockReturnValueOnce(
+            crearEstado({ guardarRespuesta }),
+        );
+
+        render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(screen.getByRole('radio', { name: 'Alternativa uno' }));
+
+        await waitFor(() =>
+            expect(screen.getByRole('alert').textContent).toContain(
+                'No se pudo guardar la respuesta.',
+            ),
         );
         expect(
             screen.getByRole('radio', { name: 'Alternativa uno' }),
         ).toBeTruthy();
     });
 
-    it('reintenta el último valor escrito sin que el estudiante lo cambie otra vez', () => {
-        const guardarRespuesta = vi.fn().mockResolvedValue(null);
+    it('reintenta la última respuesta fallida sin cambiarla', async () => {
+        const guardarRespuesta = vi
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({
+                examen_id: 12,
+                pregunta_id: 21,
+                letra: 'a',
+                estado_respuesta: 'respondida',
+                guardado_en: '2026-11-08T14:00:00.000Z',
+            });
         const estadoInicial = crearEstado({ guardarRespuesta });
         mockUsePreguntasRendicion.mockReturnValue(estadoInicial);
 
-        const vista = render(<RendicionEvaluacion examenId={12} />);
+        render(<RendicionEvaluacion examenId={12} />);
         fireEvent.click(screen.getByRole('radio', { name: 'Alternativa uno' }));
-
-        mockUsePreguntasRendicion.mockReturnValue({
-            ...estadoInicial,
-            erroresGuardado: { '21:a': 'Verifica tu conexión.' },
-        });
-        vista.rerender(<RendicionEvaluacion examenId={12} />);
-
-        expect(screen.getByRole('alert').textContent).toContain(
-            'Verifica tu conexión.',
+        await waitFor(() =>
+            expect(screen.getByRole('alert').textContent).toContain(
+                'No se pudo guardar la respuesta.',
+            ),
         );
         fireEvent.click(
             screen.getByRole('button', { name: 'Reintentar guardado' }),
         );
+        await waitFor(() => expect(guardarRespuesta).toHaveBeenCalledTimes(2));
 
         expect(guardarRespuesta).toHaveBeenNthCalledWith(1, 21, 'a', {
             opciones: [1],
@@ -372,12 +967,14 @@ describe('RendicionEvaluacion', () => {
         });
     });
 
-    it('indica cuando una respuesta se está guardando', () => {
+    it('indica cuando una respuesta se está guardando', async () => {
+        const guardarRespuesta = vi.fn(() => new Promise<null>(() => {}));
         mockUsePreguntasRendicion.mockReturnValueOnce(
-            crearEstado({ incisosGuardando: ['21:a'] }),
+            crearEstado({ guardarRespuesta }),
         );
 
         render(<RendicionEvaluacion examenId={12} />);
+        fireEvent.click(screen.getByRole('radio', { name: 'Alternativa uno' }));
 
         expect(screen.getByText('Guardando respuesta…')).toBeTruthy();
     });
@@ -477,9 +1074,7 @@ describe('RendicionEvaluacion', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Finalizar evaluación' }),
         );
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Sí, finalizar' }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, finalizar' }));
 
         expect(esperarGuardadosPendientes).toHaveBeenCalledTimes(1);
         expect(mocks.finalizarRendicion).not.toHaveBeenCalled();
@@ -523,9 +1118,7 @@ describe('RendicionEvaluacion', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Finalizar evaluación' }),
         );
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Sí, finalizar' }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, finalizar' }));
 
         await waitFor(() =>
             expect(screen.getByRole('alert').textContent).toContain(
@@ -534,9 +1127,7 @@ describe('RendicionEvaluacion', () => {
         );
         expect(mocks.finalizarRendicion).not.toHaveBeenCalled();
         expect(mocks.replace).not.toHaveBeenCalled();
-        expect(
-            screen.getByRole('button', { name: 'Reintentar' }),
-        ).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy();
     });
 
     it('un error del backend no redirige y permite reintentar', async () => {
@@ -548,9 +1139,7 @@ describe('RendicionEvaluacion', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Finalizar evaluación' }),
         );
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Sí, finalizar' }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, finalizar' }));
 
         await waitFor(() =>
             expect(screen.getByRole('alert').textContent).toContain(
@@ -585,9 +1174,7 @@ describe('RendicionEvaluacion', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Finalizar evaluación' }),
         );
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Sí, finalizar' }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, finalizar' }));
 
         await waitFor(() =>
             expect(mocks.finalizarRendicion).toHaveBeenCalledTimes(1),

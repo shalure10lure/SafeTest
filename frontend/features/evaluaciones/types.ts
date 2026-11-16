@@ -70,6 +70,34 @@ export interface OpcionRendicionEstudiante {
     texto_opcion: string;
 }
 
+export interface FormulaPermitidaRendicion {
+    formula_id: number;
+    expresion: string;
+}
+
+export interface ModeloPermitidoRendicion {
+    modelo_id: number;
+    nombre: string;
+    descripcion: string | null;
+    variables: Record<string, unknown>;
+    formulas_permitidas: FormulaPermitidaRendicion[];
+}
+
+export interface ProcedimientoRendicion {
+    modelo_id: number;
+    valores: Record<string, unknown>;
+    resultado_final: string | null;
+    formula_ids: number[];
+}
+
+/** Payload de procedimiento aceptado por el DTO de guardado del backend. */
+export interface GuardarProcedimientoRendicion {
+    modelo_id: number;
+    formula_ids: number[];
+    valores: Record<string, unknown>;
+    resultado_final?: string;
+}
+
 export interface IncisoRendicionEstudiante {
     letra: string;
     enunciado_inciso: string;
@@ -77,6 +105,8 @@ export interface IncisoRendicionEstudiante {
     opciones: OpcionRendicionEstudiante[];
     /** Respuesta ya guardada por el estudiante; ausente si aún no responde. */
     respuesta?: RespuestaRendicion;
+    modelos_permitidos?: ModeloPermitidoRendicion[];
+    procedimiento?: ProcedimientoRendicion | null;
 }
 
 export interface PreguntaRendicionEstudiante {

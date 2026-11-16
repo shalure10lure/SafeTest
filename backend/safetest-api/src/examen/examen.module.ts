@@ -18,6 +18,10 @@ import { ExamenPoolSnapshot } from '../examenpoolsnapshot/entity/examen-pool-sna
 import { ExamenPoolSnapshotTema } from '../examenpoolsnapshot/entity/examen-pool-snapshot-tema.entity';
 import { ExamenPoolSnapshotPregunta } from '../examenpoolsnapshot/entity/examen-pool-snapshot-pregunta.entity';
 import { ExamenPoolSnapshotInciso } from '../examenpoolsnapshot/entity/examen-pool-snapshot-inciso.entity';
+import { Modelo } from '../modelo/entity/modelo.entity';
+import { ModeloFormula } from '../modeloformula/entity/modeloformula.entity';
+import { PreguntaModelo } from '../preguntamodelo/entity/preguntamodelo.entity';
+import { RespuestaModelo } from '../respuestamodelo/entity/respuestamodelo.entity';
 
 import { ExamenController } from './examen.controller';
 import { ExamenEstudianteController } from './examen-estudiante.controller';
@@ -49,6 +53,10 @@ import { RendicionVencimientoWorker } from '../rendicion/rendicion-vencimiento.w
             ExamenPoolSnapshotPregunta,
             ExamenPoolSnapshotInciso,
             AsignacionPregunta,
+            Modelo,
+            ModeloFormula,
+            PreguntaModelo,
+            RespuestaModelo,
         ]),
         PreguntaModule,
         ReglaCorreccionModule,
