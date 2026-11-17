@@ -4,6 +4,7 @@ import {
   ManyToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
 
@@ -21,5 +22,5 @@ export class PreguntaCompetencia {
     { nullable: false },
   )
   @JoinColumn({ name: 'pregunta_id' })
-  pregunta: Pregunta;
+  pregunta: Relation<Pregunta>;
 }

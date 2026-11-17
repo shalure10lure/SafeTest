@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Materia } from '../../materia/entity/materia.entity';
 import { Semestre } from '../../semestre/entity/semestre.entity';
@@ -37,7 +38,7 @@ export class Paralelo {
     { nullable: false },
   )
   @JoinColumn({ name: 'materia_id' })
-  materia: Materia;
+  materia: Relation<Materia>;
 
   @ManyToOne(
     () => Semestre,
@@ -45,7 +46,7 @@ export class Paralelo {
     { nullable: false },
   )
   @JoinColumn({ name: 'semestre_id' })
-  semestre: Semestre;
+  semestre: Relation<Semestre>;
 
   @ManyToOne(
     () => Docente,
@@ -53,7 +54,7 @@ export class Paralelo {
     { nullable: false },
   )
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente;
+  docente: Relation<Docente>;
 
   @OneToMany(
     () => Inscripcion,

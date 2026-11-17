@@ -4,6 +4,7 @@ import {
   ManyToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Paralelo } from '../../paralelo/entity/paralelo.entity';
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
@@ -22,7 +23,7 @@ export class ParaleloPregunta {
     { nullable: false },
   )
   @JoinColumn({ name: 'paralelo_id' })
-  paralelo: Paralelo;
+  paralelo: Relation<Paralelo>;
 
   @ManyToOne(
     () => Pregunta,
@@ -30,5 +31,5 @@ export class ParaleloPregunta {
     { nullable: false },
   )
   @JoinColumn({ name: 'pregunta_id' })
-  pregunta: Pregunta;
+  pregunta: Relation<Pregunta>;
 }

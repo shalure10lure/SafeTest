@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Semestre } from '../../semestre/entity/semestre.entity';
 import { Docente } from '../../docente/entity/docente.entity';
@@ -92,18 +93,18 @@ export class Examen {
 
   @ManyToOne(() => Docente, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente | null;
+  docente: Relation<Docente | null>;
 
   @ManyToOne(() => Materia, { nullable: true })
   @JoinColumn({ name: 'materia_id' })
-  materia: Materia | null;
+  materia: Relation<Materia | null>;
   // ---------- FIN NUEVO ----------
 
   @ManyToOne(() => Semestre, (semestre) => semestre.examenes, {
     nullable: false,
   })
   @JoinColumn({ name: 'semestre_id' })
-  semestre: Semestre;
+  semestre: Relation<Semestre>;
 
   @OneToMany(() => ExamenTema, (examenTema) => examenTema.examen)
   temas: ExamenTema[];

@@ -8,6 +8,7 @@ import {
   PrimaryColumn,
   Unique,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
 import { ExamenPoolSnapshotInciso } from './examen-pool-snapshot-inciso.entity';
@@ -42,7 +43,7 @@ export class ExamenPoolSnapshotPregunta {
     },
     { name: 'tema_id', referencedColumnName: 'tema_id' },
   ])
-  temaSnapshot: ExamenPoolSnapshotTema;
+  temaSnapshot: Relation<ExamenPoolSnapshotTema>;
 
   @ManyToOne(() => Pregunta, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn([
@@ -53,7 +54,7 @@ export class ExamenPoolSnapshotPregunta {
     },
     { name: 'tema_id', referencedColumnName: 'tema_id' },
   ])
-  pregunta: Pregunta;
+  pregunta: Relation<Pregunta>;
 
   @OneToMany(
     () => ExamenPoolSnapshotInciso,

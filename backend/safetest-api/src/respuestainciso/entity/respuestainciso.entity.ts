@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Inciso } from '../../inciso/entity/inciso.entity';
 import { AsignacionPregunta } from '../../asignacionpregunta/entity/asignacionpregunta.entity';
@@ -78,7 +79,7 @@ export class RespuestaInciso {
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
     { name: 'letra', referencedColumnName: 'letra' },
   ])
-  inciso: Inciso;
+  inciso: Relation<Inciso>;
 
   @ManyToOne(() => AsignacionPregunta, { nullable: false })
   @JoinColumn([
@@ -86,7 +87,7 @@ export class RespuestaInciso {
     { name: 'examen_id', referencedColumnName: 'examen_id' },
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
   ])
-  asignacion: AsignacionPregunta;
+  asignacion: Relation<AsignacionPregunta>;
 
   @OneToMany(
     () => OpcionMarcada,

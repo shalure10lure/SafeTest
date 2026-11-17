@@ -14,6 +14,7 @@ import {
     PrimaryColumn,
     PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 /**
  * Pruebas de integración reales de HU-11 y HU-19.
@@ -185,7 +186,7 @@ class Inscripcion {
 
     @ManyToOne(() => Estudiante, { nullable: false, onDelete: 'CASCADE' })
     @JoinColumn({ name: 'estudiante_id' })
-    estudiante: Estudiante;
+    estudiante: Relation<Estudiante>;
 }
 
 @Entity('paralelo_examen')
@@ -198,11 +199,11 @@ class ParaleloExamen {
 
     @ManyToOne(() => Paralelo, { nullable: false })
     @JoinColumn({ name: 'paralelo_id' })
-    paralelo: Paralelo;
+    paralelo: Relation<Paralelo>;
 
     @ManyToOne(() => Examen, (examen) => examen.paralelos, { nullable: false })
     @JoinColumn({ name: 'examen_id' })
-    examen: Examen;
+    examen: Relation<Examen>;
 }
 
 @Entity('examen_estudiante')
@@ -217,11 +218,11 @@ class ExamenEstudiante {
         onDelete: 'CASCADE',
     })
     @JoinColumn({ name: 'examen_id' })
-    examen: Examen;
+    examen: Relation<Examen>;
 
     @ManyToOne(() => Estudiante, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'estudiante_id' })
-    estudiante: Estudiante;
+    estudiante: Relation<Estudiante>;
 }
 
 @Entity('examen_pregunta')
@@ -246,13 +247,13 @@ class ExamenPregunta {
 
     @ManyToOne(() => Examen, (examen) => examen.preguntas, { nullable: false })
     @JoinColumn({ name: 'examen_id' })
-    examen: Examen;
+    examen: Relation<Examen>;
 
     @ManyToOne(() => Pregunta, (pregunta) => pregunta.examenes, {
         nullable: false,
     })
     @JoinColumn({ name: 'pregunta_id' })
-    pregunta: Pregunta;
+    pregunta: Relation<Pregunta>;
 }
 
 @Entity('materia')
@@ -310,7 +311,7 @@ class Pregunta {
 
     @ManyToOne(() => Tema, (tema) => tema.preguntas, { nullable: false })
     @JoinColumn({ name: 'tema_id' })
-    tema: Tema;
+    tema: Relation<Tema>;
 
     @OneToMany(() => ExamenPregunta, (examenPregunta) => examenPregunta.pregunta)
     examenes: ExamenPregunta[];
@@ -329,7 +330,7 @@ class Tema {
 
     @ManyToOne(() => Materia, (materia) => materia.temas, { nullable: false })
     @JoinColumn({ name: 'materia_id' })
-    materia: Materia;
+    materia: Relation<Materia>;
 
     @OneToMany(() => Pregunta, (pregunta) => pregunta.tema)
     preguntas: Pregunta[];

@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Materia } from '../../materia/entity/materia.entity';
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
@@ -26,7 +27,7 @@ export class Tema {
     nullable: false,
   })
   @JoinColumn({ name: 'materia_id' })
-  materia: Materia;
+  materia: Relation<Materia>;
 
   // Un tema puede contener varias preguntas.
   @OneToMany(() => Pregunta, (pregunta) => pregunta.tema)

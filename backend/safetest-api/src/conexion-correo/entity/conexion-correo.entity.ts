@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Docente } from '../../docente/entity/docente.entity';
 
@@ -30,7 +31,7 @@ export class ConexionCorreo {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente;
+  docente: Relation<Docente>;
 
   @Column({
     type: 'varchar',

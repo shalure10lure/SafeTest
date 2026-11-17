@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Tema } from '../../tema/entity/tema.entity';
 import { Paralelo } from '../../paralelo/entity/paralelo.entity';
@@ -37,7 +38,7 @@ export class Materia {
 
   @ManyToOne(() => Docente, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente;
+  docente: Relation<Docente>;
 
   @OneToMany(() => Tema, (tema) => tema.materia)
   temas: Tema[];

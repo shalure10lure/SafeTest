@@ -5,6 +5,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Rendicion } from '../../rendicion/entity/rendicion.entity';
 
@@ -34,5 +35,5 @@ export class EventoSeguridad {
     { name: 'estudiante_id', referencedColumnName: 'estudiante_id' },
     { name: 'examen_id', referencedColumnName: 'examen_id' },
   ])
-  rendicion: Rendicion;
+  rendicion: Relation<Rendicion>;
 }

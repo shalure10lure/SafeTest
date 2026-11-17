@@ -8,6 +8,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Docente } from '../../docente/entity/docente.entity';
 import { Materia } from '../../materia/entity/materia.entity';
@@ -83,15 +84,15 @@ export class IaGeneracion {
 
   @ManyToOne(() => Docente, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente;
+  docente: Relation<Docente>;
 
   @ManyToOne(() => Materia, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'materia_id' })
-  materia: Materia;
+  materia: Relation<Materia>;
 
   @ManyToOne(() => Tema, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'tema_id' })
-  tema: Tema | null;
+  tema: Relation<Tema | null>;
 
   @OneToMany(() => IaGeneracionMaterial, (gm) => gm.generacion)
   materiales: IaGeneracionMaterial[];

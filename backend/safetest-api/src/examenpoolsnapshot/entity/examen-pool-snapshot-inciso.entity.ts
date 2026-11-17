@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Inciso } from '../../inciso/entity/inciso.entity';
 import { ExamenPoolSnapshotPregunta } from './examen-pool-snapshot-pregunta.entity';
@@ -42,7 +43,7 @@ export class ExamenPoolSnapshotInciso {
     { name: 'tema_id', referencedColumnName: 'tema_id' },
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
   ])
-  preguntaSnapshot: ExamenPoolSnapshotPregunta;
+  preguntaSnapshot: Relation<ExamenPoolSnapshotPregunta>;
 
   @ManyToOne(() => Inciso, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn([
@@ -53,5 +54,5 @@ export class ExamenPoolSnapshotInciso {
     },
     { name: 'letra', referencedColumnName: 'letra' },
   ])
-  inciso: Inciso;
+  inciso: Relation<Inciso>;
 }

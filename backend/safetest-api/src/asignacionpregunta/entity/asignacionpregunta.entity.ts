@@ -5,6 +5,7 @@ import {
   ManyToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Estudiante } from '../../estudiante/entity/estudiante.entity';
 import { Examen } from '../../examen/entity/examen.entity';
@@ -26,11 +27,11 @@ export class AsignacionPregunta {
 
   @ManyToOne(() => Estudiante, { nullable: false })
   @JoinColumn({ name: 'estudiante_id' })
-  estudiante: Estudiante;
+  estudiante: Relation<Estudiante>;
 
   @ManyToOne(() => Examen, { nullable: false })
   @JoinColumn({ name: 'examen_id' })
-  examen: Examen;
+  examen: Relation<Examen>;
 
   @ManyToOne(
     () => Pregunta,
@@ -38,5 +39,5 @@ export class AsignacionPregunta {
     { nullable: false },
   )
   @JoinColumn({ name: 'pregunta_id' })
-  pregunta: Pregunta;
+  pregunta: Relation<Pregunta>;
 }
