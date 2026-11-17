@@ -16,6 +16,7 @@ export interface ResumenCalificaciones {
   puntaje_total: string | null;
   calificaciones_revisadas_en: string | null;
   resultados_publicados_en: string | null;
+  respuestas_publicadas_en: string | null;
   disponible_hasta: string | null;
   total_rendiciones: number;
   total_listas: number;

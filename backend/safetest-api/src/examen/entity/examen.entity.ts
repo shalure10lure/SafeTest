@@ -88,6 +88,10 @@ export class Examen {
   @Column({ name: 'calificaciones_revisadas_en', type: 'timestamptz', nullable: true })
   calificaciones_revisadas_en: Date | null;
 
+  // HU-32: publicar notas no autoriza automáticamente las respuestas correctas.
+  @Column({ name: 'respuestas_publicadas_en', type: 'timestamptz', nullable: true })
+  respuestas_publicadas_en: Date | null;
+
   @Column({ name: 'enviar_resultados_correo', type: 'boolean', default: false })
   enviar_resultados_correo: boolean;
 

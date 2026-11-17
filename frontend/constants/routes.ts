@@ -556,7 +556,7 @@ export const NAV_ESTUDIANTE: NavSection[] = [
                 label: 'Resultados',
                 href: ROUTES.estudiante.resultados,
                 icono: TrendingUp,
-                disponible: false,
+                disponible: true,
             },
             {
                 label: 'Historial',
