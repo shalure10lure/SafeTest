@@ -14,13 +14,17 @@ class ExamenPoolSnapshot {}
 class ExamenPoolSnapshotPregunta {}
 class ExamenPoolSnapshotTema {}
 class ExamenTema {}
+class FormulaElegida {}
 class Inciso {}
 class Inscripcion {}
+class ModeloFormula {}
 class Opcion {}
 class OpcionMarcada {}
 class ParaleloExamen {}
 class Pregunta {}
+class PreguntaModelo {}
 class RespuestaInciso {}
+class RespuestaModelo {}
 class Rendicion {}
 
 let RendicionService: typeof import('./rendicion.service').RendicionService;
@@ -33,13 +37,16 @@ beforeAll(async () => {
   jest.unstable_mockModule('../examen/entity/examen.entity', () => ({
     Examen,
   }));
-  jest.unstable_mockModule(
-    '../examen/examen-acceso.service',
-    () => ({ ExamenAccesoService: class ExamenAccesoService {} }),
-  );
+  jest.unstable_mockModule('../examen/examen-acceso.service', () => ({
+    ExamenAccesoService: class ExamenAccesoService {},
+  }));
   jest.unstable_mockModule(
     '../examenpregunta/entity/examenpregunta.entity',
     () => ({ ExamenPregunta }),
+  );
+  jest.unstable_mockModule(
+    '../formulaelegida/entity/formulaelegida.entity',
+    () => ({ FormulaElegida }),
   );
   jest.unstable_mockModule('../examentema/entity/examentema.entity', () => ({
     ExamenTema,
@@ -47,6 +54,12 @@ beforeAll(async () => {
   jest.unstable_mockModule('../inciso/entity/inciso.entity', () => ({
     Inciso,
   }));
+  jest.unstable_mockModule(
+    '../modeloformula/entity/modeloformula.entity',
+    () => ({
+      ModeloFormula,
+    }),
+  );
   jest.unstable_mockModule('../opcion/entity/opcion.entity', () => ({
     Opcion,
   }));
@@ -65,8 +78,16 @@ beforeAll(async () => {
     Pregunta,
   }));
   jest.unstable_mockModule(
+    '../preguntamodelo/entity/preguntamodelo.entity',
+    () => ({ PreguntaModelo }),
+  );
+  jest.unstable_mockModule(
     '../respuestainciso/entity/respuestainciso.entity',
     () => ({ RespuestaInciso }),
+  );
+  jest.unstable_mockModule(
+    '../respuestamodelo/entity/respuestamodelo.entity',
+    () => ({ RespuestaModelo }),
   );
   jest.unstable_mockModule('./entity/rendicion.entity', () => ({ Rendicion }));
   jest.unstable_mockModule(
@@ -95,6 +116,15 @@ beforeAll(async () => {
  * Las entidades solo se usan como tokens de repositorio. Se trabaja con
  * repositorios simulados; no se toca ninguna base de datos.
  */
+
+function valoresDeIn(criterio: unknown): number[] {
+  if (typeof criterio !== 'object' || criterio === null) return [];
+
+  const valor = (criterio as { _value?: unknown })._value;
+  return Array.isArray(valor)
+    ? valor.filter((elemento): elemento is number => typeof elemento === 'number')
+    : [];
+}
 
 function prepararServicio({
   examen = {
@@ -137,6 +167,43 @@ function prepararServicio({
   },
   incisos = inciso ? [inciso] : [],
   opcionesDisponibles = [{ nro_opcion: 1, texto_opcion: 'Alternativa' }],
+  preguntaModeloDisponible = {
+    pregunta_id: 21,
+    modelo_id: 3,
+    modelo: {
+      modelo_id: 3,
+      variables: {},
+      activo: true,
+    },
+  },
+  formulasPermitidas = [{ formula_id: 101 }, { formula_id: 102 }],
+  preguntaModelosRendicion = [
+    {
+      pregunta_id: 21,
+      modelo_id: 3,
+      modelo: {
+        modelo_id: 3,
+        nombre: 'Modelo de prueba',
+        descripcion: null,
+        variables: {},
+        activo: true,
+      },
+    },
+  ],
+  formulasDisponiblesPorModelo = [
+    {
+      modelo_id: 3,
+      formula_id: 101,
+      formula: { formula_id: 101, expresion: 'x + 1' },
+    },
+    {
+      modelo_id: 3,
+      formula_id: 102,
+      formula: { formula_id: 102, expresion: 'x + 2' },
+    },
+  ],
+  respuestasModelo = [],
+  formulasElegidas = [],
 }: {
   examen?: Record<string, unknown> | null;
   modoSeleccion?: 'manual' | 'aleatorio';
@@ -163,6 +230,12 @@ function prepararServicio({
   inciso?: Record<string, unknown> | null;
   incisos?: Record<string, unknown>[];
   opcionesDisponibles?: Record<string, unknown>[];
+  preguntaModeloDisponible?: Record<string, unknown> | null;
+  formulasPermitidas?: { formula_id: number }[];
+  preguntaModelosRendicion?: Record<string, unknown>[];
+  formulasDisponiblesPorModelo?: Record<string, unknown>[];
+  respuestasModelo?: Record<string, unknown>[];
+  formulasElegidas?: Record<string, unknown>[];
 } = {}) {
   const builder = {
     insert: jest.fn(),
@@ -239,6 +312,15 @@ function prepararServicio({
   const respuestasGuardadas = [...respuestas];
   const respuestaRepository = {
     find: jest.fn().mockImplementation(async () => respuestasGuardadas),
+    findOne: jest.fn().mockImplementation(async ({ where }) =>
+      respuestasGuardadas.find(
+        (existente) =>
+          existente.estudiante_id === where.estudiante_id &&
+          existente.examen_id === where.examen_id &&
+          existente.pregunta_id === where.pregunta_id &&
+          existente.letra === where.letra,
+      ) ?? null,
+    ),
     upsert: jest
       .fn()
       .mockImplementation(async (respuesta: Record<string, unknown>) => {
@@ -253,6 +335,10 @@ function prepararServicio({
         else respuestasGuardadas[indice] = respuesta;
         return {};
       }),
+    insert: jest.fn().mockImplementation(async (respuesta) => {
+      respuestasGuardadas.push(respuesta);
+      return {};
+    }),
   };
   const opcionesMarcadasGuardadas = [...opcionesMarcadas];
   const opcionMarcadaRepository = {
@@ -296,6 +382,105 @@ function prepararServicio({
   const opcionRepository = {
     find: jest.fn().mockResolvedValue(opcionesDisponibles),
   };
+  const preguntaModeloRepository = {
+    findOne: jest.fn().mockResolvedValue(preguntaModeloDisponible),
+    find: jest.fn().mockImplementation(async ({ where }) => {
+      const preguntaIds =
+        typeof where.pregunta_id === 'number'
+          ? [where.pregunta_id]
+          : valoresDeIn(where.pregunta_id);
+      return preguntaModelosRendicion.filter((asociacion) => {
+        const modelo = asociacion.modelo as
+          | { activo?: boolean }
+          | undefined;
+        return (
+          preguntaIds.includes(asociacion.pregunta_id as number) &&
+          (where.modelo?.activo !== true || modelo?.activo === true)
+        );
+      });
+    }),
+  };
+  const modeloFormulaRepository = {
+    find: jest.fn().mockImplementation(async ({ where }) => {
+      if (typeof where.modelo_id === 'number') {
+        const formulaIds = valoresDeIn(where.formula_id);
+        return formulasPermitidas.filter(
+          (formula) =>
+            formulaIds.includes(formula.formula_id) &&
+            where.modelo_id === preguntaModeloDisponible?.modelo_id,
+        );
+      }
+
+      const modeloIds = valoresDeIn(where.modelo_id);
+      return formulasDisponiblesPorModelo.filter((asociacion) =>
+        modeloIds.includes(asociacion.modelo_id as number),
+      );
+    }),
+  };
+  const respuestasModeloGuardadas = [...respuestasModelo];
+  const respuestaModeloRepository = {
+    find: jest.fn().mockImplementation(async ({ where }) => {
+      const preguntaIds =
+        typeof where.pregunta_id === 'number'
+          ? [where.pregunta_id]
+          : valoresDeIn(where.pregunta_id);
+      return respuestasModeloGuardadas.filter(
+        (respuesta) =>
+          respuesta.estudiante_id === where.estudiante_id &&
+          respuesta.examen_id === where.examen_id &&
+          preguntaIds.includes(respuesta.pregunta_id as number),
+      );
+    }),
+    save: jest.fn().mockImplementation(async (respuesta) => {
+      const indice = respuestasModeloGuardadas.findIndex(
+        (existente) =>
+          existente.estudiante_id === respuesta.estudiante_id &&
+          existente.examen_id === respuesta.examen_id &&
+          existente.pregunta_id === respuesta.pregunta_id &&
+          existente.letra === respuesta.letra,
+      );
+      if (indice === -1) respuestasModeloGuardadas.push(respuesta);
+      else respuestasModeloGuardadas[indice] = respuesta;
+      return respuesta;
+    }),
+  };
+  const formulasElegidasGuardadas = [...formulasElegidas];
+  const formulaElegidaRepository = {
+    find: jest.fn().mockImplementation(async ({ where }) => {
+      const preguntaIds =
+        typeof where.pregunta_id === 'number'
+          ? [where.pregunta_id]
+          : valoresDeIn(where.pregunta_id);
+      return formulasElegidasGuardadas.filter(
+        (formula) =>
+          formula.estudiante_id === where.estudiante_id &&
+          formula.examen_id === where.examen_id &&
+          preguntaIds.includes(formula.pregunta_id as number),
+      );
+    }),
+    delete: jest.fn().mockImplementation(async (clave) => {
+      for (
+        let indice = formulasElegidasGuardadas.length - 1;
+        indice >= 0;
+        indice--
+      ) {
+        const formula = formulasElegidasGuardadas[indice];
+        if (
+          formula.estudiante_id === clave.estudiante_id &&
+          formula.examen_id === clave.examen_id &&
+          formula.pregunta_id === clave.pregunta_id &&
+          formula.letra === clave.letra
+        ) {
+          formulasElegidasGuardadas.splice(indice, 1);
+        }
+      }
+      return { affected: 0 };
+    }),
+    insert: jest.fn().mockImplementation(async (nuevasFormulas) => {
+      formulasElegidasGuardadas.push(...nuevasFormulas);
+      return {};
+    }),
+  };
   const repositorios = new Map([
     [Rendicion, rendicionRepository],
     [Examen, examenRepository],
@@ -309,6 +494,10 @@ function prepararServicio({
     [Inscripcion, inscripcionRepository],
     [Pregunta, preguntaRepository],
     [RespuestaInciso, respuestaRepository],
+    [FormulaElegida, formulaElegidaRepository],
+    [ModeloFormula, modeloFormulaRepository],
+    [PreguntaModelo, preguntaModeloRepository],
+    [RespuestaModelo, respuestaModeloRepository],
     [OpcionMarcada, opcionMarcadaRepository],
     [Inciso, incisoRepository],
     [Opcion, opcionRepository],
@@ -364,7 +553,14 @@ function prepararServicio({
     preguntaRepository,
     preguntaQueryBuilder,
     respuestaRepository,
+    respuestasGuardadas,
+    respuestaModeloRepository,
+    preguntaModeloRepository,
+    modeloFormulaRepository,
+    formulaElegidaRepository,
+    formulasElegidasGuardadas,
     opcionMarcadaRepository,
+    opcionesMarcadasGuardadas,
     incisoRepository,
     opcionRepository,
   };
@@ -472,6 +668,11 @@ describe('RendicionService.iniciarORecuperar', () => {
           nro_opcion: 1,
         },
       ]);
+      expect(montaje.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.delete).not.toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.insert).not.toHaveBeenCalled();
+      expect(montaje.preguntaModeloRepository.findOne).not.toHaveBeenCalled();
+      expect(montaje.modeloFormulaRepository.find).not.toHaveBeenCalled();
       expect(resultado).toMatchObject({
         examen_id: 5,
         pregunta_id: 21,
@@ -482,6 +683,358 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(JSON.stringify(resultado)).not.toMatch(
         /correcta|solucion|puntaje|retroalimentacion|calificacion|respuesta_texto/i,
       );
+    });
+
+    it('conserva una respuesta de texto al actualizar solo HU-23', async () => {
+      const respuestaExistente = {
+        estudiante_id: 9,
+        examen_id: 5,
+        pregunta_id: 21,
+        letra: 'a',
+        respuesta_texto: 'Texto ya guardado',
+      };
+      const montaje = prepararServicio({
+        inciso: {
+          pregunta_id: 21,
+          letra: 'a',
+          tipo_respuesta: 'desarrollo',
+        },
+        respuestas: [respuestaExistente],
+      });
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        modelo_id: 3,
+        formula_ids: [101, 102],
+        valores: {},
+      });
+
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
+      expect(montaje.respuestasGuardadas).toEqual([respuestaExistente]);
+      expect(montaje.respuestaModeloRepository.save).toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.insert).toHaveBeenCalled();
+    });
+
+    it('conserva las opciones al actualizar solo HU-23', async () => {
+      const opcionesExistentes = [
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          nro_opcion: 1,
+        },
+      ];
+      const montaje = prepararServicio({
+        opcionesDisponibles: [
+          { nro_opcion: 1, texto_opcion: 'Primera' },
+          { nro_opcion: 2, texto_opcion: 'Segunda' },
+        ],
+        opcionesMarcadas: opcionesExistentes,
+      });
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        modelo_id: 3,
+        formula_ids: [101, 102],
+        valores: {},
+      });
+
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
+      expect(montaje.opcionesMarcadasGuardadas).toEqual(opcionesExistentes);
+      expect(montaje.respuestaModeloRepository.save).toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.insert).toHaveBeenCalled();
+    });
+
+    it('crea RespuestaInciso si una solicitud HU-23 no tiene fila padre', async () => {
+      const montaje = prepararServicio({
+        respuestas: [],
+        inciso: {
+          pregunta_id: 21,
+          letra: 'a',
+          tipo_respuesta: 'desarrollo',
+        },
+      });
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        modelo_id: 3,
+        formula_ids: [101, 102],
+        valores: {},
+      });
+
+      expect(montaje.respuestaRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+        },
+        select: { estudiante_id: true },
+      });
+      expect(montaje.respuestaRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          respuesta_texto: null,
+        }),
+      );
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.respuestasGuardadas).toHaveLength(1);
+      expect(montaje.respuestaModeloRepository.save).toHaveBeenCalled();
+    });
+
+    it('guarda el modelo, los valores y las fórmulas permitidas del procedimiento', async () => {
+      const montaje = prepararServicio({
+        preguntaModeloDisponible: {
+          pregunta_id: 21,
+          modelo_id: 3,
+          modelo: {
+            modelo_id: 3,
+            variables: { masa: {}, aceleracion: {} },
+            activo: true,
+          },
+        },
+      });
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        modelo_id: 3,
+        formula_ids: [101, 102],
+        valores: { masa: 12, aceleracion: 3 },
+        resultado_final: '36',
+      });
+
+      expect(montaje.preguntaModeloRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          pregunta_id: 21,
+          modelo_id: 3,
+          modelo: { activo: true },
+        },
+        relations: { modelo: true },
+        select: {
+          pregunta_id: true,
+          modelo_id: true,
+          modelo: {
+            modelo_id: true,
+            variables: true,
+            activo: true,
+          },
+        },
+      });
+      expect(montaje.modeloFormulaRepository.find).toHaveBeenCalled();
+      expect(montaje.respuestaModeloRepository.save).toHaveBeenCalledWith({
+        estudiante_id: 9,
+        examen_id: 5,
+        pregunta_id: 21,
+        letra: 'a',
+        modelo_id: 3,
+        valores: { masa: 12, aceleracion: 3 },
+        resultado_final: '36',
+      });
+      expect(montaje.formulaElegidaRepository.delete).toHaveBeenCalledWith({
+        estudiante_id: 9,
+        examen_id: 5,
+        pregunta_id: 21,
+        letra: 'a',
+      });
+      expect(montaje.formulaElegidaRepository.insert).toHaveBeenCalledWith([
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          formula_id: 101,
+        },
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          formula_id: 102,
+        },
+      ]);
+    });
+
+    it('rechaza un modelo no asociado a la pregunta antes de guardar', async () => {
+      const montaje = prepararServicio({ preguntaModeloDisponible: null });
+
+      await expect(
+        montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+          opciones: [1],
+          modelo_id: 3,
+          formula_ids: [101],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una fórmula que no pertenece al modelo antes de guardar', async () => {
+      const montaje = prepararServicio({
+        formulasPermitidas: [{ formula_id: 101 }],
+      });
+
+      await expect(
+        montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+          opciones: [1],
+          modelo_id: 3,
+          formula_ids: [101, 999],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(montaje.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un procedimiento sin fórmulas permitidas', async () => {
+      const montaje = prepararServicio();
+
+      await expect(
+        montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+          modelo_id: 3,
+          formula_ids: [],
+          valores: {},
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(montaje.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['variables faltantes', {}],
+      ['variables adicionales', { x: 1, extra: 2 }],
+    ])('rechaza procedimientos con %s', async (_caso, valores) => {
+      const montaje = prepararServicio({
+        preguntaModeloDisponible: {
+          pregunta_id: 21,
+          modelo_id: 3,
+          modelo: {
+            modelo_id: 3,
+            variables: { x: {} },
+            activo: true,
+          },
+        },
+      });
+
+      await expect(
+        montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+          modelo_id: 3,
+          formula_ids: [101],
+          valores,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(montaje.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(montaje.formulaElegidaRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('permite un procedimiento válido sin resultado final y lo cuenta como respondido', async () => {
+      const montaje = prepararServicio({
+        inciso: {
+          pregunta_id: 21,
+          letra: 'a',
+          tipo_respuesta: 'desarrollo',
+        },
+      });
+
+      const guardado = await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        modelo_id: 3,
+        formula_ids: [101],
+        valores: {},
+      });
+
+      expect(guardado.estado_respuesta).toBe('respondida');
+      expect(montaje.respuestaModeloRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ resultado_final: null }),
+      );
+      expect(montaje.respuestaRepository.upsert).not.toHaveBeenCalled();
+
+      const recuperado = await montaje.service.consultarPreguntasActivas(5, 9);
+      expect(recuperado.preguntas[0].estado_respuesta).toBe(
+        guardado.estado_respuesta,
+      );
+    });
+
+    it('rechaza identificadores duplicados o inexistentes sin escrituras parciales', async () => {
+      const duplicadas = prepararServicio();
+      await expect(
+        duplicadas.service.guardarRespuesta(5, 9, 21, 'a', {
+          opciones: [1],
+          modelo_id: 3,
+          formula_ids: [101, 101],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(duplicadas.modeloFormulaRepository.find).not.toHaveBeenCalled();
+      expect(duplicadas.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(duplicadas.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(duplicadas.formulaElegidaRepository.delete).not.toHaveBeenCalled();
+
+      const inexistente = prepararServicio({ formulasPermitidas: [] });
+      await expect(
+        inexistente.service.guardarRespuesta(5, 9, 21, 'a', {
+          opciones: [1],
+          modelo_id: 3,
+          formula_ids: [999],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(inexistente.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(inexistente.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(
+        inexistente.formulaElegidaRepository.delete,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('reemplaza las fórmulas anteriores por la selección actualizada', async () => {
+      const montaje = prepararServicio({
+        formulasPermitidas: [{ formula_id: 102 }],
+        formulasElegidas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 101,
+          },
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 102,
+          },
+        ],
+      });
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        opciones: [1],
+        modelo_id: 3,
+        formula_ids: [102],
+      });
+
+      expect(montaje.formulasElegidasGuardadas).toEqual([
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          formula_id: 102,
+        },
+      ]);
+      expect(montaje.formulaElegidaRepository.delete).toHaveBeenCalledTimes(1);
+      expect(montaje.formulaElegidaRepository.insert).toHaveBeenCalledWith([
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          formula_id: 102,
+        },
+      ]);
     });
 
     it('no copia calificaciones enviadas por el cliente al guardar una respuesta', async () => {
@@ -509,13 +1062,21 @@ describe('RendicionService.iniciarORecuperar', () => {
           tipo_respuesta: 'opcion_multiple',
         },
         opcionesDisponibles: [
-          { nro_opcion: 1, texto_opcion: 'Primera' },
           { nro_opcion: 2, texto_opcion: 'Segunda' },
+        ],
+        opcionesMarcadas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            nro_opcion: 1,
+          },
         ],
       });
 
       await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
-        opciones: [2, 1],
+        opciones: [2],
       });
 
       expect(montaje.opcionMarcadaRepository.delete).toHaveBeenCalledWith({
@@ -526,7 +1087,68 @@ describe('RendicionService.iniciarORecuperar', () => {
       });
       expect(montaje.opcionMarcadaRepository.insert).toHaveBeenCalledWith([
         expect.objectContaining({ nro_opcion: 2 }),
-        expect.objectContaining({ nro_opcion: 1 }),
+      ]);
+      expect(montaje.opcionesMarcadasGuardadas).toEqual([
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          nro_opcion: 2,
+        },
+      ]);
+      expect(montaje.respuestaModeloRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('no altera opciones marcadas de otra respuesta al reemplazar', async () => {
+      const opcionOtraRespuesta = {
+        estudiante_id: 10,
+        examen_id: 5,
+        pregunta_id: 22,
+        letra: 'b',
+        nro_opcion: 3,
+      };
+      const montaje = prepararServicio({
+        inciso: {
+          pregunta_id: 21,
+          letra: 'a',
+          tipo_respuesta: 'opcion_multiple',
+        },
+        opcionesDisponibles: [
+          { nro_opcion: 2, texto_opcion: 'Segunda' },
+        ],
+        opcionesMarcadas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            nro_opcion: 1,
+          },
+          opcionOtraRespuesta,
+        ],
+      });
+
+      await montaje.service.guardarRespuesta(5, 9, 21, 'a', {
+        opciones: [2],
+      });
+
+      expect(montaje.opcionMarcadaRepository.delete).toHaveBeenCalledTimes(1);
+      expect(montaje.opcionMarcadaRepository.delete).toHaveBeenCalledWith({
+        estudiante_id: 9,
+        examen_id: 5,
+        pregunta_id: 21,
+        letra: 'a',
+      });
+      expect(montaje.opcionesMarcadasGuardadas).toEqual([
+        opcionOtraRespuesta,
+        {
+          estudiante_id: 9,
+          examen_id: 5,
+          pregunta_id: 21,
+          letra: 'a',
+          nro_opcion: 2,
+        },
       ]);
     });
 
@@ -585,6 +1207,12 @@ describe('RendicionService.iniciarORecuperar', () => {
         expect.objectContaining({ respuesta_texto: 'Texto de respuesta' }),
         expect.any(Array),
       );
+      expect(desarrollo.opcionMarcadaRepository.delete).not.toHaveBeenCalled();
+      expect(desarrollo.respuestaModeloRepository.save).not.toHaveBeenCalled();
+      expect(
+        desarrollo.preguntaModeloRepository.findOne,
+      ).not.toHaveBeenCalled();
+      expect(desarrollo.modeloFormulaRepository.find).not.toHaveBeenCalled();
 
       const numerica = prepararServicio({
         inciso: {
@@ -599,6 +1227,26 @@ describe('RendicionService.iniciarORecuperar', () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(numerica.respuestaRepository.upsert).not.toHaveBeenCalled();
+
+      const numericaCombinada = prepararServicio({
+        inciso: {
+          pregunta_id: 21,
+          letra: 'a',
+          tipo_respuesta: 'numerica',
+        },
+      });
+      await expect(
+        numericaCombinada.service.guardarRespuesta(5, 9, 21, 'a', {
+          respuesta_texto: 'no numérico',
+          modelo_id: 3,
+          formula_ids: [101],
+          valores: {},
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(numericaCombinada.respuestaRepository.upsert).not.toHaveBeenCalled();
+      expect(
+        numericaCombinada.respuestaModeloRepository.save,
+      ).not.toHaveBeenCalled();
 
       const numericaValida = prepararServicio({
         inciso: {
@@ -822,6 +1470,500 @@ describe('RendicionService.iniciarORecuperar', () => {
       expect(selections).not.toMatch(
         /explicacion|solucion|correcta|puntaje|respuesta_texto/i,
       );
+    });
+
+    it('devuelve modelos permitidos y procedimientos propios por inciso sin alterar HU-22', async () => {
+      const montaje = prepararServicio({
+        asignacionesRendicion: [{ pregunta_id: 21, orden: 1 }],
+        filasPreguntas: [
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'a',
+            enunciado_inciso: 'Inciso A',
+            tipo_respuesta: 'desarrollo',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'b',
+            enunciado_inciso: 'Inciso B',
+            tipo_respuesta: 'desarrollo',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+        ],
+        respuestas: [
+          {
+            pregunta_id: 21,
+            letra: 'a',
+            respuesta_texto: 'Texto HU-22',
+          },
+        ],
+        preguntaModelosRendicion: [
+          {
+            pregunta_id: 21,
+            modelo_id: 3,
+            modelo: {
+              modelo_id: 3,
+              nombre: 'Modelo activo',
+              descripcion: 'Descripción',
+              variables: { x: { tipo: 'numero' } },
+              activo: true,
+            },
+          },
+          {
+            pregunta_id: 21,
+            modelo_id: 4,
+            modelo: {
+              modelo_id: 4,
+              nombre: 'Modelo inactivo',
+              descripcion: null,
+              variables: {},
+              activo: false,
+            },
+          },
+          {
+            pregunta_id: 99,
+            modelo_id: 9,
+            modelo: {
+              modelo_id: 9,
+              nombre: 'Pregunta no asignada',
+              descripcion: null,
+              variables: {},
+              activo: true,
+            },
+          },
+        ],
+        formulasDisponiblesPorModelo: [
+          {
+            modelo_id: 3,
+            formula_id: 101,
+            formula: { formula_id: 101, expresion: 'x + 1' },
+          },
+          {
+            modelo_id: 4,
+            formula_id: 104,
+            formula: { formula_id: 104, expresion: 'x - 1' },
+          },
+        ],
+        respuestasModelo: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 3,
+            valores: { x: 8 },
+            resultado_final: '9',
+          },
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'b',
+            modelo_id: 4,
+            valores: { x: 12 },
+            resultado_final: null,
+          },
+          {
+            estudiante_id: 10,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 3,
+            valores: { x: 999 },
+            resultado_final: '1000',
+          },
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 99,
+            letra: 'a',
+            modelo_id: 9,
+            valores: { x: 999 },
+            resultado_final: '1000',
+          },
+        ],
+        formulasElegidas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 101,
+          },
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 104,
+          },
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'b',
+            formula_id: 104,
+          },
+          {
+            estudiante_id: 10,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 999,
+          },
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 99,
+            letra: 'a',
+            formula_id: 999,
+          },
+        ],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+      const [incisoA, incisoB] = resultado.preguntas[0].incisos;
+
+      expect(incisoA.respuesta).toEqual({
+        respuesta_texto: 'Texto HU-22',
+      });
+      expect(incisoA.modelos_permitidos).toEqual([
+        {
+          modelo_id: 3,
+          nombre: 'Modelo activo',
+          descripcion: 'Descripción',
+          variables: { x: { tipo: 'numero' } },
+          formulas_permitidas: [
+            { formula_id: 101, expresion: 'x + 1' },
+          ],
+        },
+      ]);
+      expect(incisoA.procedimiento).toEqual({
+        modelo_id: 3,
+        valores: { x: 8 },
+        resultado_final: '9',
+        formula_ids: [101],
+      });
+      expect(incisoB.procedimiento).toEqual({
+        modelo_id: 4,
+        valores: { x: 12 },
+        resultado_final: null,
+        formula_ids: [104],
+      });
+      expect(incisoB.modelos_permitidos).toEqual(incisoA.modelos_permitidos);
+      expect(JSON.stringify(resultado)).not.toMatch(
+        /solucion|correcta|respuesta_correcta/i,
+      );
+      const consultaRespuestaModelo =
+        montaje.respuestaModeloRepository.find.mock.calls[0][0];
+      expect(consultaRespuestaModelo.where).toMatchObject({
+        estudiante_id: 9,
+        examen_id: 5,
+      });
+      expect(
+        valoresDeIn(consultaRespuestaModelo.where.pregunta_id),
+      ).toEqual([21]);
+      const consultaFormulaElegida =
+        montaje.formulaElegidaRepository.find.mock.calls[0][0];
+      expect(consultaFormulaElegida.where).toMatchObject({
+        estudiante_id: 9,
+        examen_id: 5,
+      });
+      expect(
+        valoresDeIn(consultaFormulaElegida.where.pregunta_id),
+      ).toEqual([21]);
+      expect(montaje.preguntaModeloRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            pregunta_id: expect.any(Object),
+          }),
+        }),
+      );
+      expect(montaje.modeloFormulaRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            modelo_id: expect.objectContaining({
+              _value: [3, 4],
+            }),
+          },
+          relations: { formula: true },
+        }),
+      );
+    });
+
+    it('recupera un procedimiento aunque su modelo esté inactivo', async () => {
+      const montaje = prepararServicio({
+        preguntaModelosRendicion: [
+          {
+            pregunta_id: 21,
+            modelo_id: 4,
+            modelo: {
+              modelo_id: 4,
+              nombre: 'Modelo inactivo',
+              descripcion: null,
+              variables: { x: 1 },
+              activo: false,
+            },
+          },
+        ],
+        respuestasModelo: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 4,
+            valores: { x: 7 },
+            resultado_final: '7',
+          },
+        ],
+        formulasElegidas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 104,
+          },
+        ],
+        formulasDisponiblesPorModelo: [
+          {
+            modelo_id: 4,
+            formula_id: 104,
+            formula: { formula_id: 104, expresion: 'x - 1' },
+          },
+        ],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].incisos[0].modelos_permitidos).toEqual([]);
+      expect(resultado.preguntas[0].incisos[0].procedimiento).toEqual({
+        modelo_id: 4,
+        valores: { x: 7 },
+        resultado_final: '7',
+        formula_ids: [104],
+      });
+      expect(resultado.preguntas[0].estado_respuesta).toBe('respondida');
+    });
+
+    it('no cuenta procedimientos para tipos de inciso no habilitados para HU-23', async () => {
+      const montaje = prepararServicio({
+        filasPreguntas: [
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'a',
+            enunciado_inciso: 'Inciso',
+            tipo_respuesta: 'texto_corto',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+        ],
+        incisos: [
+          {
+            pregunta_id: 21,
+            letra: 'a',
+            tipo_respuesta: 'texto_corto',
+          },
+        ],
+        preguntaModelosRendicion: [
+          {
+            pregunta_id: 21,
+            modelo_id: 3,
+            modelo: {
+              modelo_id: 3,
+              nombre: 'Modelo activo',
+              descripcion: null,
+              variables: {},
+              activo: true,
+            },
+          },
+        ],
+        respuestasModelo: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 3,
+            valores: {},
+            resultado_final: null,
+          },
+        ],
+        formulasElegidas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 101,
+          },
+        ],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].estado_respuesta).toBe('pendiente');
+    });
+
+    it('mantiene pendiente un procedimiento recuperado incompleto', async () => {
+      const montaje = prepararServicio({
+        inciso: {
+          pregunta_id: 21,
+          letra: 'a',
+          tipo_respuesta: 'desarrollo',
+        },
+        preguntaModelosRendicion: [
+          {
+            pregunta_id: 21,
+            modelo_id: 3,
+            modelo: {
+              modelo_id: 3,
+              nombre: 'Modelo activo',
+              descripcion: null,
+              variables: { x: {} },
+              activo: true,
+            },
+          },
+        ],
+        respuestasModelo: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 3,
+            valores: {},
+            resultado_final: null,
+          },
+        ],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].estado_respuesta).toBe('pendiente');
+    });
+
+    it('mantiene pendiente una pregunta si otro inciso no tiene respuesta', async () => {
+      const montaje = prepararServicio({
+        filasPreguntas: [
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'a',
+            enunciado_inciso: 'Inciso A',
+            tipo_respuesta: 'desarrollo',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+          {
+            pregunta_id: 21,
+            enunciado: 'Pregunta',
+            letra: 'b',
+            enunciado_inciso: 'Inciso B',
+            tipo_respuesta: 'desarrollo',
+            nro_opcion: null,
+            texto_opcion: null,
+          },
+        ],
+        incisos: [
+          { pregunta_id: 21, letra: 'a', tipo_respuesta: 'desarrollo' },
+          { pregunta_id: 21, letra: 'b', tipo_respuesta: 'desarrollo' },
+        ],
+        preguntaModelosRendicion: [
+          {
+            pregunta_id: 21,
+            modelo_id: 3,
+            modelo: {
+              modelo_id: 3,
+              nombre: 'Modelo activo',
+              descripcion: null,
+              variables: {},
+              activo: true,
+            },
+          },
+        ],
+        respuestasModelo: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 3,
+            valores: {},
+            resultado_final: null,
+          },
+        ],
+        formulasElegidas: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            formula_id: 101,
+          },
+        ],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].estado_respuesta).toBe('pendiente');
+    });
+
+    it('devuelve listas vacías para modelos sin fórmulas y procedimientos sin fórmulas elegidas', async () => {
+      const montaje = prepararServicio({
+        formulasDisponiblesPorModelo: [],
+        respuestasModelo: [
+          {
+            estudiante_id: 9,
+            examen_id: 5,
+            pregunta_id: 21,
+            letra: 'a',
+            modelo_id: 3,
+            valores: { x: 7 },
+            resultado_final: null,
+          },
+        ],
+        formulasElegidas: [],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+      const inciso = resultado.preguntas[0].incisos[0];
+
+      expect(inciso.modelos_permitidos).toEqual([
+        expect.objectContaining({
+          modelo_id: 3,
+          formulas_permitidas: [],
+        }),
+      ]);
+      expect(inciso.procedimiento).toEqual({
+        modelo_id: 3,
+        valores: { x: 7 },
+        resultado_final: null,
+        formula_ids: [],
+      });
+    });
+
+    it('devuelve opciones y procedimiento vacíos cuando no existen datos HU-23', async () => {
+      const montaje = prepararServicio({
+        preguntaModelosRendicion: [],
+        respuestasModelo: [],
+        formulasElegidas: [],
+      });
+
+      const resultado = await montaje.service.consultarPreguntasActivas(5, 9);
+
+      expect(resultado.preguntas[0].incisos[0]).toMatchObject({
+        modelos_permitidos: [],
+        procedimiento: null,
+      });
+      expect(resultado.preguntas[0].incisos[0]).not.toHaveProperty('respuesta');
     });
 
     it('no incluye respuesta en los incisos que el estudiante aún no contestó', async () => {
@@ -1049,7 +2191,9 @@ describe('RendicionService.iniciarORecuperar', () => {
     });
 
     expect(asignadas).toHaveLength(3);
-    expect(new Set(asignadas.map(({ pregunta_id }) => pregunta_id)).size).toBe(3);
+    expect(new Set(asignadas.map(({ pregunta_id }) => pregunta_id)).size).toBe(
+      3,
+    );
     expect(
       asignadas.filter(({ pregunta_id }) => [10, 11, 12].includes(pregunta_id)),
     ).toHaveLength(2);
@@ -1261,9 +2405,9 @@ describe('RendicionService.iniciarORecuperar', () => {
         error,
       );
 
-      await expect(
-        montaje.service.finalizarRendicion(5, 9),
-      ).rejects.toBe(error);
+      await expect(montaje.service.finalizarRendicion(5, 9)).rejects.toBe(
+        error,
+      );
       expect(montaje.rendicionRepository.save).not.toHaveBeenCalled();
     });
 

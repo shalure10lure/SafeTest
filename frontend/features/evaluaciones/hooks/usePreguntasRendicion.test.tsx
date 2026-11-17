@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePreguntasRendicion } from './usePreguntasRendicion';
 import type {
+    GuardarProcedimientoRendicion,
     PreguntasRendicionEstudiante,
+    ProcedimientoRendicion,
     RespuestaGuardadaEstudiante,
 } from '../types';
 
@@ -61,6 +63,30 @@ function respuestaGuardada(
     };
 }
 
+function procedimientoGuardado(
+    cambios: Partial<ProcedimientoRendicion> = {},
+): ProcedimientoRendicion {
+    return {
+        modelo_id: 3,
+        valores: { x: 2 },
+        resultado_final: '4',
+        formula_ids: [101],
+        ...cambios,
+    };
+}
+
+function payloadProcedimiento(
+    cambios: Partial<GuardarProcedimientoRendicion> = {},
+): GuardarProcedimientoRendicion {
+    return {
+        modelo_id: 3,
+        formula_ids: [101],
+        valores: { x: 2 },
+        resultado_final: '4',
+        ...cambios,
+    };
+}
+
 beforeEach(() => {
     mocks.getPreguntasRendicion.mockReset();
     mocks.guardarRespuestaRendicion.mockReset();
@@ -96,6 +122,98 @@ describe('usePreguntasRendicion', () => {
         expect(result.current.respuestasLocales).toEqual({
             '21:a': { respuesta_texto: 'Texto guardado' },
         });
+    });
+
+    it('hidrata procedimientos y modelos permitidos desde el GET', async () => {
+        const conProcedimiento = crearPreguntas();
+        conProcedimiento.preguntas[0].incisos[0].procedimiento =
+            procedimientoGuardado();
+        conProcedimiento.preguntas[0].incisos[0].modelos_permitidos = [
+            {
+                modelo_id: 3,
+                nombre: 'Modelo',
+                descripcion: null,
+                variables: { x: { tipo: 'numero' } },
+                formulas_permitidas: [{ formula_id: 101, expresion: 'x * x' }],
+            },
+        ];
+        mocks.getPreguntasRendicion.mockResolvedValue(conProcedimiento);
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        expect(result.current.procedimientosLocales).toEqual({
+            '21:a': procedimientoGuardado(),
+        });
+        expect(
+            result.current.preguntas[0].incisos[0].modelos_permitidos,
+        ).toEqual(conProcedimiento.preguntas[0].incisos[0].modelos_permitidos);
+        expect(result.current.respuestasLocales).toEqual({});
+    });
+
+    it('elimina el procedimiento local anterior cuando la recarga devuelve null', async () => {
+        const conProcedimiento = crearPreguntas();
+        conProcedimiento.preguntas[0].incisos[0].procedimiento =
+            procedimientoGuardado();
+        const sinProcedimiento = crearPreguntas();
+        sinProcedimiento.preguntas[0].incisos[0].procedimiento = null;
+        mocks.getPreguntasRendicion
+            .mockResolvedValueOnce(conProcedimiento)
+            .mockResolvedValueOnce(sinProcedimiento);
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado(),
+        );
+
+        await act(async () => {
+            await result.current.recargar();
+        });
+
+        expect(result.current.procedimientosLocales).toEqual({});
+    });
+
+    it('no reemplaza un procedimiento guardado por una respuesta GET anterior', async () => {
+        let resolverCarga!: (resultado: PreguntasRendicionEstudiante) => void;
+        const cargaAnterior = new Promise<PreguntasRendicionEstudiante>(
+            (resolve) => {
+                resolverCarga = resolve;
+            },
+        );
+        mocks.getPreguntasRendicion.mockReturnValueOnce(crearPreguntas());
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        mocks.getPreguntasRendicion.mockReturnValueOnce(cargaAnterior);
+        let recarga!: Promise<void>;
+        act(() => {
+            recarga = result.current.recargar();
+        });
+        await waitFor(() =>
+            expect(mocks.getPreguntasRendicion).toHaveBeenCalledTimes(2),
+        );
+
+        await act(async () => {
+            await result.current.guardarProcedimiento(
+                21,
+                'a',
+                payloadProcedimiento(),
+            );
+        });
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado(),
+        );
+
+        await act(async () => {
+            resolverCarga(crearPreguntas());
+            await recarga;
+        });
+
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado(),
+        );
     });
 
     it('no pisa con datos del servidor lo guardado en esta sesión al recargar', async () => {
@@ -203,6 +321,104 @@ describe('usePreguntasRendicion', () => {
         expect(result.current.preguntas[0].estado_respuesta).toBe('respondida');
         expect(result.current.incisosGuardando).toEqual([]);
         expect(result.current.erroresGuardado).toEqual({});
+    });
+
+    it('sigue guardando correctamente opciones tradicionales HU-22', async () => {
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        await act(async () => {
+            await result.current.guardarRespuesta(21, 'a', {
+                opciones: [1, 2],
+            });
+        });
+
+        expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledWith(
+            12,
+            21,
+            'a',
+            {
+                opciones: [1, 2],
+            },
+        );
+        expect(result.current.respuestasLocales['21:a']).toEqual({
+            opciones: [1, 2],
+        });
+        expect(result.current.procedimientosLocales).toEqual({});
+    });
+
+    it('serializa guardados mixtos HU-22 y HU-23 sin perder información', async () => {
+        let resolverRespuesta!: (
+            respuesta: RespuestaGuardadaEstudiante,
+        ) => void;
+        mocks.guardarRespuestaRendicion
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolverRespuesta = resolve;
+                }),
+            )
+            .mockResolvedValueOnce(respuestaGuardada());
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        const respuesta = { respuesta_texto: 'Respuesta HU-22' };
+        const procedimiento = payloadProcedimiento({
+            valores: { x: 7 },
+            resultado_final: '49',
+        });
+        let guardadoRespuesta!: Promise<RespuestaGuardadaEstudiante | null>;
+        let guardadoProcedimiento!: Promise<RespuestaGuardadaEstudiante | null>;
+        act(() => {
+            guardadoRespuesta = result.current.guardarRespuesta(
+                21,
+                'a',
+                respuesta,
+            );
+            guardadoProcedimiento = result.current.guardarProcedimiento(
+                21,
+                'a',
+                procedimiento,
+            );
+        });
+
+        await waitFor(() =>
+            expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(1),
+        );
+        expect(mocks.guardarRespuestaRendicion).toHaveBeenNthCalledWith(
+            1,
+            12,
+            21,
+            'a',
+            respuesta,
+        );
+
+        await act(async () => {
+            resolverRespuesta(respuestaGuardada());
+            await guardadoRespuesta;
+        });
+        await waitFor(() =>
+            expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(2),
+        );
+        expect(mocks.guardarRespuestaRendicion).toHaveBeenNthCalledWith(
+            2,
+            12,
+            21,
+            'a',
+            procedimiento,
+        );
+        await act(async () => {
+            await guardadoProcedimiento;
+        });
+
+        expect(result.current.respuestasLocales['21:a']).toEqual(respuesta);
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado({
+                valores: { x: 7 },
+                resultado_final: '49',
+            }),
+        );
+        expect(result.current.incisosGuardando).toEqual([]);
     });
 
     it('deduplica guardados idénticos concurrentes del mismo inciso', async () => {
@@ -636,6 +852,280 @@ describe('usePreguntasRendicion', () => {
         });
         expect(result.current.erroresGuardado).toEqual({});
         expect(result.current.incisosGuardando).toEqual([]);
+    });
+
+    it('aísla las colas y el estado de guardados entre evaluaciones', async () => {
+        let resolverGuardadoAntiguo!: (
+            respuesta: RespuestaGuardadaEstudiante,
+        ) => void;
+        mocks.getPreguntasRendicion.mockImplementation(async (examenId) => ({
+            ...crearPreguntas(),
+            examen_id: examenId,
+        }));
+        mocks.guardarRespuestaRendicion
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolverGuardadoAntiguo = resolve;
+                }),
+            )
+            .mockResolvedValueOnce(respuestaGuardada());
+
+        const { result, rerender } = renderHook(
+            ({ examenId }) => usePreguntasRendicion(examenId),
+            { initialProps: { examenId: 12 } },
+        );
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        let guardadoAntiguo!: Promise<RespuestaGuardadaEstudiante | null>;
+        act(() => {
+            guardadoAntiguo = result.current.guardarProcedimiento(
+                21,
+                'a',
+                payloadProcedimiento(),
+            );
+        });
+        await waitFor(() =>
+            expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(1),
+        );
+
+        rerender({ examenId: 13 });
+        await waitFor(() =>
+            expect(mocks.getPreguntasRendicion).toHaveBeenCalledWith(13),
+        );
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+        expect(result.current.procedimientosLocales).toEqual({});
+
+        const procedimientoNuevo = payloadProcedimiento({
+            valores: { x: 9 },
+            resultado_final: '81',
+        });
+        let guardadoNuevo!: Promise<RespuestaGuardadaEstudiante | null>;
+        act(() => {
+            guardadoNuevo = result.current.guardarProcedimiento(
+                21,
+                'a',
+                procedimientoNuevo,
+            );
+        });
+        await waitFor(() =>
+            expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(2),
+        );
+        expect(mocks.guardarRespuestaRendicion).toHaveBeenNthCalledWith(
+            2,
+            13,
+            21,
+            'a',
+            procedimientoNuevo,
+        );
+        await act(async () => {
+            await guardadoNuevo;
+        });
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado({
+                valores: { x: 9 },
+                resultado_final: '81',
+            }),
+        );
+
+        await act(async () => {
+            resolverGuardadoAntiguo(respuestaGuardada());
+            await guardadoAntiguo;
+        });
+
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado({
+                valores: { x: 9 },
+                resultado_final: '81',
+            }),
+        );
+        expect(result.current.erroresGuardado).toEqual({});
+        expect(result.current.incisosGuardando).toEqual([]);
+        expect(result.current.preguntas).toEqual(crearPreguntas().preguntas);
+    });
+
+    it.each(['resuelve', 'rechaza'] as const)(
+        'no actualiza estado al desmontar con un PATCH pendiente que %s',
+        async (resultadoPatch) => {
+            let resolver!: (respuesta: RespuestaGuardadaEstudiante) => void;
+            let rechazar!: (error: Error) => void;
+            mocks.guardarRespuestaRendicion.mockReturnValueOnce(
+                new Promise((resolve, reject) => {
+                    resolver = resolve;
+                    rechazar = reject;
+                }),
+            );
+
+            let renderCount = 0;
+            const { result, unmount } = renderHook(() => {
+                renderCount += 1;
+                return usePreguntasRendicion(12);
+            });
+            await waitFor(() => expect(result.current.cargando).toBe(false));
+
+            let guardado!: Promise<RespuestaGuardadaEstudiante | null>;
+            act(() => {
+                guardado = result.current.guardarProcedimiento(
+                    21,
+                    'a',
+                    payloadProcedimiento(),
+                );
+            });
+            await waitFor(() =>
+                expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(
+                    1,
+                ),
+            );
+
+            const rendersAntesDeDesmontar = renderCount;
+            unmount();
+
+            await act(async () => {
+                if (resultadoPatch === 'resuelve') {
+                    resolver(respuestaGuardada());
+                    await expect(guardado).resolves.toEqual(
+                        respuestaGuardada(),
+                    );
+                } else {
+                    rechazar(new Error('fallo después del desmontaje'));
+                    await expect(guardado).resolves.toBeNull();
+                }
+            });
+
+            expect(renderCount).toBe(rendersAntesDeDesmontar);
+        },
+    );
+
+    it('serializa procedimientos y conserva el último guardado confirmado si el siguiente falla', async () => {
+        let resolverPrimero!: (respuesta: RespuestaGuardadaEstudiante) => void;
+        mocks.guardarRespuestaRendicion
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolverPrimero = resolve;
+                }),
+            )
+            .mockRejectedValueOnce(new Error('fallo del segundo guardado'));
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        const primero = payloadProcedimiento({
+            valores: { x: 2 },
+            resultado_final: '4',
+        });
+        const segundo = payloadProcedimiento({
+            valores: { x: 5 },
+            resultado_final: '25',
+        });
+        let promesaPrimera!: Promise<RespuestaGuardadaEstudiante | null>;
+        let promesaSegunda!: Promise<RespuestaGuardadaEstudiante | null>;
+        act(() => {
+            promesaPrimera = result.current.guardarProcedimiento(
+                21,
+                'a',
+                primero,
+            );
+            promesaSegunda = result.current.guardarProcedimiento(
+                21,
+                'a',
+                segundo,
+            );
+        });
+
+        await waitFor(() =>
+            expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(1),
+        );
+        expect(mocks.guardarRespuestaRendicion).toHaveBeenNthCalledWith(
+            1,
+            12,
+            21,
+            'a',
+            primero,
+        );
+
+        await act(async () => {
+            resolverPrimero(respuestaGuardada());
+            await promesaPrimera;
+        });
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado({
+                valores: { x: 2 },
+                resultado_final: '4',
+            }),
+        );
+
+        await waitFor(() =>
+            expect(mocks.guardarRespuestaRendicion).toHaveBeenCalledTimes(2),
+        );
+        expect(mocks.guardarRespuestaRendicion).toHaveBeenNthCalledWith(
+            2,
+            12,
+            21,
+            'a',
+            segundo,
+        );
+        await act(async () => {
+            await promesaSegunda;
+        });
+
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado({
+                valores: { x: 2 },
+                resultado_final: '4',
+            }),
+        );
+        expect(result.current.erroresGuardado['21:a']).toBe(
+            'No se pudo guardar el procedimiento.',
+        );
+        expect(result.current.incisosGuardando).toEqual([]);
+    });
+
+    it('no actualiza el procedimiento local si falla su único PATCH', async () => {
+        mocks.guardarRespuestaRendicion.mockRejectedValueOnce(
+            new Error('fallo'),
+        );
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        await act(async () => {
+            await result.current.guardarProcedimiento(
+                21,
+                'a',
+                payloadProcedimiento(),
+            );
+        });
+
+        expect(result.current.procedimientosLocales).toEqual({});
+        expect(result.current.erroresGuardado['21:a']).toBe(
+            'No se pudo guardar el procedimiento.',
+        );
+    });
+
+    it('guardar un procedimiento no cambia la respuesta ni el progreso HU-22', async () => {
+        const conRespuesta = crearPreguntas();
+        conRespuesta.preguntas[0].estado_respuesta = 'respondida';
+        conRespuesta.preguntas[0].incisos[0].respuesta = {
+            opciones: [2],
+        };
+        mocks.getPreguntasRendicion.mockResolvedValue(conRespuesta);
+
+        const { result } = renderHook(() => usePreguntasRendicion(12));
+        await waitFor(() => expect(result.current.cargando).toBe(false));
+
+        await act(async () => {
+            await result.current.guardarProcedimiento(
+                21,
+                'a',
+                payloadProcedimiento(),
+            );
+        });
+
+        expect(result.current.respuestasLocales['21:a']).toEqual({
+            opciones: [2],
+        });
+        expect(result.current.preguntas[0].estado_respuesta).toBe('respondida');
+        expect(result.current.procedimientosLocales['21:a']).toEqual(
+            procedimientoGuardado(),
+        );
     });
 
     it('conserva el resultado local de un guardado si una carga anterior termina después', async () => {
