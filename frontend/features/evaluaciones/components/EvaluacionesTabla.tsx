@@ -2,6 +2,7 @@ import { Badge, type Tono } from '@/components/ui/Card';
 import LinkButton from '@/components/ui/LinkButton';
 import { ROUTES } from '@/constants/routes';
 import type { EstadoExamen, Evaluacion } from '../types';
+import AccionResultadosEvaluacion from './AccionResultadosEvaluacion';
 
 const ESTADOS: Record<EstadoExamen, { label: string; tono: Tono }> = {
     publicado: { label: 'Publicada', tono: 'violet' },
@@ -134,7 +135,10 @@ export default function EvaluacionesTabla({
                                                 ? 'Publicar'
                                                 : 'Ver resumen'}
                                         </LinkButton>
-
+                                        <AccionResultadosEvaluacion
+                                            examenId={evaluacion.examen_id}
+                                            estado={evaluacion.estado}
+                                        />
 
                                     </div>
                                 </td>

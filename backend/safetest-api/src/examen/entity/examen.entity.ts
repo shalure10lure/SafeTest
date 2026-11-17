@@ -84,6 +84,10 @@ export class Examen {
   @Column({ name: 'resultados_publicados_en', type: 'timestamptz', nullable: true })
   resultados_publicados_en: Date | null;
 
+  // HU-31: el docente confirmó las calificaciones; NO las publica.
+  @Column({ name: 'calificaciones_revisadas_en', type: 'timestamptz', nullable: true })
+  calificaciones_revisadas_en: Date | null;
+
   @Column({ name: 'enviar_resultados_correo', type: 'boolean', default: false })
   enviar_resultados_correo: boolean;
 

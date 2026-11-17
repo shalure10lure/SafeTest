@@ -225,7 +225,17 @@ export class CorreccionRendicionService {
 
     for (const inciso of incisos) {
       const clave = claveInciso(inciso.pregunta_id, inciso.letra);
-      const respuesta = respuestasPorInciso.get(clave);
+      // HU-31: persistir también los incisos sin respuesta para que el docente
+      // pueda ver su estado y corregirlos (antes no se guardaba ninguna fila).
+      const respuesta =
+        respuestasPorInciso.get(clave) ??
+        manager.getRepository(RespuestaInciso).create({
+          estudiante_id: estudianteId,
+          examen_id: examenId,
+          pregunta_id: inciso.pregunta_id,
+          letra: inciso.letra,
+          respuesta_texto: null,
+        });
       const tipo = inciso.tipo_respuesta;
       const marcadas = opcionesPorInciso.get(clave) ?? [];
       const texto = respuesta?.respuesta_texto?.trim() ?? '';
