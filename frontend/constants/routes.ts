@@ -47,7 +47,7 @@ export const ROUTES = {
         temaEditar: (id: number | string) => `/docente/temas/${id}/editar`,
         evaluaciones: '/docente/evaluaciones',
         evaluacionNueva: '/docente/evaluaciones/nueva',
-        correccion: '/docente/correccion',
+        correccion: '/docente/calificaciones',
         reglas: '/docente/reglas',
         resultados: '/docente/resultados',
         estadisticas: '/docente/estadisticas',
@@ -444,7 +444,7 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Evaluaciones entregadas',
                 href: ROUTES.docente.correccion,
                 icono: ClipboardCheck,
-                disponible: false,
+                disponible: true,
                 badgeKey: 'correccion',
             },
             {

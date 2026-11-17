@@ -1,3 +1,4 @@
+
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -26,12 +27,20 @@ import { RespuestaModelo } from '../respuestamodelo/entity/respuestamodelo.entit
 import { ExamenController } from './examen.controller';
 import { ExamenEstudianteController } from './examen-estudiante.controller';
 import { ExamenEstudianteRecursosController } from './examen-estudiante-recursos.controller';
+
+// NUEVO: controlador para revisar calificaciones.
+import { RevisionCalificacionesController } from './revision-calificaciones.controller';
+
 import { PreguntaModule } from '../pregunta/pregunta.module';
 import { ReglaCorreccionModule } from '../reglacorreccion/reglacorreccion.module';
+
 import { ExamenService } from './examen.service';
 import { ExamenAccesoService } from './examen-acceso.service';
 import { RendicionService } from '../rendicion/rendicion.service';
 import { RendicionVencimientoWorker } from '../rendicion/rendicion-vencimiento.worker';
+
+// NUEVO: servicio con la lógica de revisión y recálculo.
+import { RevisionCalificacionesService } from './revision-calificaciones.service';
 
 @Module({
     imports: [
@@ -61,16 +70,24 @@ import { RendicionVencimientoWorker } from '../rendicion/rendicion-vencimiento.w
         PreguntaModule,
         ReglaCorreccionModule,
     ],
+
     controllers: [
         ExamenController,
         ExamenEstudianteController,
         ExamenEstudianteRecursosController,
+
+        // HU-31: rutas para consultar y revisar las notas.
+        RevisionCalificacionesController,
     ],
+
     providers: [
         ExamenService,
         ExamenAccesoService,
         RendicionService,
         RendicionVencimientoWorker,
+
+        // HU-31: lógica de corrección manual y confirmación.
+        RevisionCalificacionesService,
     ],
 })
-export class ExamenModule { }
+export class ExamenModule {}
