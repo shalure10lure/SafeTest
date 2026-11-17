@@ -62,6 +62,25 @@ export const calificacionesService = {
     return data;
   },
 
+  /** HU-32: publicación OFICIAL, posterior a la confirmación HU-31. */
+  async publicarResultados(examenId: number): Promise<{
+    examen_id: number;
+    resultados_publicados_en: string;
+    ya_publicados: boolean;
+  }> {
+    const { data } = await cliente.post(`/examenes/${examenId}/resultados/publicar`);
+    return data;
+  },
+
+  /** Publica las soluciones correctas, únicamente después de publicar las notas. */
+  async publicarRespuestas(examenId: number): Promise<{
+    examen_id: number;
+    ya_publicadas: boolean;
+  }> {
+    const { data } = await cliente.post(`/examenes/${examenId}/respuestas/publicar`);
+    return data;
+  },
+
   async confirmar(examenId: number): Promise<ResultadoConfirmacion> {
     const { data } = await cliente.post<ResultadoConfirmacion>(`${ruta(examenId)}/confirmar`);
     return data;

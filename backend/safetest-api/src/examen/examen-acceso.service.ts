@@ -381,6 +381,7 @@ export class ExamenAccesoService {
         disponible_desde: true,
         disponible_hasta: true,
         resultados_publicados_en: true,
+        respuestas_publicadas_en: true,
       },
     });
 
@@ -397,10 +398,11 @@ export class ExamenAccesoService {
     }
 
     const resultadosPublicados = examen.resultados_publicados_en !== null;
+    const respuestasPublicadas = examen.respuestas_publicadas_en !== null;
 
     // Mientras el examen está vigente se puede responder. Después de publicar
     // resultados se permite revisar la evaluación aunque la ventana cerró.
-    if (!resultadosPublicados && !this.estaEnVentana(examen)) {
+    if (!resultadosPublicados && !respuestasPublicadas && !this.estaEnVentana(examen)) {
       throw new ForbiddenException(
         'La evaluación no está disponible en este momento.',
       );
@@ -409,7 +411,7 @@ export class ExamenAccesoService {
     const orden = await this.obtenerOrdenPreguntas(examenId, estudianteId);
     const ids: number[] = orden.map((fila) => fila.pregunta_id);
 
-    const filas = await this.consultarPreguntas(ids, resultadosPublicados);
+    const filas = await this.consultarPreguntas(ids, respuestasPublicadas);
     const preguntas = this.construirPreguntas(filas, orden);
 
     return {
@@ -421,11 +423,11 @@ export class ExamenAccesoService {
       disponible_desde: examen.disponible_desde,
       disponible_hasta: examen.disponible_hasta,
       resultados_publicados: resultadosPublicados,
-      respuestas_disponibles: resultadosPublicados,
-      mensaje: resultadosPublicados
+      respuestas_disponibles: respuestasPublicadas,
+      mensaje: respuestasPublicadas
         ? null
-        : 'Las respuestas correctas estarán disponibles cuando el docente publique los resultados.',
-      preguntas: resultadosPublicados
+        : 'Las respuestas correctas estarán disponibles solo cuando el docente autorice su publicación.',
+      preguntas: respuestasPublicadas
         ? this.aPreguntasEstudiantePublicadas(preguntas)
         : this.aPreguntasEstudiante(preguntas),
     };
@@ -480,71 +482,45 @@ export class ExamenAccesoService {
     };
   }
 
-  /**
-   * Publica de forma autorizada las respuestas correctas de una evaluación ya
-   * publicada. Se usa `resultados_publicados_en`, el campo existente para la
-   * publicación de resultados; no se modifica el esquema.
-   *
-   * La escritura es atómica: el `UPDATE` solo afecta a la fila cuando
-   * `resultados_publicados_en` sigue siendo `NULL`. Si dos solicitudes llegan
-   * a la vez, PostgreSQL serializa el acceso a la fila; la primera escribe su
-   * fecha y la segunda no coincide con la condición, por lo que conserva la
-   * fecha original. Así se mantiene la idempotencia sin leer y escribir por
-   * separado.
-   */
+  /** Publicación INDEPENDIENTE de soluciones; exige notas ya publicadas. */
   async publicarRespuestas(examenId: number, docenteId: number) {
-    const publicacion = await this.examenRepository
+    const examen = await this.examenRepository.findOne({
+      where: { examen_id: examenId, docente_id: docenteId },
+    });
+    if (!examen) throw new NotFoundException('La evaluación no existe.');
+    if (examen.estado !== 'publicado' || examen.resultados_publicados_en === null ||
+        examen.calificaciones_revisadas_en === null) {
+      throw new BadRequestException('Primero debes revisar y publicar los resultados de la evaluación.');
+    }
+    // Actualización condicional: dos peticiones concurrentes conservan la
+    // fecha de la primera publicación de soluciones.
+    const resultado = await this.examenRepository
       .createQueryBuilder()
       .update()
-      .set({
-        resultados_publicados_en: () => 'now()',
-      })
+      .set({ respuestas_publicadas_en: () => 'now()' })
       .where('examen_id = :examenId', { examenId })
       .andWhere('docente_id = :docenteId', { docenteId })
-      .andWhere('estado = :estado', { estado: 'publicado' })
-      .andWhere('resultados_publicados_en IS NULL')
-      .returning(['examen_id', 'resultados_publicados_en'])
+      .andWhere('respuestas_publicadas_en IS NULL')
+      .andWhere('resultados_publicados_en IS NOT NULL')
+      .returning(['examen_id', 'respuestas_publicadas_en'])
       .execute();
-
-    const filaPublicada = publicacion.raw?.[0] as
-      | { examen_id: number; resultados_publicados_en: Date }
+    const fila = resultado.raw?.[0] as
+      | { examen_id: number; respuestas_publicadas_en: Date }
       | undefined;
-
-    // Esta solicitud fue la que publicó por primera vez.
-    if (filaPublicada) {
+    if (fila) {
       return {
-        examen_id: Number(filaPublicada.examen_id),
-        resultados_publicados_en: filaPublicada.resultados_publicados_en,
+        examen_id: examenId,
+        resultados_publicados_en: fila.respuestas_publicadas_en,
         ya_publicadas: false,
       };
     }
-
-    // No hubo escritura: la evaluación no existe, no pertenece al docente, no
-    // está publicada o ya tenía resultados. Se consulta solo para distinguir
-    // el error correcto; la fecha existente no se modifica.
-    const examen = await this.examenRepository.findOne({
+    const actual = await this.examenRepository.findOne({
       where: { examen_id: examenId, docente_id: docenteId },
-      select: {
-        examen_id: true,
-        estado: true,
-        resultados_publicados_en: true,
-      },
     });
-
-    if (!examen) {
-      throw new NotFoundException('La evaluación no existe.');
-    }
-
-    if (examen.estado !== 'publicado') {
-      throw new BadRequestException(
-        'Primero debes publicar la evaluación antes de publicar sus respuestas.',
-      );
-    }
-
     return {
-      examen_id: examen.examen_id,
-      resultados_publicados_en: examen.resultados_publicados_en,
-      ya_publicadas: true,
+      examen_id: examenId,
+      resultados_publicados_en: actual?.respuestas_publicadas_en ?? null,
+      ya_publicadas: actual?.respuestas_publicadas_en !== null,
     };
   }
 

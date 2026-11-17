@@ -163,6 +163,7 @@ export class RevisionCalificacionesService {
       puntaje_total: examen.puntaje_total,
       calificaciones_revisadas_en: examen.calificaciones_revisadas_en,
       resultados_publicados_en: examen.resultados_publicados_en,
+      respuestas_publicadas_en: examen.respuestas_publicadas_en,
       disponible_hasta: examen.disponible_hasta,
       total_rendiciones: estudiantes.length,
       total_listas: estudiantes.filter((e) => e.lista_para_publicar).length,
