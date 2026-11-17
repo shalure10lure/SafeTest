@@ -60,6 +60,7 @@ import { IaSolucionReferencia } from './iasolucionreferencia/entity/iasolucionre
 import { TemaModule } from './tema/tema.module';
 import { PreguntaModule } from './pregunta/pregunta.module';
 import { ReglaCorreccionModule } from './reglacorreccion/reglacorreccion.module';
+import { EstadisticasModule } from './estadisticas/estadisticas.module';
 import { IaModule } from './ia/ia.module';
 import { IaGeneracionModule } from './iageneracion/iageneracion.module';
 import { MaterialAcademicoModule } from './materialacademico/materialacademico.module';
@@ -149,6 +150,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     IaGeneracionModule,
     MaterialAcademicoModule,
     ReglaCorreccionModule,
+    EstadisticasModule,
   ],
 
   controllers: [AppController],

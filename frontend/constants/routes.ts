@@ -475,7 +475,7 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Estadísticas',
                 href: ROUTES.docente.estadisticas,
                 icono: ChartColumn,
-                disponible: false,
+                disponible: true,
             },
         ],
     },
