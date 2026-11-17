@@ -4,6 +4,7 @@ import {
   ManyToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { RespuestaInciso } from '../../respuestainciso/entity/respuestainciso.entity';
 import { Opcion } from '../../opcion/entity/opcion.entity';
@@ -36,7 +37,7 @@ export class OpcionMarcada {
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
     { name: 'letra', referencedColumnName: 'letra' },
   ])
-  respuesta: RespuestaInciso;
+  respuesta: Relation<RespuestaInciso>;
 
   @ManyToOne(() => Opcion, { nullable: false })
   @JoinColumn([
@@ -44,5 +45,5 @@ export class OpcionMarcada {
     { name: 'letra', referencedColumnName: 'letra' },
     { name: 'nro_opcion', referencedColumnName: 'nro_opcion' },
   ])
-  opcion: Opcion;
+  opcion: Relation<Opcion>;
 }

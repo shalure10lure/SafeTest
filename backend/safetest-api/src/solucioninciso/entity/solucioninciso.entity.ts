@@ -5,6 +5,7 @@ import {
   OneToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Inciso } from '../../inciso/entity/inciso.entity';
 import { SolucionFormula } from '../../solucionformula/entity/solucionformula.entity';
@@ -33,5 +34,5 @@ export class SolucionInciso {
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
     { name: 'letra', referencedColumnName: 'letra' },
   ])
-  inciso: Inciso;
+  inciso: Relation<Inciso>;
 }

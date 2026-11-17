@@ -8,6 +8,7 @@ import {
   OneToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Examen } from '../../examen/entity/examen.entity';
 import { ExamenPoolSnapshotTema } from './examen-pool-snapshot-tema.entity';
@@ -36,7 +37,7 @@ export class ExamenPoolSnapshot {
     name: 'examen_id',
     foreignKeyConstraintName: 'FK_examen_pool_snapshot_examen',
   })
-  examen: Examen;
+  examen: Relation<Examen>;
 
   @OneToMany(
     () => ExamenPoolSnapshotTema,

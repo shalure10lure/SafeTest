@@ -4,6 +4,7 @@ import {
   ManyToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { SolucionInciso } from '../../solucioninciso/entity/solucioninciso.entity';
 import { Formula } from '../../formula/entity/formula.entity';
@@ -27,7 +28,7 @@ export class SolucionFormula {
     { name: 'pregunta_id', referencedColumnName: 'pregunta_id' },
     { name: 'letra', referencedColumnName: 'letra' },
   ])
-  solucionInciso: SolucionInciso;
+  solucionInciso: Relation<SolucionInciso>;
 
   @ManyToOne(
     () => Formula,
@@ -35,5 +36,5 @@ export class SolucionFormula {
     { nullable: false },
   )
   @JoinColumn({ name: 'formula_id' })
-  formula: Formula;
+  formula: Relation<Formula>;
 }

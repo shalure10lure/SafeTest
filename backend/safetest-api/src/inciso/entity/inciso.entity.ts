@@ -7,6 +7,7 @@ import {
   OneToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
 import { Opcion } from '../../opcion/entity/opcion.entity';
@@ -35,7 +36,7 @@ export class Inciso {
     nullable: false,
   })
   @JoinColumn({ name: 'pregunta_id' })
-  pregunta: Pregunta;
+  pregunta: Relation<Pregunta>;
 
   @OneToMany(() => Opcion, (opcion) => opcion.inciso)
   opciones: Opcion[];
@@ -44,7 +45,7 @@ export class Inciso {
     () => SolucionInciso,
     (solucion) => solucion.inciso,
   )
-  solucion: SolucionInciso;
+  solucion: Relation<SolucionInciso>;
 
   @OneToMany(
     () => SolucionOpcion,

@@ -8,6 +8,7 @@ import {
   OneToOne,
   PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { ExamenPoolSnapshot } from './examen-pool-snapshot.entity';
 import { ExamenTema } from '../../examentema/entity/examentema.entity';
@@ -49,7 +50,7 @@ export class ExamenPoolSnapshotTema {
     name: 'examen_id',
     foreignKeyConstraintName: 'FK_epst_snapshot',
   })
-  snapshot: ExamenPoolSnapshot;
+  snapshot: Relation<ExamenPoolSnapshot>;
 
   @OneToOne(() => ExamenTema, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn([
@@ -60,7 +61,7 @@ export class ExamenPoolSnapshotTema {
     },
     { name: 'tema_id', referencedColumnName: 'tema_id' },
   ])
-  examenTema: ExamenTema;
+  examenTema: Relation<ExamenTema>;
 
   @OneToMany(
     () => ExamenPoolSnapshotPregunta,

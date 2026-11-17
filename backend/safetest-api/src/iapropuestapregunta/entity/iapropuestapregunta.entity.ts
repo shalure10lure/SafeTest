@@ -7,6 +7,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { IaGeneracion } from '../../iageneracion/entity/iageneracion.entity';
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
@@ -54,9 +55,9 @@ export class IaPropuestaPregunta {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'generacion_id' })
-  generacion: IaGeneracion;
+  generacion: Relation<IaGeneracion>;
 
   @ManyToOne(() => Pregunta, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'pregunta_id' })
-  pregunta: Pregunta | null;
+  pregunta: Relation<Pregunta | null>;
 }

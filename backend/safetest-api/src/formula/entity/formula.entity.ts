@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Tema } from '../../tema/entity/tema.entity';
 import { SolucionFormula } from '../../solucionformula/entity/solucionformula.entity';
@@ -26,7 +27,7 @@ export class Formula {
     nullable: false,
   })
   @JoinColumn({ name: 'tema_id' })
-  tema: Tema;
+  tema: Relation<Tema>;
 
   @OneToMany(
     () => SolucionFormula,

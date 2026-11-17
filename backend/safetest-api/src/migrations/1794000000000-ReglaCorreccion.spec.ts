@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-
+import { jest } from '@jest/globals';
 import { QueryRunner } from 'typeorm';
 
 import { TIPOS_RESPUESTA } from '../pregunta/entity/dtos/create-pregunta.dto';

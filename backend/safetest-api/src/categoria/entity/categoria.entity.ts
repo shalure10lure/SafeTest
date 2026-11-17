@@ -5,6 +5,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import { Docente } from '../../docente/entity/docente.entity';
 
 @Entity('categorias')
@@ -23,5 +24,5 @@ export class Categoria {
 
   @ManyToOne(() => Docente, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente | null;
+  docente: Relation<Docente | null>;
 }

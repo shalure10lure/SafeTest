@@ -8,6 +8,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Paralelo } from '../../paralelo/entity/paralelo.entity';
 
@@ -58,5 +59,5 @@ export class Invitacion {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'paralelo_id' })
-  paralelo: Paralelo;
+  paralelo: Relation<Paralelo>;
 }

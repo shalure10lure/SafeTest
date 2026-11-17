@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Paralelo } from '../../paralelo/entity/paralelo.entity';
 import { Examen } from '../../examen/entity/examen.entity';
@@ -43,7 +44,7 @@ export class Semestre {
 
   @ManyToOne(() => Docente, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente;
+  docente: Relation<Docente>;
 
   // Materias relacionadas con el periodo
   @ManyToMany(() => Materia)

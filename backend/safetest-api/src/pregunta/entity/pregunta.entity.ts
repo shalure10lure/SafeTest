@@ -8,6 +8,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Tema } from '../../tema/entity/tema.entity';
 import { Inciso } from '../../inciso/entity/inciso.entity';
@@ -56,7 +57,7 @@ export class Pregunta {
     nullable: false,
   })
   @JoinColumn({ name: 'tema_id' })
-  tema: Tema;
+  tema: Relation<Tema>;
 
   @OneToMany(() => Inciso, (inciso) => inciso.pregunta)
   incisos: Inciso[];

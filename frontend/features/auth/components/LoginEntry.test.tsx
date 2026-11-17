@@ -69,7 +69,7 @@ describe("LoginEntry", () => {
     ).toBeTruthy();
 
     expect(
-      screen.getByLabelText("Correo institucional"),
+      screen.getByLabelText("Correo electrónico"),
     ).toBeTruthy();
 
     expect(mocks.replace).not.toHaveBeenCalled();

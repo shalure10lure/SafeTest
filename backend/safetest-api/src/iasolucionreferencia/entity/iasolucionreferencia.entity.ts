@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Pregunta } from '../../pregunta/entity/pregunta.entity';
 import { Docente } from '../../docente/entity/docente.entity';
@@ -43,9 +44,9 @@ export class IaSolucionReferencia {
 
   @ManyToOne(() => Pregunta, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'pregunta_id' })
-  pregunta: Pregunta;
+  pregunta: Relation<Pregunta>;
 
   @ManyToOne(() => Docente, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'docente_id' })
-  docente: Docente;
+  docente: Relation<Docente>;
 }

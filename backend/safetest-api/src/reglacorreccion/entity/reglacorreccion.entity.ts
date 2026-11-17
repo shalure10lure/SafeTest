@@ -10,6 +10,7 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { Docente } from '../../docente/entity/docente.entity';
 import {
@@ -65,5 +66,5 @@ export class ReglaCorreccion {
     name: 'docente_id',
     foreignKeyConstraintName: 'FK_regla_correccion_docente',
   })
-  docente: Docente;
+  docente: Relation<Docente>;
 }

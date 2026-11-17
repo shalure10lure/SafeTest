@@ -1,4 +1,5 @@
 import { Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import type { Relation } from 'typeorm';
 
 import { IaGeneracion } from '../../iageneracion/entity/iageneracion.entity';
 import { MaterialAcademico } from '../../materialacademico/entity/materialacademico.entity';
@@ -17,9 +18,9 @@ export class IaGeneracionMaterial {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'generacion_id' })
-  generacion: IaGeneracion;
+  generacion: Relation<IaGeneracion>;
 
   @ManyToOne(() => MaterialAcademico, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'material_id' })
-  material: MaterialAcademico;
+  material: Relation<MaterialAcademico>;
 }
