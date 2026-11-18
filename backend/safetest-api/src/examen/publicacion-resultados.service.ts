@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -15,15 +16,20 @@ import { Rendicion } from '../rendicion/entity/rendicion.entity';
 import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
 import { escalarPuntajeProporcional, formatearPuntaje } from '../reglacorreccion/correccion-puntaje';
 import { Examen } from './entity/examen.entity';
+import { EnvioResultadosCorreoService } from './envio-resultados-correo.service';
 
 @Injectable()
 export class PublicacionResultadosService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  private readonly logger = new Logger(PublicacionResultadosService.name);
 
-  /** HU-32: publica notas SOLO después de la confirmación de HU-31. */
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly correos: EnvioResultadosCorreoService,
+  ) {}
+
+  /** HU-32 + HU-34: primero publica las notas y registra los correos en la MISMA transacción. */
   async publicar(examenId: number, docenteId: number) {
-    return this.dataSource.transaction(async (manager) => {
-      // Este bloqueo también se usa en HU-31 al confirmar o modificar notas.
+    const publicacion = await this.dataSource.transaction(async (manager) => {
       const examen = await manager.getRepository(Examen)
         .createQueryBuilder('examen')
         .where('examen.examen_id = :examenId', { examenId })
@@ -35,13 +41,13 @@ export class PublicacionResultadosService {
       if (examen.estado !== 'publicado') {
         throw new ConflictException('Primero debes publicar la evaluación para que se pueda rendir.');
       }
-
-      // Idempotencia: nunca cambiar la fecha de una publicación ya realizada.
+      // Una segunda solicitud NO vuelve a crear envíos ni modifica la fecha.
       if (examen.resultados_publicados_en !== null) {
         return {
           examen_id: examenId,
           resultados_publicados_en: examen.resultados_publicados_en,
           ya_publicados: true,
+          enviar_resultados_correo: examen.enviar_resultados_correo,
         };
       }
       if (examen.calificaciones_revisadas_en === null) {
@@ -57,13 +63,39 @@ export class PublicacionResultadosService {
         throw new ConflictException('Existen rendiciones sin corregir o con nota pendiente.');
       }
 
+      // Los registros pendientes quedan guardados en PostgreSQL junto a la publicación.
+      if (examen.enviar_resultados_correo) {
+        await this.correos.prepararPendientes(manager, examenId, rendiciones);
+      }
       const fecha = new Date();
       await manager.getRepository(Examen).update(
         { examen_id: examenId, docente_id: docenteId },
         { resultados_publicados_en: fecha },
       );
-      return { examen_id: examenId, resultados_publicados_en: fecha, ya_publicados: false };
+      return {
+        examen_id: examenId,
+        resultados_publicados_en: fecha,
+        ya_publicados: false,
+        enviar_resultados_correo: examen.enviar_resultados_correo,
+      };
     });
+
+    if (!publicacion.enviar_resultados_correo) return publicacion;
+
+    if (publicacion.ya_publicados) return publicacion;
+
+    // Gmail NO se llama dentro de la transacción de publicación.
+    try {
+      const envios = await this.correos.procesar(examenId, docenteId);
+      return { ...publicacion, envios };
+    } catch (error) {
+      // La publicación ya ocurrió: no reportarla como fallida ni revertirla por Gmail.
+      this.logger.error(`La evaluación ${examenId} se publicó, pero falló el proceso de correos: ${error instanceof Error ? error.name : 'error'}`);
+      return {
+        ...publicacion,
+        aviso_correo: 'Las notas se publicaron. No se pudo completar el procesamiento de correos; revisa su estado.',
+      };
+    }
   }
 
   /** El estudiante ve sus propias rendiciones; una nota nunca sale antes de publicarse. */
