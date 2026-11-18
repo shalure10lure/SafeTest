@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EstudianteCalificacion, ResumenCalificaciones } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
+import CorreoResultadosPanel from './CorreoResultadosPanel';
 
 type Filtro = 'todos' | 'pendientes' | 'listas';
 
@@ -111,7 +112,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
       await cargar();
       setNotificacion(publicacion.ya_publicados
         ? 'Los resultados ya estaban publicados.'
-        : 'Resultados publicados. Ahora los estudiantes pueden consultar sus notas oficiales.');
+        : 'Resultados publicados. Ahora los estudiantes pueden consultar sus notas oficiales. Revisa el estado de envío de correos debajo.');
       setPreguntarPublicacion(false);
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
@@ -214,7 +215,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
 
           {confirmadas ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-              ✓ Revisión confirmada. {publicados ? 'Los resultados también están publicados.' : 'Todavía no se han publicado los resultados.'}
+              ✓ Revisión confirmada. Las notas ya no pueden modificarse desde esta HU. {publicados ? 'Los resultados también están publicados.' : 'Todavía no se han publicado los resultados.'}
             </div>
           ) : datos.total_rendiciones === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">Todavía no se registraron rendiciones de estudiantes para esta evaluación.</div>
@@ -228,6 +229,8 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
           ) : (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">Todas las rendiciones están corregidas. Ya puedes confirmar la revisión.</div>
           )}
+
+          <CorreoResultadosPanel examenId={examenId} publicados={publicados} />
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" aria-label="Resultados de los estudiantes">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">

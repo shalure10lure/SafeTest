@@ -36,6 +36,9 @@ import { RevisionCalificacionesController } from './revision-calificaciones.cont
 import { RevisionCalificacionesService } from './revision-calificaciones.service';
 import { PublicacionResultadosDocenteController, PublicacionResultadosEstudianteController } from './publicacion-resultados.controller';
 import { PublicacionResultadosService } from './publicacion-resultados.service';
+import { EnvioResultadosCorreoService } from './envio-resultados-correo.service';
+import { EnvioCalificacion } from '../enviocalificacion/entity/enviocalificacion.entity';
+import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module';
 
 @Module({
     imports: [
@@ -61,9 +64,11 @@ import { PublicacionResultadosService } from './publicacion-resultados.service';
             ModeloFormula,
             PreguntaModelo,
             RespuestaModelo,
+            EnvioCalificacion,
         ]),
         PreguntaModule,
         ReglaCorreccionModule,
+        ConexionCorreoModule,
     ],
     controllers: [
         ExamenController,
@@ -80,6 +85,7 @@ import { PublicacionResultadosService } from './publicacion-resultados.service';
         RendicionVencimientoWorker,
         RevisionCalificacionesService,
         PublicacionResultadosService,
+        EnvioResultadosCorreoService,
     ],
 })
 export class ExamenModule { }
