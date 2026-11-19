@@ -7,14 +7,11 @@ export class SepararPublicacionRespuestas1794600000000 implements MigrationInter
     await queryRunner.query(
       'ALTER TABLE "examen" ADD COLUMN IF NOT EXISTS "respuestas_publicadas_en" timestamptz',
     );
-    // Mantiene visibles las soluciones que YA habían sido autorizadas por
-    // el endpoint antiguo. Las nuevas publicaciones de notas no las liberan.
-    await queryRunner.query(`
-      UPDATE "examen"
-      SET "respuestas_publicadas_en" = "resultados_publicados_en"
-      WHERE "resultados_publicados_en" IS NOT NULL
-        AND "respuestas_publicadas_en" IS NULL
-    `);
+    // Sin backfill (alternativa A'): publicar resultados NO autoriza por sí
+    // mismo la publicación de respuestas correctas. La fecha heredada del
+    // examen 19 no se copia; su `resultados_publicados_en` se limpia en un
+    // paso separado y controlado. El docente decide después, de forma
+    // explícita, qué publicar y cuándo.
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
