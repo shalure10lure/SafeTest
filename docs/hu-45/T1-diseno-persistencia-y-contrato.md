@@ -1,7 +1,12 @@
 # HU-45 · T1 — Diseño de persistencia y contrato de corrección asistida por IA
 
-**Estado:** propuesta de diseño. Nada de lo descrito aquí está implementado.
-**Alcance:** solo documentación y verificación de esquema.
+**Estado:** diseño actualizado a la entidad implementada. La entidad TypeORM
+`CorreccionIa` existe en `backend/safetest-api/src/correccionia/entity/correccionia.entity.ts`;
+la migración `1794700000000-CorreccionIa.ts` aún no se ha creado ni aplicado; el
+refactor de valoración oficial (T2-06) está hecho, pero los servicios de
+corrección IA, controladores y worker siguen pendientes.
+**Alcance:** solo documentación. Este documento describe el contrato objetivo y lo
+alinea con la entidad ya implementada. No ejecuta SQL ni migraciones.
 **Evidencia de esquema:** [`T1-verificacion-esquema.md`](./T1-verificacion-esquema.md)
 
 ---
@@ -13,14 +18,19 @@
 | Persistencia | Tabla nueva `correccion_ia`, independiente de la calificación oficial |
 | Columnas `ia_*` de `respuesta_inciso` | Se **deprecan**. No se escriben ni se leen como fuente de verdad. No se eliminan en T2 |
 | Historial | Una fila por intento. Nunca se sobrescribe ni se borra |
+| Integridad del historial | Las cuatro FK de `correccion_ia` usan `ON DELETE RESTRICT`. No hay `CASCADE` ni `SET NULL` |
+| Ordinal de propuesta | `intento`: secuencia funcional del historial por inciso. Inmutable |
+| Reintentos técnicos | `reintentos_worker`: contador del worker, separado de `intento` |
 | Propuesta activa | Máximo una por inciso, garantizada con índice único parcial |
 | Estados | `pendiente`, `procesando`, `generada`, `modificada`, `aceptada`, `descartada`, `error`, `reemplazada` |
 | Generación | Asíncrona con worker (`202 Accepted`), igual que HU-44 |
+| Proveedor de corrección | Token independiente `AI_CORRECCION_PROVIDER`: `fake` en T2 y Gemini en T3 |
 | Aceptación | Explícita por inciso, delega en la valoración oficial existente |
 | Universo asistible | Inciso `pendiente`, con respuesta no vacía y criterios válidos |
 | HU-46 | No bloquea. Si no hay criterios, se rechaza la solicitud con motivo explícito |
 | HU-27 | Independiente. La IA no reemplaza reglas ni corrección automática |
 | `nota_final` | La IA nunca la escribe. Solo la valoración oficial la recalcula |
+| `criterio_hash` cambiado | Detectable. La aceptación se permite mostrando una advertencia; no se bloquea |
 
 ---
 
@@ -48,6 +58,7 @@ CREATE TABLE "correccion_ia" (
   "modelo"                  varchar(100),
   "proveedor"               varchar(30),
   "intento"                 smallint     NOT NULL DEFAULT 1,
+  "reintentos_worker"       integer      NOT NULL DEFAULT 0,
   "version"                 integer      NOT NULL DEFAULT 1,
   "creada_en"               timestamptz  NOT NULL DEFAULT now(),
   "iniciada_en"             timestamptz,
@@ -65,19 +76,19 @@ CREATE TABLE "correccion_ia" (
   CONSTRAINT "FK_correccion_ia_respuesta"
     FOREIGN KEY ("estudiante_id", "examen_id", "pregunta_id", "letra")
     REFERENCES "respuesta_inciso" ("estudiante_id", "examen_id", "pregunta_id", "letra")
-    ON DELETE CASCADE ON UPDATE NO ACTION,
+    ON DELETE RESTRICT ON UPDATE NO ACTION,
 
   CONSTRAINT "FK_correccion_ia_docente"
     FOREIGN KEY ("docente_id") REFERENCES "docente" ("docente_id")
-    ON DELETE NO ACTION ON UPDATE NO ACTION,
+    ON DELETE RESTRICT ON UPDATE NO ACTION,
 
   CONSTRAINT "FK_correccion_ia_revisor"
     FOREIGN KEY ("revisada_por_docente_id") REFERENCES "docente" ("docente_id")
-    ON DELETE SET NULL ON UPDATE NO ACTION,
+    ON DELETE RESTRICT ON UPDATE NO ACTION,
 
   CONSTRAINT "FK_correccion_ia_reemplazo"
     FOREIGN KEY ("reemplazada_por_id") REFERENCES "correccion_ia" ("propuesta_id")
-    ON DELETE SET NULL ON UPDATE NO ACTION,
+    ON DELETE RESTRICT ON UPDATE NO ACTION,
 
   CONSTRAINT "CHK_correccion_ia_estado" CHECK ("estado" IN (
     'pendiente', 'procesando', 'generada', 'modificada',
@@ -91,9 +102,30 @@ CREATE TABLE "correccion_ia" (
     CHECK ("puntaje_sugerido" IS NULL OR "puntaje_max_inciso" IS NULL
            OR "puntaje_sugerido" <= "puntaje_max_inciso"),
   CONSTRAINT "CHK_correccion_ia_intento" CHECK ("intento" >= 1),
+  CONSTRAINT "CHK_correccion_ia_reintentos_worker" CHECK ("reintentos_worker" >= 0),
   CONSTRAINT "CHK_correccion_ia_version" CHECK ("version" >= 1)
 );
 ```
+
+> **Implementación:** este DDL es la referencia para la futura migración
+> `1794700000000-CorreccionIa.ts`. La entidad `CorreccionIa` ya declara las mismas
+> columnas, `CHECK`, índices y relaciones. Las cuatro FK son `RESTRICT`; ninguna
+> usa `CASCADE` ni `SET NULL`.
+
+Restricciones `CHECK` implementadas en la entidad:
+
+| Nombre | Regla |
+|---|---|
+| `CHK_correccion_ia_estado` | `estado` pertenece a los ocho estados permitidos |
+| `CHK_correccion_ia_confianza` | `confianza` es nula o está en `[0, 1]` |
+| `CHK_correccion_ia_puntaje_no_negativo` | `puntaje_sugerido` es nulo o `>= 0` |
+| `CHK_correccion_ia_puntaje_dentro_max` | `puntaje_sugerido <= puntaje_max_inciso` cuando ambos existen |
+| `CHK_correccion_ia_intento` | `intento >= 1` |
+| `CHK_correccion_ia_reintentos_worker` | `reintentos_worker >= 0` |
+| `CHK_correccion_ia_version` | `version >= 1` |
+
+No se declara un `CHECK` sobre la forma de `errores`: la entidad lo tipa como
+`jsonb` y la validación de arreglo queda a cargo del DTO y del servicio.
 
 ### 2.2 Índices y unicidad
 
@@ -103,7 +135,7 @@ CREATE UNIQUE INDEX "UX_correccion_ia_activa"
   ON "correccion_ia" ("estudiante_id", "examen_id", "pregunta_id", "letra")
   WHERE "estado" IN ('pendiente', 'procesando', 'generada', 'modificada');
 
--- Un número de intento por inciso, sin huecos duplicados.
+-- Un número de intento por inciso, sin duplicados.
 CREATE UNIQUE INDEX "UX_correccion_ia_intento"
   ON "correccion_ia" ("estudiante_id", "examen_id", "pregunta_id", "letra", "intento");
 
@@ -133,13 +165,18 @@ Notas:
 - El índice único parcial es la garantía de base de datos para "una propuesta
   activa por inciso". Es la última línea de defensa ante dos solicitudes
   concurrentes; el servicio traduce la violación `23505` a `409`.
+- Los índices anteriores están declarados en la entidad con `@Index`, incluido
+  el `DESC` de `IX_correccion_ia_historial` y los predicados parciales de
+  `UX_correccion_ia_activa` e `IX_correccion_ia_lease`.
+- `IX_correccion_ia_historial` también cubre la FK compuesta
+  `(estudiante_id, examen_id, pregunta_id, letra)`, que no tiene índice propio.
 
 ### 2.3 Justificación de columnas
 
 | Columna | Motivo |
 |---|---|
 | `propuesta_id` | Identidad estable para auditar y enlazar historial |
-| `(estudiante_id, examen_id, pregunta_id, letra)` | FK compuesta al inciso respondido. Evita duplicar la respuesta y garantiza integridad |
+| `(estudiante_id, examen_id, pregunta_id, letra)` | FK compuesta al inciso respondido con `ON DELETE RESTRICT`. Evita duplicar la respuesta y garantiza integridad |
 | `docente_id` | Dueño del examen al momento de la solicitud. **Snapshot** para auditoría |
 | `estado` | Máquina de estados explícita |
 | `puntaje_sugerido` | Único valor que puede llegar a la nota oficial, y solo tras aceptación |
@@ -151,8 +188,9 @@ Notas:
 | `criterio_fuente` | `solucion_inciso`, `rubrica`, `solucion_referencia`, `enunciado`… |
 | `criterio_hash` | SHA-256 del criterio usado. Detecta si la solución cambió después |
 | `modelo`, `proveedor` | Trazabilidad técnica de la sugerencia |
-| `intento` | Numeración del historial y control de reintentos |
-| `version` | Control optimista de concurrencia. Se incrementa en cada mutación; la aceptación exige la versión vigente |
+| `intento` | Ordinal funcional del historial dentro del inciso. Se calcula como `max(intento) + 1` al crear o regenerar. No cambia por reintentos del worker |
+| `reintentos_worker` | Contador técnico del worker. Se incrementa en cada reclamo y gobierna el lease. No forma parte del historial funcional ni del contrato público |
+| `version` | Control optimista de concurrencia. Se incrementa en cada mutación funcional (`PATCH`, aceptar, descartar, regenerar y al persistir el resultado del worker). El claim y la recuperación por lease no lo incrementan porque no cambian el contenido revisable; la aceptación exige la versión vigente |
 | `creada_en`, `iniciada_en`, `finalizada_en`, `actualizada_en` | Ciclo de vida y detección de abandono |
 | `revisada_en`, `revisada_por_docente_id` | Auditoría de la intervención humana |
 | `reemplazada_por_id` | Cadena de reemplazos sin borrar historia |
@@ -167,10 +205,10 @@ Razones:
 
 1. **Doble fuente de verdad.** Mantener `ia_*` sincronizado con
    `correccion_ia` exige escrituras dobles no atómicas.
-2. **Riesgo de sobrescritura.** `valorarInciso` carga la entidad
-   `RespuestaInciso` y hace `save()`, que reescribe todas las columnas
-   cargadas. Un worker que escriba `ia_*` en paralelo puede ser revertido, o
-   revertir el estado aceptado. Es el riesgo R1 del diagnóstico T0.
+2. **Separación de escrituras.** El flujo oficial escribe únicamente
+   `puntaje_obtenido`, `estado_correccion` y `retroalimentacion` mediante un
+   `update` dirigido. `correccion_ia` es la única fuente de sugerencias; el
+   worker nunca toca `respuesta_inciso`.
 3. **Sin valor de lectura.** El frontend ya consulta el detalle por inciso;
    añadir los campos desde `correccion_ia` es una junta más, no un problema de
    rendimiento con este volumen.
@@ -194,6 +232,31 @@ Reglas para T2:
 - `calificaciones_revisadas_en` ni `resultados_publicados_en`
 
 La aceptación escribe esos campos únicamente a través del mecanismo oficial.
+El flujo de corrección IA tampoco escribe `respuesta_inciso`: la única vía de
+escritura oficial es `aplicarValoracionOficial(manager, …)`, ejecutada dentro de
+la transacción de aceptación.
+
+### 2.6 Protección del historial
+
+La entidad implementada declara cuatro relaciones `ManyToOne` con
+`onDelete: 'RESTRICT'`:
+
+| FK | Referencia | Efecto |
+|---|---|---|
+| `FK_correccion_ia_respuesta` | `respuesta_inciso` | No se puede borrar una respuesta que tenga propuestas |
+| `FK_correccion_ia_docente` | `docente` | No se puede borrar el docente autor de la solicitud mientras exista historial |
+| `FK_correccion_ia_revisor` | `docente` | No se puede borrar el docente que revisó mientras exista historial |
+| `FK_correccion_ia_reemplazo` | `correccion_ia` | No se puede borrar una propuesta mientras otra la referencie como reemplazo |
+
+Consecuencias:
+
+- No hay borrado en cascada ni anulación automática de referencias.
+- El historial solo se conserva; para "retirar" una propuesta se cambia su
+  estado, nunca se elimina la fila.
+- `ON DELETE RESTRICT` protege también las cadenas de reemplazo: la propuesta
+  apuntada por `reemplazada_por_id` no puede borrarse mientras exista la fila
+  que la referencia.
+- La aplicación no ejecuta `DELETE` sobre `correccion_ia`.
 
 ---
 
@@ -230,9 +293,9 @@ nuevo intento.
                        ▼       ▼
                 ┌──────────┐ ┌───────┐
                 │ generada │ │ error │
-                └──┬───┬───┘ └───┬───┘
-      PATCH        │   │         │ reintento explícito
-                   ▼   │         └──────► pendiente
+                └──┬───┬───┘ └───────┘
+      PATCH        │   │      terminal: el reintento
+                   ▼   │      crea una fila nueva
             ┌────────────┐
             │ modificada │
             └──┬───┬─────┘
@@ -243,6 +306,7 @@ nuevo intento.
         └──────────┘ └────────────┘
 
   Cualquier estado activo ──regenerar──► reemplazada
+  Estado terminal ──reintento──► nueva fila pendiente (intento = max + 1)
 ```
 
 | Desde | Hacia | Actor | Condición |
@@ -253,9 +317,9 @@ nuevo intento.
 | `pendiente` | `reemplazada` | Sistema | Regeneración |
 | `pendiente` | `error` | Worker | Criterios ya no disponibles al procesar |
 | `procesando` | `generada` | Worker | Respuesta válida y examen aún editable |
-| `procesando` | `error` | Worker | Fallo no reintentable o `intento` máximo |
-| `procesando` | `pendiente` | Recuperador | Lease vencido e `intento < max` |
-| `procesando` | `error` | Recuperador | Lease vencido e `intento = max` (`TIEMPO_AGOTADO`) |
+| `procesando` | `error` | Worker | Fallo no reintentable o `reintentos_worker` máximo |
+| `procesando` | `pendiente` | Recuperador | Lease vencido y `reintentos_worker < max` |
+| `procesando` | `error` | Recuperador | Lease vencido y `reintentos_worker >= max` (`TIEMPO_AGOTADO`) |
 | `generada` | `modificada` | Docente | `PATCH` con al menos un campo |
 | `generada` | `aceptada` | Docente | Aceptación válida |
 | `generada` | `descartada` | Docente | Descarte |
@@ -263,19 +327,25 @@ nuevo intento.
 | `modificada` | `aceptada` | Docente | Aceptación válida |
 | `modificada` | `descartada` | Docente | Descarte |
 | `modificada` | `reemplazada` | Sistema | Regeneración |
-| `error` | `pendiente` | Docente | Reintento explícito, `intento < max` |
-| `error` | `reemplazada` | Sistema | Regeneración |
-| `aceptada`, `descartada`, `reemplazada` | — | — | Sin transiciones |
+| `error` | — | Docente | Sin transición: el reintento inserta una fila nueva con `intento = max(intento) + 1` y `reintentos_worker = 0` |
+| `aceptada`, `descartada`, `error`, `reemplazada` | — | — | Estados terminales inmutables. Regenerar crea otra fila y no modifica la terminal |
+
+> `reemplazada_por_id` solo enlaza una propuesta **activa** que fue superada. Un
+> estado terminal (`aceptada`, `descartada`, `error`, `reemplazada`) nunca se
+> reescribe para enlazar un reemplazo.
 
 ### 3.3 Regeneración
 
-- Permitida cuando **no existe propuesta activa** y el examen sigue editable.
-- Crea una fila nueva con `intento = max(intento) + 1`.
-- Marca la propuesta activa anterior como `reemplazada` y enlaza
-  `reemplazada_por_id`.
+- Permitida cuando **no existe propuesta activa** o cuando la propuesta activa
+  **no está `procesando`**, y el examen sigue editable.
+- Crea una fila nueva con `intento = max(intento) + 1` y
+  `reintentos_worker = 0`.
+- Si existe una propuesta activa, la marca `reemplazada` y enlaza
+  `reemplazada_por_id` con la fila nueva, de forma atómica.
 - Nunca modifica `aceptada`, `descartada`, `error` ni `reemplazada`.
 - Tras `aceptada` se permite regenerar: la nota oficial ya está fijada y una
-  nueva sugerencia no la altera. Queda como intento nuevo en el historial.
+  nueva sugerencia no la altera. Queda como intento nuevo en el historial sin
+  tocar la propuesta aceptada.
   **Decisión aprobada:** se permite; la propuesta aceptada conserva su estado y
   su puntaje original.
 
@@ -286,19 +356,20 @@ Parámetros propuestos:
 | Variable | Default | Uso |
 |---|---|---|
 | `IA_CORRECCION_LEASE_SEGUNDOS` | `120` | Antigüedad máxima de `procesando` |
-| `IA_CORRECCION_MAX_INTENTOS` | `3` | Reintentos por solicitud |
+| `IA_CORRECCION_MAX_REINTENTOS` | `3` | Reintentos técnicos por solicitud (`reintentos_worker`) |
 
 Barrido (al arrancar el worker y periódicamente):
 
 ```sql
--- Lease vencido con intentos disponibles → vuelve a la cola
+-- Lease vencido con reintentos disponibles → vuelve a la cola.
+-- No se reinicia reintentos_worker para evitar bucles infinitos.
 UPDATE correccion_ia
    SET estado = 'pendiente', iniciada_en = NULL, actualizada_en = now()
  WHERE estado = 'procesando'
    AND iniciada_en < now() - ($1 || ' seconds')::interval
-   AND intento < $2;
+   AND reintentos_worker < $2;
 
--- Lease vencido sin intentos → error terminal
+-- Lease vencido sin reintentos → error terminal
 UPDATE correccion_ia
    SET estado = 'error',
        error_codigo = 'TIEMPO_AGOTADO',
@@ -307,7 +378,7 @@ UPDATE correccion_ia
        actualizada_en = now()
  WHERE estado = 'procesando'
    AND iniciada_en < now() - ($1 || ' seconds')::interval
-   AND intento >= $2;
+   AND reintentos_worker >= $2;
 ```
 
 ### 3.5 Exclusión mutua entre workers
@@ -319,7 +390,7 @@ UPDATE correccion_ia
    SET estado = 'procesando',
        iniciada_en = now(),
        actualizada_en = now(),
-       intento = intento + 1
+       reintentos_worker = reintentos_worker + 1
  WHERE propuesta_id = (
    SELECT propuesta_id
      FROM correccion_ia
@@ -337,12 +408,23 @@ Garantías:
 2. El `WHERE estado = 'pendiente'` hace que el segundo `UPDATE` afecte 0 filas.
 3. El índice único parcial impide, además, dos propuestas activas del mismo
    inciso.
+4. El reclamo solo incrementa `reintentos_worker`; `intento` permanece
+   inmutable durante toda la vida de la fila.
+5. El reclamo no incrementa `version`: la versión cambia cuando el worker
+   persiste el resultado o cuando el docente modifica la propuesta.
 
 ### 3.6 Historial
 
 - No se ejecuta `DELETE` sobre `correccion_ia` desde la aplicación.
-- Los estados terminales no se modifican, salvo enlazar
-  `reemplazada_por_id` al momento de reemplazar.
+- Las cuatro FK con `RESTRICT` impiden que un borrado externo arrastre el
+  historial.
+- Los estados terminales no se modifican. La única escritura asociada es
+  `reemplazada_por_id`, que se fija en la misma transacción en que una propuesta
+  activa pasa a `reemplazada`.
+- Un error se reintenta insertando una fila nueva; la fila `error` permanece
+  intacta.
+- `intento` es inmutable. `reintentos_worker` puede cambiar por reclamos y
+  barridos del worker, pero no altera el ordinal del historial.
 - La API de historial devuelve todas las filas del inciso, ordenadas por
   `creada_en DESC`.
 - `aceptada` conserva el `puntaje_sugerido` original aunque la nota oficial se
@@ -490,6 +572,9 @@ POST correcciones-ia/:propuestaId/aceptar
     existente no se altera.
   - **No se acepta un puntaje nuevo.** Para aplicar otro valor, primero se usa
     `PATCH` (lo que cambia `version`) y luego se acepta.
+  - **`criterio_hash` desactualizado:** si el criterio usado al generar ya no
+    coincide con el vigente, la aceptación **no se bloquea**. Se devuelve una
+    advertencia `CRITERIO_ACTUALIZADO` en la respuesta y el docente decide.
 - **Respuesta 200:**
   ```json
   {
@@ -500,7 +585,13 @@ POST correcciones-ia/:propuestaId/aceptar
       "nota_final": "7.20",
       "estado_rendicion": "corregida",
       "pendientes_revision": 0
-    }
+    },
+    "advertencias": [
+      {
+        "codigo": "CRITERIO_ACTUALIZADO",
+        "mensaje": "El criterio del inciso cambió después de generar la propuesta."
+      }
+    ]
   }
   ```
 - **Errores:**
@@ -511,7 +602,7 @@ POST correcciones-ia/:propuestaId/aceptar
   | `PUNTAJE_CONFIRMADO_NO_COINCIDE` | 409 | `puntaje_confirmado` difiere del sugerido |
   | `ESTADO_NO_PERMITE_OPERACION` | 409 | Estado distinto de `generada` o `modificada` |
   | `REVISION_CERRADA` / `RESULTADOS_PUBLICADOS` | 409 | Examen cerrado |
-  | `PUNTAJE_FUERA_DE_RANGO` | 400 | Validación oficial de `valorarInciso` |
+  | `PUNTAJE_FUERA_DE_RANGO` | 400 | Validación oficial de `aplicarValoracionOficial` |
   | `PROPUESTA_NO_ENCONTRADA` | 404 | Inexistente o de otro docente |
 
 - **Implementación obligatoria:** la aceptación **no** escribe la nota. Llama a
@@ -613,6 +704,11 @@ interface ErrorCorreccionIa {
 No se incluye `respuesta_texto` en el DTO: ya lo entrega el detalle de
 revisión existente.
 
+`reintentos_worker` es un contador técnico interno del worker. No forma parte
+del contrato público ni se puede editar por `PATCH`; si se necesita para
+diagnóstico, se expone en un endpoint administrativo separado. El DTO mantiene
+`intento`, que es el ordinal funcional del historial.
+
 ---
 
 ## 5. Invariantes y plan de pruebas
@@ -625,10 +721,10 @@ revisión existente.
 | I2 | Modificar no modifica la nota oficial | `PATCH` solo actualiza `correccion_ia` | `modificar_propuesta_no_altera_nota_ni_puntaje` |
 | I3 | Descartar no modifica la nota oficial | `POST /descartar` solo cambia `estado` | `descartar_propuesta_no_altera_nota_ni_puntaje` |
 | I4 | Aceptar exige intervención explícita | No existe transición automática a `aceptada`; el worker solo produce `generada` o `error` | `worker_nunca_produce_estado_aceptada` |
-| I5 | Aceptar pasa por la validación oficial | Delega en `aplicarValoracionOficial` (extraído de `valorarInciso`) | `aceptar_rechaza_puntaje_mayor_al_maximo` |
+| I5 | Aceptar pasa por la validación oficial | Delega en `aplicarValoracionOficial(manager, …)`, ya extraído de `valorarInciso` en T2-06 | `aceptar_rechaza_puntaje_mayor_al_maximo` |
 | I6 | No se acepta si el examen está publicado | `asegurarEdicionPermitida` antes de cualquier mutación | `aceptar_publicado_devuelve_409` |
 | I7 | Aislamiento entre docentes | Toda consulta resuelve el examen y compara `docente_id`; 404 si no coincide | `docente_b_no_ve_ni_modifica_propuesta_de_a` |
-| I8 | El historial se conserva | Sin `DELETE`; regenerar inserta fila nueva y enlaza la anterior | `regenerar_conserva_historial_y_enlaza_reemplazo` |
+| I8 | El historial se conserva | Sin `DELETE`; FKs `RESTRICT`; regenerar inserta fila nueva y enlaza la anterior | `regenerar_conserva_historial_y_enlaza_reemplazo` |
 | I9 | Una sola propuesta activa | Índice único parcial + transacción | `dos_solicitudes_concurrentes_solo_crean_una` |
 | I10 | Un solo worker por solicitud | `FOR UPDATE SKIP LOCKED` + `WHERE estado='pendiente'` | `dos_workers_no_reclaman_la_misma_fila` |
 | I11 | Se recuperan trabajos abandonados | Barrido por lease | `lease_vencido_vuelve_a_pendiente` |
@@ -638,6 +734,9 @@ revisión existente.
 | I15 | El estado oficial no se contamina | `correccion_ia` no tiene columnas oficiales | Revisión de esquema en CI |
 | I16 | No se acepta una propuesta obsoleta | `version` obligatoria + `UPDATE … WHERE version = :version` | `aceptar_con_version_antigua_devuelve_409` |
 | I17 | La aceptación exige confirmar el puntaje vigente | `puntaje_confirmado` comparable con `puntaje_sugerido` | `aceptar_con_puntaje_no_confirmado_devuelve_409` |
+| I18 | `intento` es el ordinal funcional e inmutable | Se fija al crear/regenerar con `max + 1`; el worker solo toca `reintentos_worker` | `reintentos_no_alteran_intento` |
+| I19 | El historial no se puede borrar en cascada | Cuatro FK `ON DELETE RESTRICT` en la entidad y en la migración | `borrar_respuesta_con_historial_falla` |
+| I20 | Un criterio actualizado no impide aceptar | Comparación de `criterio_hash`; se devuelve advertencia, no 409 | `aceptar_con_criterio_hash_distinto_advierte` |
 
 ### 5.2 Pruebas de no-regresión
 
@@ -654,27 +753,40 @@ revisión existente.
 Llamarlo desde otra transacción **no** la anida: usa otra conexión, por lo que
 la aceptación y el cambio de estado de la propuesta no serían atómicos.
 
-Solución obligatoria en T2:
+Implementado en T2-06:
 
-1. Extraer el cuerpo de `valorarInciso` a
-   `aplicarValoracionOficial(manager, examenId, estudianteId, preguntaId, letra, docenteId, entrada)`.
-2. `valorarInciso` pasa a ser un envoltorio con `dataSource.transaction`.
-3. La aceptación usa **la misma** transacción:
+1. `aplicarValoracionOficial(manager, examenId, estudianteId, preguntaId, letra, docenteId, datos)`
+   contiene la validación y la escritura oficial. **No** abre transacción y
+   **no** llama a `dataSource.transaction`.
+2. `valorarInciso` es un envoltorio que abre `dataSource.transaction` y delega
+   en `aplicarValoracionOficial`.
+3. `aplicarValoracionOficial` vuelve a verificar propiedad, estado del examen y
+   edición permitida usando el `manager` recibido, por lo que la aceptación
+   hereda las mismas garantías sin duplicar reglas.
+4. La aceptación usa **la misma** transacción:
    ```ts
    dataSource.transaction(async (manager) => {
-     const examen = await examenPropiedad.verificar(manager, examenId, docenteId, true);
-     asegurarEdicionPermitida(examen);
-     // ... bloquear rendición y propuesta ...
+     // Bloquea examen y rendición dentro de la misma transacción.
      const resultado = await aplicarValoracionOficial(manager, ...);
-     // ... marcar propuesta como aceptada ...
+
+     // La propuesta se bloquea después de examen y rendición.
+     const propuesta = await manager.findOne(CorreccionIa, {
+       where: { propuesta_id: propuestaId, examen_id: examenId },
+       lock: { mode: 'pessimistic_write' },
+     });
+     // ... validar estado, version y puntaje_confirmado ...
+     // ... marcar la propuesta como aceptada ...
+
      return { propuesta, calificacion: resultado };
    });
    ```
-4. Orden de bloqueo, para evitar interbloqueos:
+5. Orden de bloqueo, para evitar interbloqueos:
    **examen → rendición → propuesta**.
 
-Si la valoración oficial falla, la propuesta no queda `aceptada`. Si el cambio
-de estado falla, la nota no se confirma. Todo o nada.
+Si la validación de la propuesta falla después de aplicar la valoración, toda
+la transacción se revierte: la nota oficial no queda confirmada y la propuesta
+conserva su estado. Si la valoración falla, la propuesta no queda `aceptada`.
+Todo o nada.
 
 ### 5.4 Regla arquitectónica antirregresión
 
@@ -689,41 +801,45 @@ repositorio.
 
 | Riesgo | Estado tras el diseño | Nota |
 |---|---|---|
-| Base desactualizada | **Abierto, bloqueante** | Ver §7, paso 0 |
+| Base desactualizada | **Resuelto** | T2-01 a T2-03 aplicadas y verificadas; falta solo `correccion_ia` |
 | Doble fuente de verdad `ia_*` | Mitigado | Se deprecan, no se escriben |
 | Contención de escritura en la fila oficial | **Resuelto** | La propuesta vive en otra tabla |
+| Borrado accidental del historial | **Resuelto** | Las cuatro FK usan `ON DELETE RESTRICT` |
+| Confusión entre ordinal y reintentos | **Resuelto** | `intento` funcional inmutable; `reintentos_worker` técnico |
 | Coste/abuso de IA | Mitigado | Una propuesta activa por inciso |
 | Prompt injection | Pendiente de T3 | Corresponde al proveedor |
+| Acoplamiento del proveedor de corrección | Mitigado | Token separado `AI_CORRECCION_PROVIDER` |
 | Auditoría de modelo/proveedor | Mitigado | Columnas dedicadas |
 | Historial ilimitado | Aceptado | Volumen bajo; se puede archivar después |
-| `criterio_hash` desactualizado | Detectable | Permite saber si la solución cambió |
+| `criterio_hash` desactualizado | Mitigado | Se permite aceptar con advertencia `CRITERIO_ACTUALIZADO` |
 
 ---
 
 ## 7. Recomendación para T2
 
-### Paso 0 (bloqueante): sincronizar el esquema
+### Paso 0: sincronizar el esquema — completado
 
-Aplicar, con aprobación explícita y sobre base de desarrollo:
+Aplicadas y verificadas en T2-01 a T2-03, con aprobación explícita y sobre base
+de desarrollo:
 
 1. `1794400000000-ModelosFormulaRendicion`
 2. `1794500000000-RevisionCalificaciones`
 3. `1794600000000-SepararPublicacionRespuestas`
 
-Sin esto, HU-31 y HU-45 no pueden probarse: faltan
-`examen.calificaciones_revisadas_en`, `examen.respuestas_publicadas_en` y la
-tabla `respuesta_modelo`.
+Ver [`T2-03-ejecucion.md`](./T2-03-ejecucion.md). Queda pendiente la migración
+de `correccion_ia`.
 
 ### Alcance propuesto de T2
 
 1. Migración `correccion_ia` (solo tablas, índices y constraints).
-2. Entidad TypeORM y registro del módulo en `app.module.ts`.
+2. Entidad TypeORM y registro del módulo en `app.module.ts`. La entidad ya existe.
 3. Refactor de `RevisionCalificacionesService`:
-   `aplicarValoracionOficial(manager, …)` + helpers de propiedad reutilizables.
+   `aplicarValoracionOficial(manager, …)`. **Completado en T2-06.**
 4. `CorreccionIaService`: crear, listar, detalle, modificar, aceptar,
    descartar, regenerar, reclamar, recuperar.
 5. Controladores y DTO con `class-validator`.
-6. Worker con proveedor `fake` para pruebas; Gemini queda para T3.
+6. Worker con `AI_CORRECCION_PROVIDER` y proveedor `fake` para pruebas; Gemini
+   queda para T3.
 7. Pruebas unitarias y de integración de §5.
 
 ### Fuera de T2
@@ -742,39 +858,44 @@ tabla `respuesta_modelo`.
 
 ```
 backend/safetest-api/src/migrations/1794700000000-CorreccionIa.ts
-backend/safetest-api/src/iacorreccion/entity/correccionia.entity.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.module.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.service.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.controller.ts
-backend/safetest-api/src/iacorreccion/iacorreccion-propuesta.controller.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.worker.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.types.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.errores.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.validacion.ts
-backend/safetest-api/src/iacorreccion/dto/crear-correccion-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/listar-correcciones-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/actualizar-correccion-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/aceptar-correccion-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/descartar-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/entity/correccionia.entity.ts   (implementado)
+backend/safetest-api/src/correccionia/correccionia.module.ts
+backend/safetest-api/src/correccionia/correccionia.service.ts
+backend/safetest-api/src/correccionia/correccionia.controller.ts
+backend/safetest-api/src/correccionia/correccionia-propuesta.controller.ts
+backend/safetest-api/src/correccionia/correccionia.worker.ts
+backend/safetest-api/src/correccionia/correccionia.types.ts
+backend/safetest-api/src/correccionia/correccionia.errores.ts
+backend/safetest-api/src/correccionia/correccionia.validacion.ts
+backend/safetest-api/src/correccionia/dto/crear-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/listar-correcciones-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/actualizar-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/aceptar-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/descartar-correccion-ia.dto.ts
 ```
 
-Más sus `*.spec.ts`.
+La entidad se implementó en `src/correccionia/`. El resto de archivos de T2
+seguirá esa misma carpeta para no mezclar la propuesta con el módulo `ia`
+genérico. Más sus `*.spec.ts`.
 
 ### Modificados (T2)
 
 ```
 backend/safetest-api/src/app.module.ts
-backend/safetest-api/src/examen/revision-calificaciones.service.ts
+backend/safetest-api/src/examen/revision-calificaciones.service.ts   (T2-06)
+backend/safetest-api/src/examen/revision-calificaciones.service.spec.ts (T2-06)
 backend/safetest-api/src/examen/examen.module.ts
 backend/safetest-api/src/ia/ai.types.ts
 backend/safetest-api/src/ia/providers/ai.provider.ts
 backend/safetest-api/src/ia/providers/fake-ai.provider.ts
-backend/safetest-api/src/ia/providers/gemini-ai.provider.ts
 ```
+
+El proveedor Gemini real no se toca en T2: se implementará detrás del token
+`AI_CORRECCION_PROVIDER` en T3.
 
 ### T3 / T4
 
-- T3: prompts y parseo estructurado del proveedor Gemini.
+- T3: `AI_CORRECCION_PROVIDER` con Gemini y parseo estructurado.
 - T4: `frontend/features/evaluaciones/**` (servicio, hook, tipos y
   componente de sugerencia).
 
@@ -790,3 +911,11 @@ backend/safetest-api/src/ia/providers/gemini-ai.provider.ts
    editan `confianza`, metadatos de IA ni errores técnicos.
 4. **Aceptación:** exige `version` vigente y `puntaje_confirmado` igual al
    sugerido. Cualquier desajuste devuelve 409.
+5. **FK del historial:** las cuatro FK usan `ON DELETE RESTRICT`. No se usa
+   `CASCADE` ni `SET NULL` para no destruir ni desreferenciar auditoría.
+6. **Reintentos:** `intento` es el ordinal funcional del historial y no cambia;
+   `reintentos_worker` es el contador técnico del worker y es independiente.
+7. **Proveedor de corrección:** token separado `AI_CORRECCION_PROVIDER`. En T2
+   se usa `FakeAiProvider`; Gemini se implementa en T3 sin tocar el servicio.
+8. **`criterio_hash` cambiado:** no bloquea la aceptación. Se devuelve la
+   advertencia `CRITERIO_ACTUALIZADO` y se registra el criterio vigente.
