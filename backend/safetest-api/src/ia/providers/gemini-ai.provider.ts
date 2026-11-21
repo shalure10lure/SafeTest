@@ -5,7 +5,9 @@ import {
   type IaConfig,
 } from '../../config/ia.config';
 import type {
+  ResultadoCorreccionRespuesta,
   ResultadoGeneracionIa,
+  SolicitudCorreccionRespuesta,
   SolicitudGeneracionIa,
 } from '../ai.types';
 import { ErrorGeneracionIa } from '../ia.errors';
@@ -119,6 +121,19 @@ export class GeminiAiProvider implements AiProvider {
       modelo,
       tokens: respuesta.tokens,
     };
+  }
+
+  /**
+   * La corrección con Gemini se implementa en el caso 9. Se declara aquí para
+   * cumplir el contrato AiProvider sin bloquear el worker con el proveedor
+   * `fake`.
+   */
+  async corregirRespuesta(
+    _solicitud: SolicitudCorreccionRespuesta,
+  ): Promise<ResultadoCorreccionRespuesta> {
+    throw new Error(
+      'La corrección con Gemini no está implementada; se completará en el caso 9.',
+    );
   }
 
   private async solicitarGeneracion(

@@ -54,3 +54,43 @@ export interface ResultadoGeneracionIa {
   modelo: string | null;
   tokens: TokensIa;
 }
+
+/**
+ * Criterio disponible para corregir una respuesta. Solo contiene información
+ * académica: nunca ids, datos del docente ni del estudiante.
+ */
+export interface CriterioCorreccionIa {
+  valor_correcto?: number;
+  tolerancia?: number;
+  rubrica?: string;
+  solucion_referencia?: string;
+}
+
+/** Entrada del proveedor para corregir una respuesta abierta o cerrada. */
+export interface SolicitudCorreccionRespuesta {
+  enunciado: string;
+  tipo_respuesta: TipoRespuesta;
+  respuesta_estudiante: string;
+  criterio: CriterioCorreccionIa;
+  puntaje_max: number;
+}
+
+export interface ErrorCorreccionRespuesta {
+  tipo: string;
+  descripcion: string;
+  ubicacion?: string;
+}
+
+/**
+ * Resultado crudo del proveedor. El worker lo normaliza (puntaje recortado y
+ * redondeado) y lo valida antes de persistirlo.
+ */
+export interface ResultadoCorreccionRespuesta {
+  puntaje_sugerido: number;
+  valoracion: string;
+  explicacion: string;
+  errores: ErrorCorreccionRespuesta[];
+  confianza: number | null;
+  proveedor: string;
+  modelo: string | null;
+}
