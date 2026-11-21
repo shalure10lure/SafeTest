@@ -6,6 +6,7 @@ import { CorreccionIaController } from './correccionia.controller';
 import { CorreccionIaPropuestaController } from './correccionia-propuesta.controller';
 import { CorreccionIa } from './entity/correccionia.entity';
 import { CorreccionIaModule } from './correccionia.module';
+import { CorreccionIaInputGuard } from './correccionia-input.guard';
 
 interface DynamicModuleMetadata {
   module?: unknown;
@@ -25,6 +26,15 @@ describe('CorreccionIaModule', () => {
         CorreccionIaPropuestaController,
       ]),
     );
+  });
+
+  it('registra el guard de validación previa a los pipes globales', () => {
+    const providers = Reflect.getMetadata(
+      'providers',
+      CorreccionIaModule,
+    ) as unknown[];
+
+    expect(providers).toContain(CorreccionIaInputGuard);
   });
 
   it('registra y exporta el servicio de CorreccionIa', () => {

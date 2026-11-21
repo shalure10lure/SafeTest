@@ -10,6 +10,8 @@ import {
   Query,
   Req,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
@@ -20,6 +22,10 @@ import {
   ListarCorreccionesIaDto,
   ListarHistorialCorreccionesIaDto,
 } from './dto/listar-correcciones-ia.dto';
+import {
+  CorreccionIaInputGuard,
+  ValidarEntradaCorreccionIa,
+} from './correccionia-input.guard';
 import type {
   ListarCorreccionesIaFiltros,
   ListarHistorialCorreccionIaFiltros,
@@ -27,7 +33,15 @@ import type {
 import { CorreccionIaService } from './correccionia.service';
 
 @Controller('examenes/:examenId')
-@UseGuards(JwtAuthGuard, DocenteGuard)
+@UseGuards(JwtAuthGuard, DocenteGuard, CorreccionIaInputGuard)
+@UsePipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  }),
+)
 export class CorreccionIaController {
   constructor(private readonly correccionIa: CorreccionIaService) {}
 
@@ -36,6 +50,7 @@ export class CorreccionIaController {
   }
 
   @Post('calificaciones/:estudianteId/respuestas/:preguntaId/:letra/ia')
+  @ValidarEntradaCorreccionIa('body', CuerpoVacioDto)
   @HttpCode(HttpStatus.ACCEPTED)
   solicitar(
     @Param('examenId', ParseIntPipe) examenId: number,
@@ -55,6 +70,7 @@ export class CorreccionIaController {
   }
 
   @Get('calificaciones/:estudianteId/respuestas/:preguntaId/:letra/ia')
+  @ValidarEntradaCorreccionIa('query', ListarHistorialCorreccionesIaDto)
   listarHistorial(
     @Param('examenId', ParseIntPipe) examenId: number,
     @Param('estudianteId', ParseIntPipe) estudianteId: number,
@@ -81,6 +97,7 @@ export class CorreccionIaController {
   @Post(
     'calificaciones/:estudianteId/respuestas/:preguntaId/:letra/ia/regenerar',
   )
+  @ValidarEntradaCorreccionIa('body', CuerpoVacioDto)
   @HttpCode(HttpStatus.ACCEPTED)
   regenerar(
     @Param('examenId', ParseIntPipe) examenId: number,
@@ -100,6 +117,7 @@ export class CorreccionIaController {
   }
 
   @Get('correcciones-ia')
+  @ValidarEntradaCorreccionIa('query', ListarCorreccionesIaDto)
   listarPorExamen(
     @Param('examenId', ParseIntPipe) examenId: number,
     @Query() filtros: ListarCorreccionesIaDto,

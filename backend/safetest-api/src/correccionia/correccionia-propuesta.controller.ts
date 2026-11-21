@@ -10,6 +10,8 @@ import {
   Post,
   Req,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
@@ -19,9 +21,21 @@ import { AceptarCorreccionIaDto } from './dto/aceptar-correccion-ia.dto';
 import { ActualizarCorreccionIaDto } from './dto/actualizar-correccion-ia.dto';
 import { DescartarCorreccionIaDto } from './dto/descartar-correccion-ia.dto';
 import { CorreccionIaService } from './correccionia.service';
+import {
+  CorreccionIaInputGuard,
+  ValidarEntradaCorreccionIa,
+} from './correccionia-input.guard';
 
 @Controller('correcciones-ia')
-@UseGuards(JwtAuthGuard, DocenteGuard)
+@UseGuards(JwtAuthGuard, DocenteGuard, CorreccionIaInputGuard)
+@UsePipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  }),
+)
 export class CorreccionIaPropuestaController {
   constructor(private readonly correccionIa: CorreccionIaService) {}
 
@@ -41,6 +55,7 @@ export class CorreccionIaPropuestaController {
   }
 
   @Patch(':propuestaId')
+  @ValidarEntradaCorreccionIa('body', ActualizarCorreccionIaDto)
   modificar(
     @Param('propuestaId', ParseIntPipe) propuestaId: number,
     @Body() cambios: ActualizarCorreccionIaDto,
@@ -54,6 +69,7 @@ export class CorreccionIaPropuestaController {
   }
 
   @Post(':propuestaId/aceptar')
+  @ValidarEntradaCorreccionIa('body', AceptarCorreccionIaDto)
   @HttpCode(HttpStatus.OK)
   aceptar(
     @Param('propuestaId', ParseIntPipe) propuestaId: number,
@@ -68,6 +84,7 @@ export class CorreccionIaPropuestaController {
   }
 
   @Post(':propuestaId/descartar')
+  @ValidarEntradaCorreccionIa('body', DescartarCorreccionIaDto)
   @HttpCode(HttpStatus.OK)
   descartar(
     @Param('propuestaId', ParseIntPipe) propuestaId: number,

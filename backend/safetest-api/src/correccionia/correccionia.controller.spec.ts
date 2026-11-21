@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CorreccionIaController } from './correccionia.controller';
 import { CorreccionIaPropuestaController } from './correccionia-propuesta.controller';
 import { CorreccionIaService } from './correccionia.service';
+import { CorreccionIaInputGuard } from './correccionia-input.guard';
 
 const PROPUESTA = {
   propuesta_id: 42,
@@ -73,32 +74,39 @@ const jwtSimulado = {
   }),
 };
 
-describe('CorreccionIa controllers', () => {
-  let app: INestApplication;
+async function crearApp(conPipeGlobal = false): Promise<INestApplication> {
+  const moduloBuilder = Test.createTestingModule({
+    controllers: [CorreccionIaController, CorreccionIaPropuestaController],
+    providers: [
+      { provide: CorreccionIaService, useValue: servicio },
+      DocenteGuard,
+      CorreccionIaInputGuard,
+    ],
+  });
+  const modulo = await moduloBuilder
+    .overrideGuard(JwtAuthGuard)
+    .useValue(jwtSimulado)
+    .compile();
 
-  beforeAll(async () => {
-    const moduloBuilder = Test.createTestingModule({
-      controllers: [CorreccionIaController, CorreccionIaPropuestaController],
-      providers: [
-        { provide: CorreccionIaService, useValue: servicio },
-        DocenteGuard,
-      ],
-    });
-    const modulo = await moduloBuilder
-      .overrideGuard(JwtAuthGuard)
-      .useValue(jwtSimulado)
-      .compile();
-
-    app = modulo.createNestApplication();
+  const app = modulo.createNestApplication();
+  if (conPipeGlobal) {
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
-        forbidNonWhitelisted: true,
         transform: true,
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    await app.init();
+  }
+  await app.init();
+  return app;
+}
+
+describe('CorreccionIa controllers', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await crearApp();
   });
 
   beforeEach(() => {
@@ -342,6 +350,20 @@ describe('CorreccionIa controllers', () => {
       .expect(({ body }) =>
         expect(body.codigo).toBe('ESTADO_NO_PERMITE_OPERACION'),
       );
+  });
+
+  it('rechaza campos extra antes de que el pipe global los elimine', async () => {
+    const appConPipeGlobal = await crearApp(true);
+    try {
+      await request(appConPipeGlobal.getHttpServer())
+        .patch('/correcciones-ia/42')
+        .send({ puntaje: 3.5, docente_id: 999 })
+        .expect(400);
+
+      expect(servicio.modificarPropuesta).not.toHaveBeenCalled();
+    } finally {
+      await appConPipeGlobal.close();
+    }
   });
 
   it('rechaza un usuario autenticado que no tenga rol docente', async () => {
