@@ -32,9 +32,11 @@ describe('crearProveedorIa', () => {
     expect(proveedor).toBeInstanceOf(FakeAiProvider);
   });
 
-  it('mantiene el proveedor fake de corrección independiente de IA_PROVIDER', () => {
-    const proveedorCorreccion = crearProveedorCorreccionIa();
-    const proveedorGeneracion = crearProveedorIa(
+  it('selecciona el proveedor de corrección según IA_PROVIDER', () => {
+    const proveedorFake = crearProveedorCorreccionIa(
+      cargarConfiguracionIa({ IA_PROVIDER: 'fake' }),
+    );
+    const proveedorGemini = crearProveedorCorreccionIa(
       cargarConfiguracionIa({
         IA_PROVIDER: 'gemini',
         GEMINI_API_KEY: 'clave-de-prueba',
@@ -42,8 +44,8 @@ describe('crearProveedorIa', () => {
       }),
     );
 
-    expect(proveedorCorreccion).toBeInstanceOf(FakeAiProvider);
-    expect(proveedorGeneracion).toBeInstanceOf(GeminiAiProvider);
+    expect(proveedorFake).toBeInstanceOf(FakeAiProvider);
+    expect(proveedorGemini).toBeInstanceOf(GeminiAiProvider);
   });
 
   it('exige selección explícita del proveedor', () => {
@@ -91,12 +93,14 @@ describe('crearProveedorIa', () => {
   });
 
   it('rechaza gemini sin GEMINI_API_KEY', () => {
-    expect(() => crearProveedorIa(configGemini(undefined, { apiKey: null })))
-      .toThrow(ErrorConfiguracionIa);
+    expect(() =>
+      crearProveedorIa(configGemini(undefined, { apiKey: null })),
+    ).toThrow(ErrorConfiguracionIa);
   });
 
   it('rechaza gemini sin GEMINI_MODEL', () => {
-    expect(() => crearProveedorIa(configGemini(undefined, { modelo: null })))
-      .toThrow(ErrorConfiguracionIa);
+    expect(() =>
+      crearProveedorIa(configGemini(undefined, { modelo: null })),
+    ).toThrow(ErrorConfiguracionIa);
   });
 });

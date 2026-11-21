@@ -30,7 +30,8 @@ import {
     },
     {
       provide: AI_CORRECCION_PROVIDER,
-      useFactory: () => crearProveedorCorreccionIa(),
+      useFactory: (config: IaConfig) => crearProveedorCorreccionIa(config),
+      inject: [IA_CONFIG],
     },
   ],
   exports: [AI_PROVIDER, AI_CORRECCION_PROVIDER, IA_CONFIG],
