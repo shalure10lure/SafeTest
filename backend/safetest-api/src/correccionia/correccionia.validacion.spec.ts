@@ -10,6 +10,8 @@ import type {
 
 const solicitudValida: EntradaValidacionSolicitudCorreccionIa = {
   estado_correccion: 'pendiente',
+  estado_rendicion: 'enviada',
+  puntaje_obtenido: null,
   tipo_respuesta: 'desarrollo',
   respuesta_texto: 'Explicación del estudiante',
   opciones_marcadas: 0,
@@ -51,17 +53,68 @@ describe('validarSolicitudCorreccionIa', () => {
   });
 
   it.each(['automatica', 'manual', 'revisada'])(
-    'rechaza un inciso en estado %s',
+    'rechaza un inciso ya corregido en estado %s con puntaje oficial',
     (estado_correccion) => {
       esperarError(
         () =>
           validarSolicitudCorreccionIa({
             ...solicitudValida,
             estado_correccion,
+            puntaje_obtenido: '5.00',
           }),
         'INCISO_NO_PENDIENTE',
         'pendiente de revisión manual',
       );
+    },
+  );
+
+  it.each([null, undefined, ''])(
+    'acepta un inciso sin puntaje aunque el estado no sea pendiente (%s)',
+    (puntaje_obtenido) => {
+      expect(() =>
+        validarSolicitudCorreccionIa({
+          ...solicitudValida,
+          estado_correccion: 'automatica',
+          puntaje_obtenido,
+        }),
+      ).not.toThrow();
+    },
+  );
+
+  it('acepta puntaje oficial igual a cero como inciso ya corregido', () => {
+    esperarError(
+      () =>
+        validarSolicitudCorreccionIa({
+          ...solicitudValida,
+          estado_correccion: 'manual',
+          puntaje_obtenido: '0',
+        }),
+      'INCISO_NO_PENDIENTE',
+      'pendiente de revisión manual',
+    );
+  });
+
+  it.each(['en_curso', 'anulada'])(
+    'rechaza una rendición en estado %s',
+    (estado_rendicion) => {
+      esperarError(
+        () =>
+          validarSolicitudCorreccionIa({
+            ...solicitudValida,
+            estado_rendicion,
+          }),
+        'RENDICION_NO_ENVIADA',
+        'enviada o corregida',
+      );
+    },
+  );
+
+  it.each(['enviada', 'corregida'])(
+    'acepta una rendición en estado %s',
+    (estado_rendicion) => {
+      expect(() =>
+        validarSolicitudCorreccionIa({ ...solicitudValida, estado_rendicion }),
+      ).not.toThrow();
     },
   );
 
@@ -149,6 +202,29 @@ describe('validarResultadoCorreccionIa', () => {
       }),
     ).not.toThrow();
   });
+
+  it('acepta puntaje sugerido con hasta 2 decimales', () => {
+    for (const puntaje_sugerido of ['5', '5.1', '5.01', 7.25]) {
+      expect(() =>
+        validarResultadoCorreccionIa({ ...resultadoValido, puntaje_sugerido }),
+      ).not.toThrow();
+    }
+  });
+
+  it.each(['5.001', '0.001', 9.999])(
+    'rechaza puntaje sugerido con 3 decimales (%s)',
+    (puntaje_sugerido) => {
+      esperarError(
+        () =>
+          validarResultadoCorreccionIa({
+            ...resultadoValido,
+            puntaje_sugerido,
+          }),
+        'PUNTAJE_FUERA_DE_RANGO',
+        'máximo 2 decimales',
+      );
+    },
+  );
 
   it('acepta confianza nula', () => {
     expect(() =>

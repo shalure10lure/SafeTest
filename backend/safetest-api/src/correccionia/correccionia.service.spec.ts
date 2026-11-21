@@ -16,6 +16,7 @@ import { CorreccionIaService } from './correccionia.service';
 
 interface OpcionesServicio {
   examen?: Record<string, unknown> | null;
+  rendicion?: Record<string, unknown> | null;
   inciso?: Record<string, unknown> | null;
   respuesta?: Record<string, unknown> | null;
   soluciones?: Record<string, unknown> | null;
@@ -45,6 +46,7 @@ function crearServicio(opciones: OpcionesServicio = {}) {
           pregunta_id: 31,
           letra: 'a',
           estado_correccion: 'pendiente',
+          puntaje_obtenido: null,
           respuesta_texto: 'Respuesta del estudiante',
         }
       : opciones.respuesta;
@@ -58,6 +60,11 @@ function crearServicio(opciones: OpcionesServicio = {}) {
       : opciones.inciso;
   const intentos = [...(opciones.intentosAnteriores ?? [null, null])];
 
+  const rendicion =
+    opciones.rendicion === undefined
+      ? { estado: 'enviada' }
+      : opciones.rendicion;
+
   const examenRepository = {
     findOne: jest.fn(async () => {
       orden.push('examen');
@@ -67,7 +74,7 @@ function crearServicio(opciones: OpcionesServicio = {}) {
   const rendicionRepository = {
     findOne: jest.fn(async () => {
       orden.push('rendicion');
-      return { estado: 'enviada' };
+      return rendicion;
     }),
   };
   const asignacionRepository = {
@@ -239,6 +246,7 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
         pregunta_id: 31,
         letra: 'a',
         estado_correccion: 'manual',
+        puntaje_obtenido: '7.00',
         respuesta_texto: 'Respuesta del estudiante',
       },
     });
@@ -247,6 +255,17 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
       solicitar(contexto.servicio),
       409,
       'INCISO_NO_PENDIENTE',
+    );
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('no persiste una propuesta cuando la rendición no fue enviada', async () => {
+    const contexto = crearServicio({ rendicion: { estado: 'en_curso' } });
+
+    await esperarErrorCodigo(
+      solicitar(contexto.servicio),
+      409,
+      'RENDICION_NO_ENVIADA',
     );
     expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
   });

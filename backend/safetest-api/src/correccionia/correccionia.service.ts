@@ -344,6 +344,8 @@ export class CorreccionIaService {
       if (!respuesta) {
         this.validarSolicitud({
           estado_correccion: 'pendiente',
+          estado_rendicion: rendicion.estado,
+          puntaje_obtenido: null,
           tipo_respuesta: inciso.tipo_respuesta,
           respuesta_texto: null,
           opciones_marcadas: 0,
@@ -383,6 +385,8 @@ export class CorreccionIaService {
 
       this.validarSolicitud({
         estado_correccion: respuesta.estado_correccion,
+        estado_rendicion: rendicion.estado,
+        puntaje_obtenido: respuesta.puntaje_obtenido,
         tipo_respuesta: inciso.tipo_respuesta,
         respuesta_texto: respuesta.respuesta_texto,
         opciones_marcadas: opcionesMarcadas,
@@ -449,7 +453,10 @@ export class CorreccionIaService {
         codigo: error.codigo,
         motivo: error.motivo,
       };
-      if (error.codigo === 'INCISO_NO_PENDIENTE') {
+      if (
+        error.codigo === 'INCISO_NO_PENDIENTE' ||
+        error.codigo === 'RENDICION_NO_ENVIADA'
+      ) {
         throw new ConflictException(respuesta);
       }
       throw new BadRequestException(respuesta);

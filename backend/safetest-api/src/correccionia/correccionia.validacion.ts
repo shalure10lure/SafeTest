@@ -6,6 +6,7 @@ export type CodigoErrorValidacionCorreccionIa =
   | 'RESPUESTA_VACIA'
   | 'SIN_CRITERIOS'
   | 'INCISO_NO_PENDIENTE'
+  | 'RENDICION_NO_ENVIADA'
   | 'PUNTAJE_MAX_INVALIDO'
   | 'PUNTAJE_FUERA_DE_RANGO'
   | 'CONFIANZA_FUERA_DE_RANGO';
@@ -22,6 +23,8 @@ export class ErrorValidacionCorreccionIa extends Error {
 
 export interface EntradaValidacionSolicitudCorreccionIa {
   estado_correccion: string;
+  estado_rendicion: string;
+  puntaje_obtenido?: number | string | null;
   tipo_respuesta: string;
   respuesta_texto: string | null;
   opciones_marcadas: number;
@@ -39,10 +42,20 @@ export interface EntradaValidacionResultadoCorreccionIa {
 export function validarSolicitudCorreccionIa(
   entrada: EntradaValidacionSolicitudCorreccionIa,
 ): void {
-  if (entrada.estado_correccion !== 'pendiente') {
+  const incisoPendiente =
+    entrada.estado_correccion === 'pendiente' ||
+    puntajeAusente(entrada.puntaje_obtenido);
+  if (!incisoPendiente) {
     throw new ErrorValidacionCorreccionIa(
       'INCISO_NO_PENDIENTE',
       'El inciso ya fue corregido y no está pendiente de revisión manual.',
+    );
+  }
+
+  if (!['enviada', 'corregida'].includes(entrada.estado_rendicion)) {
+    throw new ErrorValidacionCorreccionIa(
+      'RENDICION_NO_ENVIADA',
+      'La rendición debe estar enviada o corregida para solicitar una corrección IA.',
     );
   }
 
@@ -72,11 +85,12 @@ export function validarResultadoCorreccionIa(
   if (
     puntajeSugerido === null ||
     puntajeSugerido < 0 ||
-    puntajeSugerido > puntajeMaximo
+    puntajeSugerido > puntajeMaximo ||
+    !tieneMaximoDosDecimales(puntajeSugerido)
   ) {
     throw new ErrorValidacionCorreccionIa(
       'PUNTAJE_FUERA_DE_RANGO',
-      'El puntaje sugerido debe ser un número finito entre 0 y el puntaje máximo.',
+      'El puntaje sugerido debe ser un número finito entre 0 y el puntaje máximo, con máximo 2 decimales.',
     );
   }
 
@@ -111,8 +125,8 @@ function validarCriteriosSuficientes(
   const valorCorrecto = entrada.solucion_inciso?.valor_correcto;
   const tieneValorCorrectoFinito =
     convertirNumeroFinito(valorCorrecto) !== null;
-  const tieneRubrica =
-    (entrada.solucion_inciso?.rubrica.trim().length ?? 0) > 0;
+  const rubrica = entrada.solucion_inciso?.rubrica;
+  const tieneRubrica = typeof rubrica === 'string' && rubrica.trim().length > 0;
   const fechaRevision = entrada.solucion_referencia?.revisada_en;
   const tieneReferenciaRevisada =
     fechaRevision instanceof Date && Number.isFinite(fechaRevision.getTime());
@@ -138,4 +152,18 @@ function convertirNumeroFinito(
 
   const numero = Number(valor);
   return Number.isFinite(numero) ? numero : null;
+}
+
+function puntajeAusente(valor: number | string | null | undefined): boolean {
+  if (valor === null || valor === undefined) {
+    return true;
+  }
+  if (typeof valor === 'string') {
+    return valor.trim().length === 0;
+  }
+  return false;
+}
+
+function tieneMaximoDosDecimales(valor: number): boolean {
+  return Math.abs(valor * 100 - Math.round(valor * 100)) <= 1e-7;
 }
