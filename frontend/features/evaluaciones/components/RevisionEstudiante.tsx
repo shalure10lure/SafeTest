@@ -82,6 +82,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const [detalle, setDetalle] = useState<DetalleCalificacion | null>(null);
   const [resumen, setResumen] = useState<ResumenCalificaciones | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [claveCargada, setClaveCargada] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState<string | null>(null);
@@ -120,32 +121,37 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
             .filter((inciso) => inciso.pendiente_revision)
             .map((inciso) => ({ pregunta, inciso })),
         );
-        void Promise.all(
-          pendientesIniciales.map(async (fila) => {
-            try {
-              const historial = await correccionIaService.listarHistorial(
-                examenId,
-                estudianteId,
-                fila.pregunta.pregunta_id,
-                fila.inciso.letra,
-                { limite: 1 },
-              );
-              const propuesta = historial[0];
-              if (
-                activo &&
-                propuesta &&
-                estadosConPropuestaReutilizable.has(propuesta.estado)
-              ) {
-                setPropuestasIa((actuales) => ({
-                  ...actuales,
-                  [clave(fila)]: propuesta,
-                }));
-              }
-            } catch (fallo: unknown) {
-              if (activo) setError(mensajeErrorCorreccionIa(fallo));
+        const clavesPendientes = new Set(pendientesIniciales.map(clave));
+        try {
+          const bandeja = await correccionIaService.listarPorExamen(
+            examenId,
+            {
+              estudiante_id: estudianteId,
+              limite: 200,
+              desplazamiento: 0,
+            },
+          );
+          if (!activo) return;
+          const recuperadas: Record<string, PropuestaIaVista> = {};
+          const propuestasOrdenadas = [...bandeja.propuestas].sort(
+            (a, b) =>
+              b.intento - a.intento ||
+              Date.parse(b.actualizada_en) - Date.parse(a.actualizada_en),
+          );
+          for (const propuesta of propuestasOrdenadas) {
+            const identificador = `${propuesta.pregunta_id}-${propuesta.letra}`;
+            if (
+              clavesPendientes.has(identificador) &&
+              estadosConPropuestaReutilizable.has(propuesta.estado) &&
+              !recuperadas[identificador]
+            ) {
+              recuperadas[identificador] = propuesta;
             }
-          }),
-        );
+          }
+          setPropuestasIa((actuales) => ({ ...recuperadas, ...actuales }));
+        } catch (fallo: unknown) {
+          if (activo) setError(mensajeErrorCorreccionIa(fallo));
+        }
       } catch (fallo: unknown) {
         if (activo) {
           setMensaje(null);
@@ -155,7 +161,10 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
           setPropuestasIa({});
         }
       } finally {
-        if (activo) setCargando(false);
+        if (activo) {
+          setClaveCargada(`${examenId}:${estudianteId}`);
+          setCargando(false);
+        }
       }
     }
 
@@ -176,13 +185,22 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const confirmadas = !!detalle?.calificaciones_revisadas_en;
   const publicados = !!detalle?.resultados_publicados_en;
   const cargandoPantalla =
-    cargando ||
-    (detalle !== null &&
-      (detalle.examen_id !== examenId ||
-        detalle.estudiante_id !== estudianteId));
+    cargando || claveCargada !== `${examenId}:${estudianteId}`;
   const bloqueado = confirmadas || publicados || detalle?.estado_rendicion === 'en_curso' || !!guardando;
   const completadas = filas.length - pendientes.length;
   const progreso = filas.length > 0 ? Math.round(completadas * 100 / filas.length) : 0;
+
+  useEffect(() => {
+    if (cargandoPantalla || !window.location.hash) return;
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [cargandoPantalla]);
 
   async function guardarValoracion(preguntaId: number, letra: string, datos: RespuestaValoracion) {
     const identificador = `${preguntaId}-${letra}`;

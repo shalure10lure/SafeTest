@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EstudianteCalificacion, ResumenCalificaciones } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
+import BandejaCorreccionesIa from './BandejaCorreccionesIa';
 import CorreoResultadosPanel from './CorreoResultadosPanel';
 
 type Filtro = 'todos' | 'pendientes' | 'listas';
@@ -231,6 +232,8 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
           )}
 
           <CorreoResultadosPanel examenId={examenId} publicados={publicados} />
+
+          <BandejaCorreccionesIa examenId={examenId} />
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" aria-label="Resultados de los estudiantes">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">

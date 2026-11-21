@@ -11,6 +11,7 @@ import type {
   AceptarCorreccionIaResponse,
   CorreccionIa,
 } from '../correccion-ia.types';
+import PropuestaCorreccionIa from './PropuestaCorreccionIa';
 import RevisionEstudiante from './RevisionEstudiante';
 
 const mocks = vi.hoisted(() => ({
@@ -19,7 +20,7 @@ const mocks = vi.hoisted(() => ({
   valorar: vi.fn(),
   solicitar: vi.fn(),
   regenerar: vi.fn(),
-  listarHistorial: vi.fn(),
+  listarPorExamen: vi.fn(),
   obtenerDetalle: vi.fn(),
   modificar: vi.fn(),
   descartar: vi.fn(),
@@ -55,7 +56,7 @@ vi.mock('../services/correccion-ia.service', () => ({
   correccionIaService: {
     solicitar: mocks.solicitar,
     regenerar: mocks.regenerar,
-    listarHistorial: mocks.listarHistorial,
+    listarPorExamen: mocks.listarPorExamen,
     obtenerDetalle: mocks.obtenerDetalle,
     modificar: mocks.modificar,
     descartar: mocks.descartar,
@@ -199,7 +200,7 @@ function resultadoAceptacion(
 
 async function cargarPantalla() {
   render(<RevisionEstudiante examenId={12} estudianteId={8} />);
-  await screen.findByLabelText('Puntaje asignado');
+  await screen.findByRole('heading', { name: 'Revisión manual' });
 }
 
 async function avanzarSondeo() {
@@ -219,7 +220,9 @@ beforeEach(() => {
   mocks.regenerar
     .mockReset()
     .mockResolvedValue({ propuesta_id: 78, estado: 'pendiente', intento: 2 });
-  mocks.listarHistorial.mockReset().mockResolvedValue([]);
+  mocks.listarPorExamen
+    .mockReset()
+    .mockResolvedValue({ total: 0, propuestas: [] });
   mocks.obtenerDetalle.mockReset().mockResolvedValue(propuesta());
   mocks.modificar.mockReset().mockResolvedValue(propuesta({ estado: 'modificada' }));
   mocks.descartar
@@ -343,7 +346,10 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       ],
       version: 3,
     });
-    mocks.listarHistorial.mockResolvedValue([propuesta()]);
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta()],
+    });
     mocks.modificar.mockResolvedValue(modificada);
 
     await cargarPantalla();
@@ -395,7 +401,10 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
   });
 
   it('permite descartar una propuesta con motivo opcional', async () => {
-    mocks.listarHistorial.mockResolvedValue([propuesta()]);
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta()],
+    });
 
     await cargarPantalla();
     fireEvent.change(
@@ -442,11 +451,87 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
     expect(mocks.regenerar).toHaveBeenCalledWith(12, 8, 31, 'a');
   });
 
+  it('recupera varias propuestas con una sola consulta de bandeja por examen y estudiante', async () => {
+    mocks.detalle.mockResolvedValue(
+      detalle({
+        preguntas: [
+          {
+            pregunta_id: 31,
+            orden: 1,
+            enunciado: 'Resuelve la ecuación.',
+            puntaje_maximo_evaluacion: 10,
+            incisos: [inciso(), inciso({ letra: 'b' })],
+          },
+        ],
+      }),
+    );
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 2,
+      propuestas: [
+        propuesta(),
+        propuesta({
+          propuesta_id: 78,
+          letra: 'b',
+          estado: 'procesando',
+          puntaje_sugerido: null,
+        }),
+      ],
+    });
+
+    await cargarPantalla();
+    expect(
+      await screen.findAllByRole('heading', {
+        name: 'Resultado provisional (generado con IA)',
+      }),
+    ).toHaveLength(2);
+    expect(mocks.listarPorExamen).toHaveBeenCalledTimes(1);
+    expect(mocks.listarPorExamen).toHaveBeenCalledWith(12, {
+      estudiante_id: 8,
+      limite: 200,
+      desplazamiento: 0,
+    });
+  });
+
+  it('mantiene disponible la revisión manual si falla la recuperación de propuestas IA', async () => {
+    mocks.listarPorExamen.mockRejectedValue(
+      new Error('No fue posible recuperar las propuestas.'),
+    );
+
+    await cargarPantalla();
+
+    expect(
+      await screen.findByText('No fue posible recuperar las propuestas.'),
+    ).toBeDefined();
+    expect(screen.getByLabelText('Puntaje asignado')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Sugerir con IA' })).toBeDefined();
+  });
+
+  it('limpia el temporizador de sondeo al desmontar la tarjeta', async () => {
+    vi.useFakeTimers();
+    const tarjeta = render(
+      <PropuestaCorreccionIa
+        propuesta={propuesta({ estado: 'procesando' })}
+        bloqueado={false}
+        onAceptada={() => undefined}
+      />,
+    );
+
+    tarjeta.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(mocks.obtenerDetalle).not.toHaveBeenCalled();
+  });
+
   it('mantiene visibles las propuestas provisionales y deshabilita acciones al cerrar la revisión', async () => {
     mocks.detalle.mockResolvedValue(
       detalle({ calificaciones_revisadas_en: '2026-06-25T11:00:00.000Z' }),
     );
-    mocks.listarHistorial.mockResolvedValue([propuesta()]);
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta()],
+    });
 
     render(<RevisionEstudiante examenId={12} estudianteId={8} />);
 
