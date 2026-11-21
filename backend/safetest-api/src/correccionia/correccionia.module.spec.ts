@@ -2,6 +2,8 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 
 import { ExamenModule } from '../examen/examen.module';
 import { CorreccionIaService } from './correccionia.service';
+import { CorreccionIaController } from './correccionia.controller';
+import { CorreccionIaPropuestaController } from './correccionia-propuesta.controller';
 import { CorreccionIa } from './entity/correccionia.entity';
 import { CorreccionIaModule } from './correccionia.module';
 
@@ -11,6 +13,20 @@ interface DynamicModuleMetadata {
 }
 
 describe('CorreccionIaModule', () => {
+  it('registra los controladores de examen y propuesta', () => {
+    const controllers = Reflect.getMetadata(
+      'controllers',
+      CorreccionIaModule,
+    ) as unknown[];
+
+    expect(controllers).toEqual(
+      expect.arrayContaining([
+        CorreccionIaController,
+        CorreccionIaPropuestaController,
+      ]),
+    );
+  });
+
   it('registra y exporta el servicio de CorreccionIa', () => {
     const providers = Reflect.getMetadata(
       'providers',
