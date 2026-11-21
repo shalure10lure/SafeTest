@@ -40,6 +40,7 @@ import type {
 import type { RendicionEstudianteDto } from './dto/rendicion-estudiante.dto';
 import type { RendicionFinalizadaEstudianteDto } from './dto/rendicion-finalizada-estudiante.dto';
 import type { RespuestaGuardadaEstudianteDto } from './dto/respuesta-guardada-estudiante.dto';
+import { incisoRespondido } from './validacion-respuesta';
 
 import { Examen } from '../examen/entity/examen.entity';
 
@@ -1351,7 +1352,7 @@ export class RendicionService {
       ) {
         return true;
       }
-      return this.incisoRespondido(
+      return incisoRespondido(
         inciso.tipo_respuesta,
         texto,
         opcionesMarcadas,
@@ -1404,32 +1405,6 @@ export class RendicionService {
       clavesVariables.length === clavesValores.length &&
       clavesVariables.every((clave) => Object.hasOwn(valores, clave))
     );
-  }
-
-  private incisoRespondido(
-    tipo: string,
-    texto: string | null,
-    opcionesMarcadas: number,
-  ): boolean {
-    const respuesta = texto?.trim() ?? '';
-    switch (tipo) {
-      case 'opcion_unica':
-      case 'verdadero_falso':
-        return opcionesMarcadas === 1;
-      case 'opcion_multiple':
-        return opcionesMarcadas > 0;
-      case 'desarrollo':
-      case 'texto_corto':
-        return respuesta.length > 0;
-      case 'numerica':
-        return (
-          respuesta.length > 0 &&
-          /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(respuesta) &&
-          Number.isFinite(Number(respuesta))
-        );
-      default:
-        return false;
-    }
   }
 
   private claveInciso(preguntaId: number, letra: string): string {

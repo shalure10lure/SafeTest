@@ -1,0 +1,44 @@
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+
+import { CorreccionIaService } from './correccionia.service';
+import { CorreccionIa } from './entity/correccionia.entity';
+import { CorreccionIaModule } from './correccionia.module';
+
+interface DynamicModuleMetadata {
+  module?: unknown;
+  providers?: Array<{ provide?: unknown }>;
+}
+
+describe('CorreccionIaModule', () => {
+  it('registra y exporta el servicio de CorreccionIa', () => {
+    const providers = Reflect.getMetadata(
+      'providers',
+      CorreccionIaModule,
+    ) as unknown[];
+    const exports = Reflect.getMetadata(
+      'exports',
+      CorreccionIaModule,
+    ) as unknown[];
+
+    expect(providers).toContain(CorreccionIaService);
+    expect(exports).toContain(CorreccionIaService);
+  });
+
+  it('registra el repositorio de CorreccionIa con TypeORM', () => {
+    const imports = Reflect.getMetadata(
+      'imports',
+      CorreccionIaModule,
+    ) as DynamicModuleMetadata[];
+    const typeOrmFeature = imports.find(
+      (module) => module.module === TypeOrmModule,
+    );
+
+    expect(typeOrmFeature?.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provide: getRepositoryToken(CorreccionIa),
+        }),
+      ]),
+    );
+  });
+});

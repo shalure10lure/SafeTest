@@ -58,6 +58,8 @@ export type EstadoCorreccionIa =
 )
 @Index('IX_correccion_ia_examen_estado', ['examen_id', 'estado'])
 @Index('IX_correccion_ia_docente_estado', ['docente_id', 'estado'])
+@Index('IX_correccion_ia_revisada_por_docente', ['revisada_por_docente_id'])
+@Index('IX_correccion_ia_reemplazada_por', ['reemplazada_por_id'])
 @Index('IX_correccion_ia_historial', () => ({
   estudiante_id: 1,
   examen_id: 1,
@@ -70,7 +72,11 @@ export type EstadoCorreccionIa =
 })
 @Entity('correccion_ia')
 export class CorreccionIa {
-  @PrimaryGeneratedColumn({ name: 'propuesta_id', type: 'int' })
+  @PrimaryGeneratedColumn({
+    name: 'propuesta_id',
+    type: 'int',
+    primaryKeyConstraintName: 'PK_correccion_ia',
+  })
   propuesta_id: number;
 
   @Column({ name: 'estudiante_id', type: 'int' })

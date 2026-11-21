@@ -2,9 +2,10 @@
 
 **Estado:** diseño actualizado a la entidad implementada. La entidad TypeORM
 `CorreccionIa` existe en `backend/safetest-api/src/correccionia/entity/correccionia.entity.ts`;
-la migración `1794700000000-CorreccionIa.ts` aún no se ha creado ni aplicado; el
-refactor de valoración oficial (T2-06) está hecho, pero los servicios de
-corrección IA, controladores y worker siguen pendientes.
+el módulo está registrado en `AppModule`. La migración
+`1794700000000-CorreccionIa.ts` existe, pero aún no se ha aplicado. El refactor
+de valoración oficial (T2-06) está hecho; los servicios de corrección IA,
+controladores y worker siguen pendientes.
 **Alcance:** solo documentación. Este documento describe el contrato objetivo y lo
 alinea con la entidad ya implementada. No ejecuta SQL ni migraciones.
 **Evidencia de esquema:** [`T1-verificacion-esquema.md`](./T1-verificacion-esquema.md)
@@ -13,24 +14,24 @@ alinea con la entidad ya implementada. No ejecuta SQL ni migraciones.
 
 ## 1. Resumen de decisiones
 
-| Decisión | Elección |
-|---|---|
-| Persistencia | Tabla nueva `correccion_ia`, independiente de la calificación oficial |
-| Columnas `ia_*` de `respuesta_inciso` | Se **deprecan**. No se escriben ni se leen como fuente de verdad. No se eliminan en T2 |
-| Historial | Una fila por intento. Nunca se sobrescribe ni se borra |
-| Integridad del historial | Las cuatro FK de `correccion_ia` usan `ON DELETE RESTRICT`. No hay `CASCADE` ni `SET NULL` |
-| Ordinal de propuesta | `intento`: secuencia funcional del historial por inciso. Inmutable |
-| Reintentos técnicos | `reintentos_worker`: contador del worker, separado de `intento` |
-| Propuesta activa | Máximo una por inciso, garantizada con índice único parcial |
-| Estados | `pendiente`, `procesando`, `generada`, `modificada`, `aceptada`, `descartada`, `error`, `reemplazada` |
-| Generación | Asíncrona con worker (`202 Accepted`), igual que HU-44 |
-| Proveedor de corrección | Token independiente `AI_CORRECCION_PROVIDER`: `fake` en T2 y Gemini en T3 |
-| Aceptación | Explícita por inciso, delega en la valoración oficial existente |
-| Universo asistible | Inciso `pendiente`, con respuesta no vacía y criterios válidos |
-| HU-46 | No bloquea. Si no hay criterios, se rechaza la solicitud con motivo explícito |
-| HU-27 | Independiente. La IA no reemplaza reglas ni corrección automática |
-| `nota_final` | La IA nunca la escribe. Solo la valoración oficial la recalcula |
-| `criterio_hash` cambiado | Detectable. La aceptación se permite mostrando una advertencia; no se bloquea |
+| Decisión                              | Elección                                                                                              |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Persistencia                          | Tabla nueva `correccion_ia`, independiente de la calificación oficial                                 |
+| Columnas `ia_*` de `respuesta_inciso` | Se **deprecan**. No se escriben ni se leen como fuente de verdad. No se eliminan en T2                |
+| Historial                             | Una fila por intento. Nunca se sobrescribe ni se borra                                                |
+| Integridad del historial              | Las cuatro FK de `correccion_ia` usan `ON DELETE RESTRICT`. No hay `CASCADE` ni `SET NULL`            |
+| Ordinal de propuesta                  | `intento`: secuencia funcional del historial por inciso. Inmutable                                    |
+| Reintentos técnicos                   | `reintentos_worker`: contador del worker, separado de `intento`                                       |
+| Propuesta activa                      | Máximo una por inciso, garantizada con índice único parcial                                           |
+| Estados                               | `pendiente`, `procesando`, `generada`, `modificada`, `aceptada`, `descartada`, `error`, `reemplazada` |
+| Generación                            | Asíncrona con worker (`202 Accepted`), igual que HU-44                                                |
+| Proveedor de corrección               | Token independiente `AI_CORRECCION_PROVIDER`: `fake` en T2 y Gemini en T3                             |
+| Aceptación                            | Explícita por inciso, delega en la valoración oficial existente                                       |
+| Universo asistible                    | Inciso `pendiente`, con respuesta no vacía y criterios válidos                                        |
+| HU-46                                 | No bloquea. Si no hay criterios, se rechaza la solicitud con motivo explícito                         |
+| HU-27                                 | Independiente. La IA no reemplaza reglas ni corrección automática                                     |
+| `nota_final`                          | La IA nunca la escribe. Solo la valoración oficial la recalcula                                       |
+| `criterio_hash` cambiado              | Detectable. La aceptación se permite mostrando una advertencia; no se bloquea                         |
 
 ---
 
@@ -40,7 +41,7 @@ alinea con la entidad ya implementada. No ejecuta SQL ni migraciones.
 
 ```sql
 CREATE TABLE "correccion_ia" (
-  "propuesta_id"            integer GENERATED BY DEFAULT AS IDENTITY,
+  "propuesta_id"            SERIAL       NOT NULL,
   "estudiante_id"           integer      NOT NULL,
   "examen_id"               integer      NOT NULL,
   "pregunta_id"             integer      NOT NULL,
@@ -109,20 +110,22 @@ CREATE TABLE "correccion_ia" (
 
 > **Implementación:** este DDL es la referencia para la futura migración
 > `1794700000000-CorreccionIa.ts`. La entidad `CorreccionIa` ya declara las mismas
-> columnas, `CHECK`, índices y relaciones. Las cuatro FK son `RESTRICT`; ninguna
-> usa `CASCADE` ni `SET NULL`.
+> columnas, siete `CHECK`, ocho índices y relaciones. La PK se llama
+> `PK_correccion_ia` y `propuesta_id` usa `SERIAL`, como corresponde a la
+> estrategia `increment` de `@PrimaryGeneratedColumn({ type: 'int' })`. Las cuatro
+> FK son `RESTRICT`; ninguna usa `CASCADE` ni `SET NULL`.
 
 Restricciones `CHECK` implementadas en la entidad:
 
-| Nombre | Regla |
-|---|---|
-| `CHK_correccion_ia_estado` | `estado` pertenece a los ocho estados permitidos |
-| `CHK_correccion_ia_confianza` | `confianza` es nula o está en `[0, 1]` |
-| `CHK_correccion_ia_puntaje_no_negativo` | `puntaje_sugerido` es nulo o `>= 0` |
-| `CHK_correccion_ia_puntaje_dentro_max` | `puntaje_sugerido <= puntaje_max_inciso` cuando ambos existen |
-| `CHK_correccion_ia_intento` | `intento >= 1` |
-| `CHK_correccion_ia_reintentos_worker` | `reintentos_worker >= 0` |
-| `CHK_correccion_ia_version` | `version >= 1` |
+| Nombre                                  | Regla                                                         |
+| --------------------------------------- | ------------------------------------------------------------- |
+| `CHK_correccion_ia_estado`              | `estado` pertenece a los ocho estados permitidos              |
+| `CHK_correccion_ia_confianza`           | `confianza` es nula o está en `[0, 1]`                        |
+| `CHK_correccion_ia_puntaje_no_negativo` | `puntaje_sugerido` es nulo o `>= 0`                           |
+| `CHK_correccion_ia_puntaje_dentro_max`  | `puntaje_sugerido <= puntaje_max_inciso` cuando ambos existen |
+| `CHK_correccion_ia_intento`             | `intento >= 1`                                                |
+| `CHK_correccion_ia_reintentos_worker`   | `reintentos_worker >= 0`                                      |
+| `CHK_correccion_ia_version`             | `version >= 1`                                                |
 
 No se declara un `CHECK` sobre la forma de `errores`: la entidad lo tipa como
 `jsonb` y la validación de arreglo queda a cargo del DTO y del servicio.
@@ -147,6 +150,13 @@ CREATE INDEX "IX_correccion_ia_examen_estado"
 CREATE INDEX "IX_correccion_ia_docente_estado"
   ON "correccion_ia" ("docente_id", "estado");
 
+-- Integridad eficiente al comprobar las FK restrictivas de revisión y reemplazo.
+CREATE INDEX "IX_correccion_ia_revisada_por_docente"
+  ON "correccion_ia" ("revisada_por_docente_id");
+
+CREATE INDEX "IX_correccion_ia_reemplazada_por"
+  ON "correccion_ia" ("reemplazada_por_id");
+
 -- Historial de un inciso.
 CREATE INDEX "IX_correccion_ia_historial"
   ON "correccion_ia" ("estudiante_id", "examen_id", "pregunta_id", "letra", "creada_en" DESC);
@@ -168,34 +178,36 @@ Notas:
 - Los índices anteriores están declarados en la entidad con `@Index`, incluido
   el `DESC` de `IX_correccion_ia_historial` y los predicados parciales de
   `UX_correccion_ia_activa` e `IX_correccion_ia_lease`.
+- La tabla tiene ocho índices: los seis de unicidad, consulta, historial y
+  recuperación, más los dos índices simples de FK para revisión y reemplazo.
 - `IX_correccion_ia_historial` también cubre la FK compuesta
   `(estudiante_id, examen_id, pregunta_id, letra)`, que no tiene índice propio.
 
 ### 2.3 Justificación de columnas
 
-| Columna | Motivo |
-|---|---|
-| `propuesta_id` | Identidad estable para auditar y enlazar historial |
-| `(estudiante_id, examen_id, pregunta_id, letra)` | FK compuesta al inciso respondido con `ON DELETE RESTRICT`. Evita duplicar la respuesta y garantiza integridad |
-| `docente_id` | Dueño del examen al momento de la solicitud. **Snapshot** para auditoría |
-| `estado` | Máquina de estados explícita |
-| `puntaje_sugerido` | Único valor que puede llegar a la nota oficial, y solo tras aceptación |
-| `puntaje_max_inciso` | Snapshot del máximo vigente al generar. Permite auditar el clamp aunque `inciso.puntaje_max` cambie |
-| `valoracion` | Valoración cualitativa de la IA |
-| `explicacion` | Justificación del puntaje |
-| `errores` | Errores detectados en la respuesta, en JSONB |
-| `confianza` | 0.00–1.00, con `CHECK` |
-| `criterio_fuente` | `solucion_inciso`, `rubrica`, `solucion_referencia`, `enunciado`… |
-| `criterio_hash` | SHA-256 del criterio usado. Detecta si la solución cambió después |
-| `modelo`, `proveedor` | Trazabilidad técnica de la sugerencia |
-| `intento` | Ordinal funcional del historial dentro del inciso. Se calcula como `max(intento) + 1` al crear o regenerar. No cambia por reintentos del worker |
-| `reintentos_worker` | Contador técnico del worker. Se incrementa en cada reclamo y gobierna el lease. No forma parte del historial funcional ni del contrato público |
-| `version` | Control optimista de concurrencia. Se incrementa en cada mutación funcional (`PATCH`, aceptar, descartar, regenerar y al persistir el resultado del worker). El claim y la recuperación por lease no lo incrementan porque no cambian el contenido revisable; la aceptación exige la versión vigente |
-| `creada_en`, `iniciada_en`, `finalizada_en`, `actualizada_en` | Ciclo de vida y detección de abandono |
-| `revisada_en`, `revisada_por_docente_id` | Auditoría de la intervención humana |
-| `reemplazada_por_id` | Cadena de reemplazos sin borrar historia |
-| `error_codigo`, `error_mensaje` | Fallo técnico observable |
-| `motivo` | Razón de descarte o reemplazo |
+| Columna                                                       | Motivo                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `propuesta_id`                                                | Identidad estable para auditar y enlazar historial                                                                                                                                                                                                                                                   |
+| `(estudiante_id, examen_id, pregunta_id, letra)`              | FK compuesta al inciso respondido con `ON DELETE RESTRICT`. Evita duplicar la respuesta y garantiza integridad                                                                                                                                                                                       |
+| `docente_id`                                                  | Dueño del examen al momento de la solicitud. **Snapshot** para auditoría                                                                                                                                                                                                                             |
+| `estado`                                                      | Máquina de estados explícita                                                                                                                                                                                                                                                                         |
+| `puntaje_sugerido`                                            | Único valor que puede llegar a la nota oficial, y solo tras aceptación                                                                                                                                                                                                                               |
+| `puntaje_max_inciso`                                          | Snapshot del máximo vigente al generar. Permite auditar el clamp aunque `inciso.puntaje_max` cambie                                                                                                                                                                                                  |
+| `valoracion`                                                  | Valoración cualitativa de la IA                                                                                                                                                                                                                                                                      |
+| `explicacion`                                                 | Justificación del puntaje                                                                                                                                                                                                                                                                            |
+| `errores`                                                     | Errores detectados en la respuesta, en JSONB                                                                                                                                                                                                                                                         |
+| `confianza`                                                   | 0.00–1.00, con `CHECK`                                                                                                                                                                                                                                                                               |
+| `criterio_fuente`                                             | `solucion_inciso`, `rubrica`, `solucion_referencia`, `enunciado`…                                                                                                                                                                                                                                    |
+| `criterio_hash`                                               | SHA-256 del criterio usado. Detecta si la solución cambió después                                                                                                                                                                                                                                    |
+| `modelo`, `proveedor`                                         | Trazabilidad técnica de la sugerencia                                                                                                                                                                                                                                                                |
+| `intento`                                                     | Ordinal funcional del historial dentro del inciso. Se calcula como `max(intento) + 1` al crear o regenerar. No cambia por reintentos del worker                                                                                                                                                      |
+| `reintentos_worker`                                           | Contador técnico del worker. Se incrementa en cada reclamo y gobierna el lease. No forma parte del historial funcional ni del contrato público                                                                                                                                                       |
+| `version`                                                     | Control optimista de concurrencia. Se incrementa en cada mutación funcional (`PATCH`, aceptar, descartar, regenerar y al persistir el resultado del worker). El claim y la recuperación por lease no lo incrementan porque no cambian el contenido revisable; la aceptación exige la versión vigente |
+| `creada_en`, `iniciada_en`, `finalizada_en`, `actualizada_en` | Ciclo de vida y detección de abandono                                                                                                                                                                                                                                                                |
+| `revisada_en`, `revisada_por_docente_id`                      | Auditoría de la intervención humana                                                                                                                                                                                                                                                                  |
+| `reemplazada_por_id`                                          | Cadena de reemplazos sin borrar historia                                                                                                                                                                                                                                                             |
+| `error_codigo`, `error_mensaje`                               | Fallo técnico observable                                                                                                                                                                                                                                                                             |
+| `motivo`                                                      | Razón de descarte o reemplazo                                                                                                                                                                                                                                                                        |
 
 ### 2.4 Relación con las columnas `ia_*` de `respuesta_inciso`
 
@@ -241,12 +253,12 @@ la transacción de aceptación.
 La entidad implementada declara cuatro relaciones `ManyToOne` con
 `onDelete: 'RESTRICT'`:
 
-| FK | Referencia | Efecto |
-|---|---|---|
-| `FK_correccion_ia_respuesta` | `respuesta_inciso` | No se puede borrar una respuesta que tenga propuestas |
-| `FK_correccion_ia_docente` | `docente` | No se puede borrar el docente autor de la solicitud mientras exista historial |
-| `FK_correccion_ia_revisor` | `docente` | No se puede borrar el docente que revisó mientras exista historial |
-| `FK_correccion_ia_reemplazo` | `correccion_ia` | No se puede borrar una propuesta mientras otra la referencie como reemplazo |
+| FK                           | Referencia         | Efecto                                                                        |
+| ---------------------------- | ------------------ | ----------------------------------------------------------------------------- |
+| `FK_correccion_ia_respuesta` | `respuesta_inciso` | No se puede borrar una respuesta que tenga propuestas                         |
+| `FK_correccion_ia_docente`   | `docente`          | No se puede borrar el docente autor de la solicitud mientras exista historial |
+| `FK_correccion_ia_revisor`   | `docente`          | No se puede borrar el docente que revisó mientras exista historial            |
+| `FK_correccion_ia_reemplazo` | `correccion_ia`    | No se puede borrar una propuesta mientras otra la referencie como reemplazo   |
 
 Consecuencias:
 
@@ -258,22 +270,38 @@ Consecuencias:
   que la referencia.
 - La aplicación no ejecuta `DELETE` sobre `correccion_ia`.
 
+### 2.7 Etapas de validación pura
+
+Las validaciones se separan para que una solicitud pueda crear una fila
+`pendiente` antes de que exista una salida del proveedor:
+
+| Etapa                                      | Función                        | Validaciones                                                                                                                    |
+| ------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Solicitud, antes de insertar `pendiente`   | `validarSolicitudCorreccionIa` | Inciso pendiente de corrección oficial, respuesta no vacía según tipo, criterios suficientes y puntaje máximo finito y positivo |
+| Resultado IA, antes de persistir la salida | `validarResultadoCorreccionIa` | Puntaje máximo finito y positivo, puntaje sugerido entre 0 y el máximo, confianza entre 0 y 1 o nula                            |
+
+La solicitud no requiere `puntaje_sugerido` ni `confianza`; esos campos siguen
+siendo nulos mientras la propuesta está pendiente. Los códigos de error de
+validación permanecen estables. Ambas etapas reutilizan la misma regla para
+validar el puntaje máximo; `PUNTAJE_MAX_INVALIDO` se devuelve tanto al solicitar
+una propuesta como al validar el resultado del proveedor.
+
 ---
 
 ## 3. Estados y transiciones
 
 ### 3.1 Significado
 
-| Estado | Significado | ¿Activa? | ¿Terminal? |
-|---|---|---|---|
-| `pendiente` | Solicitud creada, en cola | Sí | No |
-| `procesando` | Reclamada por un worker | Sí | No |
-| `generada` | Propuesta lista, sin revisar | Sí | No |
-| `modificada` | El docente editó los valores; aún no aplicada | Sí | No |
-| `aceptada` | Aplicada a la nota oficial con intervención explícita | No | Sí |
-| `descartada` | Rechazada por el docente | No | Sí |
-| `error` | Fallo técnico o criterios desaparecidos | No | Sí* |
-| `reemplazada` | Superada por una propuesta más nueva | No | Sí |
+| Estado        | Significado                                           | ¿Activa? | ¿Terminal? |
+| ------------- | ----------------------------------------------------- | -------- | ---------- |
+| `pendiente`   | Solicitud creada, en cola                             | Sí       | No         |
+| `procesando`  | Reclamada por un worker                               | Sí       | No         |
+| `generada`    | Propuesta lista, sin revisar                          | Sí       | No         |
+| `modificada`  | El docente editó los valores; aún no aplicada         | Sí       | No         |
+| `aceptada`    | Aplicada a la nota oficial con intervención explícita | No       | Sí         |
+| `descartada`  | Rechazada por el docente                              | No       | Sí         |
+| `error`       | Fallo técnico o criterios desaparecidos               | No       | Sí*        |
+| `reemplazada` | Superada por una propuesta más nueva                  | No       | Sí         |
 
 \* `error` es terminal para ese intento, pero puede reintentarse creando un
 nuevo intento.
@@ -309,26 +337,26 @@ nuevo intento.
   Estado terminal ──reintento──► nueva fila pendiente (intento = max + 1)
 ```
 
-| Desde | Hacia | Actor | Condición |
-|---|---|---|---|
-| — | `pendiente` | Docente | Inciso pendiente, respuesta no vacía, criterios válidos, sin propuesta activa, examen editable |
-| `pendiente` | `procesando` | Worker | Reclamo atómico con `FOR UPDATE SKIP LOCKED` |
-| `pendiente` | `descartada` | Docente | Cancelación antes de procesar |
-| `pendiente` | `reemplazada` | Sistema | Regeneración |
-| `pendiente` | `error` | Worker | Criterios ya no disponibles al procesar |
-| `procesando` | `generada` | Worker | Respuesta válida y examen aún editable |
-| `procesando` | `error` | Worker | Fallo no reintentable o `reintentos_worker` máximo |
-| `procesando` | `pendiente` | Recuperador | Lease vencido y `reintentos_worker < max` |
-| `procesando` | `error` | Recuperador | Lease vencido y `reintentos_worker >= max` (`TIEMPO_AGOTADO`) |
-| `generada` | `modificada` | Docente | `PATCH` con al menos un campo |
-| `generada` | `aceptada` | Docente | Aceptación válida |
-| `generada` | `descartada` | Docente | Descarte |
-| `generada` | `reemplazada` | Sistema | Regeneración |
-| `modificada` | `aceptada` | Docente | Aceptación válida |
-| `modificada` | `descartada` | Docente | Descarte |
-| `modificada` | `reemplazada` | Sistema | Regeneración |
-| `error` | — | Docente | Sin transición: el reintento inserta una fila nueva con `intento = max(intento) + 1` y `reintentos_worker = 0` |
-| `aceptada`, `descartada`, `error`, `reemplazada` | — | — | Estados terminales inmutables. Regenerar crea otra fila y no modifica la terminal |
+| Desde                                            | Hacia         | Actor       | Condición                                                                                                      |
+| ------------------------------------------------ | ------------- | ----------- | -------------------------------------------------------------------------------------------------------------- |
+| —                                                | `pendiente`   | Docente     | Inciso pendiente, respuesta no vacía, criterios válidos, sin propuesta activa, examen editable                 |
+| `pendiente`                                      | `procesando`  | Worker      | Reclamo atómico con `FOR UPDATE SKIP LOCKED`                                                                   |
+| `pendiente`                                      | `descartada`  | Docente     | Cancelación antes de procesar                                                                                  |
+| `pendiente`                                      | `reemplazada` | Sistema     | Regeneración                                                                                                   |
+| `pendiente`                                      | `error`       | Worker      | Criterios ya no disponibles al procesar                                                                        |
+| `procesando`                                     | `generada`    | Worker      | Respuesta válida y examen aún editable                                                                         |
+| `procesando`                                     | `error`       | Worker      | Fallo no reintentable o `reintentos_worker` máximo                                                             |
+| `procesando`                                     | `pendiente`   | Recuperador | Lease vencido y `reintentos_worker < max`                                                                      |
+| `procesando`                                     | `error`       | Recuperador | Lease vencido y `reintentos_worker >= max` (`TIEMPO_AGOTADO`)                                                  |
+| `generada`                                       | `modificada`  | Docente     | `PATCH` con al menos un campo                                                                                  |
+| `generada`                                       | `aceptada`    | Docente     | Aceptación válida                                                                                              |
+| `generada`                                       | `descartada`  | Docente     | Descarte                                                                                                       |
+| `generada`                                       | `reemplazada` | Sistema     | Regeneración                                                                                                   |
+| `modificada`                                     | `aceptada`    | Docente     | Aceptación válida                                                                                              |
+| `modificada`                                     | `descartada`  | Docente     | Descarte                                                                                                       |
+| `modificada`                                     | `reemplazada` | Sistema     | Regeneración                                                                                                   |
+| `error`                                          | —             | Docente     | Sin transición: el reintento inserta una fila nueva con `intento = max(intento) + 1` y `reintentos_worker = 0` |
+| `aceptada`, `descartada`, `error`, `reemplazada` | —             | —           | Estados terminales inmutables. Regenerar crea otra fila y no modifica la terminal                              |
 
 > `reemplazada_por_id` solo enlaza una propuesta **activa** que fue superada. Un
 > estado terminal (`aceptada`, `descartada`, `error`, `reemplazada`) nunca se
@@ -353,10 +381,10 @@ nuevo intento.
 
 Parámetros propuestos:
 
-| Variable | Default | Uso |
-|---|---|---|
-| `IA_CORRECCION_LEASE_SEGUNDOS` | `120` | Antigüedad máxima de `procesando` |
-| `IA_CORRECCION_MAX_REINTENTOS` | `3` | Reintentos técnicos por solicitud (`reintentos_worker`) |
+| Variable                       | Default | Uso                                                     |
+| ------------------------------ | ------- | ------------------------------------------------------- |
+| `IA_CORRECCION_LEASE_SEGUNDOS` | `120`   | Antigüedad máxima de `procesando`                       |
+| `IA_CORRECCION_MAX_REINTENTOS` | `3`     | Reintentos técnicos por solicitud (`reintentos_worker`) |
 
 Barrido (al arrancar el worker y periódicamente):
 
@@ -477,19 +505,19 @@ POST examenes/:examenId/calificaciones/:estudianteId/respuestas/:preguntaId/:let
   { "propuesta_id": 42, "estado": "pendiente", "intento": 1 }
   ```
 - **Errores:**
-  | Código | HTTP | Cuándo |
-  |---|---|---|
-  | `RESPUESTA_VACIA` | 400 | `respuesta_texto` vacío o sin opciones marcadas |
-  | `SIN_CRITERIOS` | 400 | No hay solución ni rúbrica utilizable; incluye `motivo` |
-  | `PUNTAJE_MAX_INVALIDO` | 400 | `inciso.puntaje_max` no finito o ≤ 0 |
-  | `EXAMEN_NO_ENCONTRADO` | 404 | Examen ajeno o inexistente |
-  | `RENDICION_NO_ENCONTRADA` | 404 | Sin rendición del estudiante |
-  | `INCISO_NO_ENCONTRADO` | 404 | El inciso no pertenece a la pregunta asignada |
-  | `PROPUESTA_ACTIVA_EXISTENTE` | 409 | Ya hay `pendiente/procesando/generada/modificada` |
-  | `INCISO_NO_PENDIENTE` | 409 | Ya corregido de forma oficial |
-  | `RENDICION_NO_ENVIADA` | 409 | `rendicion.estado` no es `enviada` ni `corregida` |
-  | `REVISION_CERRADA` | 409 | `calificaciones_revisadas_en` no nulo |
-  | `RESULTADOS_PUBLICADOS` | 409 | `resultados_publicados_en` no nulo |
+  | Código                       | HTTP | Cuándo                                                  |
+  | ---------------------------- | ---- | ------------------------------------------------------- |
+  | `RESPUESTA_VACIA`            | 400  | `respuesta_texto` vacío o sin opciones marcadas         |
+  | `SIN_CRITERIOS`              | 400  | No hay solución ni rúbrica utilizable; incluye `motivo` |
+  | `PUNTAJE_MAX_INVALIDO`       | 400  | `inciso.puntaje_max` no finito o ≤ 0                    |
+  | `EXAMEN_NO_ENCONTRADO`       | 404  | Examen ajeno o inexistente                              |
+  | `RENDICION_NO_ENCONTRADA`    | 404  | Sin rendición del estudiante                            |
+  | `INCISO_NO_ENCONTRADO`       | 404  | El inciso no pertenece a la pregunta asignada           |
+  | `PROPUESTA_ACTIVA_EXISTENTE` | 409  | Ya hay `pendiente/procesando/generada/modificada`       |
+  | `INCISO_NO_PENDIENTE`        | 409  | Ya corregido de forma oficial                           |
+  | `RENDICION_NO_ENVIADA`       | 409  | `rendicion.estado` no es `enviada` ni `corregida`       |
+  | `REVISION_CERRADA`           | 409  | `calificaciones_revisadas_en` no nulo                   |
+  | `RESULTADOS_PUBLICADOS`      | 409  | `resultados_publicados_en` no nulo                      |
 
 #### 4.2.2 Consultar historial del inciso
 
@@ -537,14 +565,14 @@ PATCH correcciones-ia/:propuestaId
   rechaza por `whitelist`; si llegan, se responde 400.
 - **Respuesta 200:** `CorreccionIaDto` con `estado = 'modificada'`.
 - **Errores:**
-  | Código | HTTP | Cuándo |
-  |---|---|---|
-  | `SIN_CAMBIOS` | 400 | Cuerpo vacío o solo campos nulos |
-  | `PUNTAJE_FUERA_DE_RANGO` | 400 | Negativo, más de 2 decimales o mayor que `puntaje_max_inciso` |
-  | `CONFIANZA_FUERA_DE_RANGO` | 400 | Fuera de 0–1, si se permite editarla (no por defecto) |
-  | `PROPUESTA_NO_ENCONTRADA` | 404 | Inexistente o de otro docente |
-  | `ESTADO_NO_PERMITE_OPERACION` | 409 | Estado distinto de `generada` |
-  | `REVISION_CERRADA` / `RESULTADOS_PUBLICADOS` | 409 | Examen cerrado |
+  | Código                                       | HTTP | Cuándo                                                        |
+  | -------------------------------------------- | ---- | ------------------------------------------------------------- |
+  | `SIN_CAMBIOS`                                | 400  | Cuerpo vacío o solo campos nulos                              |
+  | `PUNTAJE_FUERA_DE_RANGO`                     | 400  | Negativo, más de 2 decimales o mayor que `puntaje_max_inciso` |
+  | `CONFIANZA_FUERA_DE_RANGO`                   | 400  | Fuera de 0–1, si se permite editarla (no por defecto)         |
+  | `PROPUESTA_NO_ENCONTRADA`                    | 404  | Inexistente o de otro docente                                 |
+  | `ESTADO_NO_PERMITE_OPERACION`                | 409  | Estado distinto de `generada`                                 |
+  | `REVISION_CERRADA` / `RESULTADOS_PUBLICADOS` | 409  | Examen cerrado                                                |
 
 > Decisión: solo se modifica en `generada`. Una propuesta ya `modificada` debe
 > aceptarse o descartarse; así el estado conserva un significado claro.
@@ -595,15 +623,16 @@ POST correcciones-ia/:propuestaId/aceptar
   }
   ```
 - **Errores:**
-  | Código | HTTP | Cuándo |
-  |---|---|---|
-  | `SIN_PUNTAJE_SUGERIDO` | 409 | La propuesta no tiene puntaje |
-  | `PROPUESTA_DESACTUALIZADA` | 409 | `version` no coincide con la vigente |
-  | `PUNTAJE_CONFIRMADO_NO_COINCIDE` | 409 | `puntaje_confirmado` difiere del sugerido |
-  | `ESTADO_NO_PERMITE_OPERACION` | 409 | Estado distinto de `generada` o `modificada` |
-  | `REVISION_CERRADA` / `RESULTADOS_PUBLICADOS` | 409 | Examen cerrado |
-  | `PUNTAJE_FUERA_DE_RANGO` | 400 | Validación oficial de `aplicarValoracionOficial` |
-  | `PROPUESTA_NO_ENCONTRADA` | 404 | Inexistente o de otro docente |
+
+  | Código                                       | HTTP | Cuándo                                           |
+  | -------------------------------------------- | ---- | ------------------------------------------------ |
+  | `SIN_PUNTAJE_SUGERIDO`                       | 409  | La propuesta no tiene puntaje                    |
+  | `PROPUESTA_DESACTUALIZADA`                   | 409  | `version` no coincide con la vigente             |
+  | `PUNTAJE_CONFIRMADO_NO_COINCIDE`             | 409  | `puntaje_confirmado` difiere del sugerido        |
+  | `ESTADO_NO_PERMITE_OPERACION`                | 409  | Estado distinto de `generada` o `modificada`     |
+  | `REVISION_CERRADA` / `RESULTADOS_PUBLICADOS` | 409  | Examen cerrado                                   |
+  | `PUNTAJE_FUERA_DE_RANGO`                     | 400  | Validación oficial de `aplicarValoracionOficial` |
+  | `PROPUESTA_NO_ENCONTRADA`                    | 404  | Inexistente o de otro docente                    |
 
 - **Implementación obligatoria:** la aceptación **no** escribe la nota. Llama a
   la valoración oficial dentro de la misma transacción (ver §5.3).
@@ -650,7 +679,7 @@ GET examenes/:examenId/correcciones-ia
   ```json
   {
     "total": 12,
-    "propuestas": [ { "propuesta_id": 42, "estado": "generada", "...": "..." } ]
+    "propuestas": [{ "propuesta_id": 42, "estado": "generada", "...": "..." }]
   }
   ```
 - **Errores:** 404 de propiedad; 400 por filtros inválidos.
@@ -670,7 +699,7 @@ interface CorreccionIaDto {
   pregunta_id: number;
   letra: string;
   estado: EstadoCorreccionIa;
-  puntaje_sugerido: string | null;   // numeric llega como string en TypeORM
+  puntaje_sugerido: string | null; // numeric llega como string en TypeORM
   puntaje_max_inciso: string | null;
   valoracion: string | null;
   explicacion: string | null;
@@ -715,28 +744,28 @@ diagnóstico, se expone en un endpoint administrativo separado. El DTO mantiene
 
 ### 5.1 Tabla de invariantes
 
-| # | Invariante | Cómo se garantiza | Prueba futura |
-|---|---|---|---|
-| I1 | Generar no modifica la nota oficial | El servicio solo inserta en `correccion_ia`; no importa repositorios de escritura oficial | `generar_propuesta_no_altera_nota_ni_puntaje` |
-| I2 | Modificar no modifica la nota oficial | `PATCH` solo actualiza `correccion_ia` | `modificar_propuesta_no_altera_nota_ni_puntaje` |
-| I3 | Descartar no modifica la nota oficial | `POST /descartar` solo cambia `estado` | `descartar_propuesta_no_altera_nota_ni_puntaje` |
-| I4 | Aceptar exige intervención explícita | No existe transición automática a `aceptada`; el worker solo produce `generada` o `error` | `worker_nunca_produce_estado_aceptada` |
-| I5 | Aceptar pasa por la validación oficial | Delega en `aplicarValoracionOficial(manager, …)`, ya extraído de `valorarInciso` en T2-06 | `aceptar_rechaza_puntaje_mayor_al_maximo` |
-| I6 | No se acepta si el examen está publicado | `asegurarEdicionPermitida` antes de cualquier mutación | `aceptar_publicado_devuelve_409` |
-| I7 | Aislamiento entre docentes | Toda consulta resuelve el examen y compara `docente_id`; 404 si no coincide | `docente_b_no_ve_ni_modifica_propuesta_de_a` |
-| I8 | El historial se conserva | Sin `DELETE`; FKs `RESTRICT`; regenerar inserta fila nueva y enlaza la anterior | `regenerar_conserva_historial_y_enlaza_reemplazo` |
-| I9 | Una sola propuesta activa | Índice único parcial + transacción | `dos_solicitudes_concurrentes_solo_crean_una` |
-| I10 | Un solo worker por solicitud | `FOR UPDATE SKIP LOCKED` + `WHERE estado='pendiente'` | `dos_workers_no_reclaman_la_misma_fila` |
-| I11 | Se recuperan trabajos abandonados | Barrido por lease | `lease_vencido_vuelve_a_pendiente` |
-| I12 | Sin respuesta no hay propuesta | Validación previa al insert | `respuesta_vacia_devuelve_400_sin_fila` |
-| I13 | Sin criterios no hay propuesta | Validación de solución/rúbrica | `sin_criterios_devuelve_400_con_motivo` |
-| I14 | Confianza y puntaje respetan rango | `CHECK` en BD + validación en servicio | `confianza_y_puntaje_fuera_de_rango_rechazados` |
-| I15 | El estado oficial no se contamina | `correccion_ia` no tiene columnas oficiales | Revisión de esquema en CI |
-| I16 | No se acepta una propuesta obsoleta | `version` obligatoria + `UPDATE … WHERE version = :version` | `aceptar_con_version_antigua_devuelve_409` |
-| I17 | La aceptación exige confirmar el puntaje vigente | `puntaje_confirmado` comparable con `puntaje_sugerido` | `aceptar_con_puntaje_no_confirmado_devuelve_409` |
-| I18 | `intento` es el ordinal funcional e inmutable | Se fija al crear/regenerar con `max + 1`; el worker solo toca `reintentos_worker` | `reintentos_no_alteran_intento` |
-| I19 | El historial no se puede borrar en cascada | Cuatro FK `ON DELETE RESTRICT` en la entidad y en la migración | `borrar_respuesta_con_historial_falla` |
-| I20 | Un criterio actualizado no impide aceptar | Comparación de `criterio_hash`; se devuelve advertencia, no 409 | `aceptar_con_criterio_hash_distinto_advierte` |
+| #   | Invariante                                       | Cómo se garantiza                                                                         | Prueba futura                                     |
+| --- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| I1  | Generar no modifica la nota oficial              | El servicio solo inserta en `correccion_ia`; no importa repositorios de escritura oficial | `generar_propuesta_no_altera_nota_ni_puntaje`     |
+| I2  | Modificar no modifica la nota oficial            | `PATCH` solo actualiza `correccion_ia`                                                    | `modificar_propuesta_no_altera_nota_ni_puntaje`   |
+| I3  | Descartar no modifica la nota oficial            | `POST /descartar` solo cambia `estado`                                                    | `descartar_propuesta_no_altera_nota_ni_puntaje`   |
+| I4  | Aceptar exige intervención explícita             | No existe transición automática a `aceptada`; el worker solo produce `generada` o `error` | `worker_nunca_produce_estado_aceptada`            |
+| I5  | Aceptar pasa por la validación oficial           | Delega en `aplicarValoracionOficial(manager, …)`, ya extraído de `valorarInciso` en T2-06 | `aceptar_rechaza_puntaje_mayor_al_maximo`         |
+| I6  | No se acepta si el examen está publicado         | `asegurarEdicionPermitida` antes de cualquier mutación                                    | `aceptar_publicado_devuelve_409`                  |
+| I7  | Aislamiento entre docentes                       | Toda consulta resuelve el examen y compara `docente_id`; 404 si no coincide               | `docente_b_no_ve_ni_modifica_propuesta_de_a`      |
+| I8  | El historial se conserva                         | Sin `DELETE`; FKs `RESTRICT`; regenerar inserta fila nueva y enlaza la anterior           | `regenerar_conserva_historial_y_enlaza_reemplazo` |
+| I9  | Una sola propuesta activa                        | Índice único parcial + transacción                                                        | `dos_solicitudes_concurrentes_solo_crean_una`     |
+| I10 | Un solo worker por solicitud                     | `FOR UPDATE SKIP LOCKED` + `WHERE estado='pendiente'`                                     | `dos_workers_no_reclaman_la_misma_fila`           |
+| I11 | Se recuperan trabajos abandonados                | Barrido por lease                                                                         | `lease_vencido_vuelve_a_pendiente`                |
+| I12 | Sin respuesta no hay propuesta                   | Validación previa al insert                                                               | `respuesta_vacia_devuelve_400_sin_fila`           |
+| I13 | Sin criterios no hay propuesta                   | Validación de solución/rúbrica                                                            | `sin_criterios_devuelve_400_con_motivo`           |
+| I14 | Confianza y puntaje respetan rango               | `CHECK` en BD + validación en servicio                                                    | `confianza_y_puntaje_fuera_de_rango_rechazados`   |
+| I15 | El estado oficial no se contamina                | `correccion_ia` no tiene columnas oficiales                                               | Revisión de esquema en CI                         |
+| I16 | No se acepta una propuesta obsoleta              | `version` obligatoria + `UPDATE … WHERE version = :version`                               | `aceptar_con_version_antigua_devuelve_409`        |
+| I17 | La aceptación exige confirmar el puntaje vigente | `puntaje_confirmado` comparable con `puntaje_sugerido`                                    | `aceptar_con_puntaje_no_confirmado_devuelve_409`  |
+| I18 | `intento` es el ordinal funcional e inmutable    | Se fija al crear/regenerar con `max + 1`; el worker solo toca `reintentos_worker`         | `reintentos_no_alteran_intento`                   |
+| I19 | El historial no se puede borrar en cascada       | Cuatro FK `ON DELETE RESTRICT` en la entidad y en la migración                            | `borrar_respuesta_con_historial_falla`            |
+| I20 | Un criterio actualizado no impide aceptar        | Comparación de `criterio_hash`; se devuelve advertencia, no 409                           | `aceptar_con_criterio_hash_distinto_advierte`     |
 
 ### 5.2 Pruebas de no-regresión
 
@@ -799,19 +828,19 @@ repositorio.
 
 ## 6. Riesgos residuales
 
-| Riesgo | Estado tras el diseño | Nota |
-|---|---|---|
-| Base desactualizada | **Resuelto** | T2-01 a T2-03 aplicadas y verificadas; falta solo `correccion_ia` |
-| Doble fuente de verdad `ia_*` | Mitigado | Se deprecan, no se escriben |
-| Contención de escritura en la fila oficial | **Resuelto** | La propuesta vive en otra tabla |
-| Borrado accidental del historial | **Resuelto** | Las cuatro FK usan `ON DELETE RESTRICT` |
-| Confusión entre ordinal y reintentos | **Resuelto** | `intento` funcional inmutable; `reintentos_worker` técnico |
-| Coste/abuso de IA | Mitigado | Una propuesta activa por inciso |
-| Prompt injection | Pendiente de T3 | Corresponde al proveedor |
-| Acoplamiento del proveedor de corrección | Mitigado | Token separado `AI_CORRECCION_PROVIDER` |
-| Auditoría de modelo/proveedor | Mitigado | Columnas dedicadas |
-| Historial ilimitado | Aceptado | Volumen bajo; se puede archivar después |
-| `criterio_hash` desactualizado | Mitigado | Se permite aceptar con advertencia `CRITERIO_ACTUALIZADO` |
+| Riesgo                                     | Estado tras el diseño | Nota                                                              |
+| ------------------------------------------ | --------------------- | ----------------------------------------------------------------- |
+| Base desactualizada                        | **Resuelto**          | T2-01 a T2-03 aplicadas y verificadas; falta solo `correccion_ia` |
+| Doble fuente de verdad `ia_*`              | Mitigado              | Se deprecan, no se escriben                                       |
+| Contención de escritura en la fila oficial | **Resuelto**          | La propuesta vive en otra tabla                                   |
+| Borrado accidental del historial           | **Resuelto**          | Las cuatro FK usan `ON DELETE RESTRICT`                           |
+| Confusión entre ordinal y reintentos       | **Resuelto**          | `intento` funcional inmutable; `reintentos_worker` técnico        |
+| Coste/abuso de IA                          | Mitigado              | Una propuesta activa por inciso                                   |
+| Prompt injection                           | Pendiente de T3       | Corresponde al proveedor                                          |
+| Acoplamiento del proveedor de corrección   | Mitigado              | Token separado `AI_CORRECCION_PROVIDER`                           |
+| Auditoría de modelo/proveedor              | Mitigado              | Columnas dedicadas                                                |
+| Historial ilimitado                        | Aceptado              | Volumen bajo; se puede archivar después                           |
+| `criterio_hash` desactualizado             | Mitigado              | Se permite aceptar con advertencia `CRITERIO_ACTUALIZADO`         |
 
 ---
 
