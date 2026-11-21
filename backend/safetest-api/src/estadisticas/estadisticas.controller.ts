@@ -1,8 +1,10 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,6 +33,18 @@ export class EstadisticasController {
     return this.estadisticasService.obtenerPorMateria(
       materiaId,
       request.user.id,
+    );
+  }
+  @Post('materias/:materiaId/comparacion')
+  compararPeriodos(
+    @Param('materiaId', ParseIntPipe) materiaId: number,
+    @Body() body: { periodoIds?: number[] },
+    @Req() request: any,
+  ) {
+    return this.estadisticasService.compararPeriodos(
+      materiaId,
+      request.user.id,
+      body?.periodoIds as number[],
     );
   }
 }
