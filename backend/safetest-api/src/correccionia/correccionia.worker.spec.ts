@@ -193,7 +193,7 @@ function crearWorker(
 }
 
 describe('CorreccionIaWorker', () => {
-  it('dos workers no reclaman la misma propuesta', async () => {
+  it('[I10] dos workers no reclaman la misma propuesta', async () => {
     const almacen = new AlmacenEnMemoria([crearContexto()]);
     const proveedor = new FakeAiProvider({ modelo: 'fake-test' });
     const primero = crearWorker(almacen, proveedor);
@@ -357,7 +357,7 @@ describe('CorreccionIaWorker', () => {
     });
   });
 
-  it('recupera lease vencido con intentos disponibles a pendiente', async () => {
+  it('[I11] recupera lease vencido con intentos disponibles a pendiente', async () => {
     const contexto = crearContexto();
     const almacen = new AlmacenEnMemoria([contexto]);
     const fila = almacen.filas.get(contexto.propuesta_id);
@@ -380,7 +380,7 @@ describe('CorreccionIaWorker', () => {
     expect(fila.estado).toBe('pendiente');
   });
 
-  it('marca TIEMPO_AGOTADO cuando vence el lease sin intentos disponibles', async () => {
+  it('[I11] marca TIEMPO_AGOTADO cuando vence el lease sin intentos disponibles', async () => {
     const contexto = crearContexto();
     const almacen = new AlmacenEnMemoria([contexto]);
     const fila = almacen.filas.get(contexto.propuesta_id);
@@ -401,7 +401,7 @@ describe('CorreccionIaWorker', () => {
     });
   });
 
-  it('nunca cambia automáticamente una propuesta a aceptada', async () => {
+  it('[I4] nunca cambia automáticamente una propuesta a aceptada', async () => {
     const almacen = new AlmacenEnMemoria([crearContexto()]);
     const worker = crearWorker(almacen);
 

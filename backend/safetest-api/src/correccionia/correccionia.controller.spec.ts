@@ -59,6 +59,7 @@ const servicio = {
   aceptarPropuesta: promesaMock({
     propuesta: { propuesta_id: 42, estado: 'aceptada' },
     calificacion: { puntaje_obtenido: '3.50' },
+    advertencias: [],
   }),
 };
 
@@ -221,7 +222,12 @@ describe('CorreccionIa controllers', () => {
     await request(app.getHttpServer())
       .post('/correcciones-ia/42/aceptar')
       .send(entrada)
-      .expect(200);
+      .expect(200)
+      .expect({
+        propuesta: { propuesta_id: 42, estado: 'aceptada' },
+        calificacion: { puntaje_obtenido: '3.50' },
+        advertencias: [],
+      });
 
     expect(servicio.aceptarPropuesta).toHaveBeenCalledWith(42, 71, entrada);
   });

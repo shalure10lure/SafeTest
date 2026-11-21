@@ -12,8 +12,18 @@ import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
 import { Rendicion } from '../rendicion/entity/rendicion.entity';
 import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entity';
 import { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
+import { cargarConfiguracionIa } from '../config/ia.config';
+import { FakeAiProvider } from '../ia/providers/fake-ai.provider';
 import { CorreccionIa } from './entity/correccionia.entity';
+import type {
+  AlmacenCorreccionIa,
+  ContextoCorreccionIa,
+  ResultadoPersistenciaCorreccionIa,
+  ResultadoRecuperacionCorreccionIa,
+} from './correccionia.types';
+import { crearHashCriterioActual } from './correccionia.criterio';
 import { CorreccionIaService } from './correccionia.service';
+import { CorreccionIaWorker } from './correccionia.worker';
 
 interface OpcionesServicio {
   examen?: Record<string, unknown> | null;
@@ -22,12 +32,13 @@ interface OpcionesServicio {
   respuesta?: Record<string, unknown> | null;
   soluciones?: Record<string, unknown> | null;
   intentosAnteriores?: Array<Record<string, unknown> | null>;
-  propuestaActiva?: Record<string, unknown> | null;
+  propuestaActiva?: CorreccionIa | Record<string, unknown> | null;
   ultimaPropuesta?: Record<string, unknown> | null;
   errorGuardar?: Error;
   errorValoracion?: Error;
   propuestas?: CorreccionIa[];
   detalle?: CorreccionIa | null;
+  detalleBajoBloqueo?: CorreccionIa | null;
 }
 
 function crearServicio(opciones: OpcionesServicio = {}) {
@@ -56,7 +67,11 @@ function crearServicio(opciones: OpcionesServicio = {}) {
       : opciones.respuesta;
   const soluciones =
     opciones.soluciones === undefined
-      ? { valor_correcto: '10', rubrica: 'Criterios revisados' }
+      ? {
+          valor_correcto: '10',
+          tolerancia: '0',
+          rubrica: 'Criterios revisados',
+        }
       : opciones.soluciones;
   const inciso =
     opciones.inciso === undefined
@@ -124,19 +139,30 @@ function crearServicio(opciones: OpcionesServicio = {}) {
     }),
   };
   const correccionRepository = {
-    findOne: jest.fn(async (consulta?: { where?: Record<string, unknown> }) => {
-      orden.push('correccion');
-      if (typeof consulta?.where?.propuesta_id === 'number') {
-        return opciones.detalle ?? null;
-      }
-      if (consulta?.where?.estado !== undefined) {
-        return opciones.propuestaActiva ?? null;
-      }
-      if (opciones.ultimaPropuesta !== undefined) {
-        return opciones.ultimaPropuesta;
-      }
-      return intentos.shift() ?? null;
-    }),
+    findOne: jest.fn(
+      async (consulta?: {
+        where?: Record<string, unknown>;
+        lock?: { mode?: string };
+      }) => {
+        orden.push('correccion');
+        if (typeof consulta?.where?.propuesta_id === 'number') {
+          if (
+            consulta.lock?.mode === 'pessimistic_write' &&
+            opciones.detalleBajoBloqueo !== undefined
+          ) {
+            return opciones.detalleBajoBloqueo;
+          }
+          return opciones.detalle ?? null;
+        }
+        if (consulta?.where?.estado !== undefined) {
+          return opciones.propuestaActiva ?? null;
+        }
+        if (opciones.ultimaPropuesta !== undefined) {
+          return opciones.ultimaPropuesta;
+        }
+        return intentos.shift() ?? null;
+      },
+    ),
     find: jest.fn(async () => opciones.propuestas ?? []),
     findAndCount: jest.fn(async () => [
       opciones.propuestas ?? [],
@@ -286,7 +312,15 @@ function crearPropuesta(cambios: Partial<CorreccionIa> = {}): CorreccionIa {
     errores: [{ tipo: 'omision', descripcion: 'Falta un paso' }],
     confianza: '0.90',
     criterio_fuente: 'rubrica',
-    criterio_hash: 'hash',
+    criterio_hash:
+      crearHashCriterioActual(
+        {
+          valor_correcto: '10',
+          tolerancia: '0',
+          rubrica: 'Criterios revisados',
+        },
+        null,
+      ) ?? 'hash',
     modelo: 'modelo',
     proveedor: 'fake',
     intento: 2,
@@ -428,7 +462,7 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
       'PUNTAJE_MAX_INVALIDO',
     ],
   ])(
-    'no persiste una propuesta si la solicitud tiene %s',
+    '[I12/I13] no persiste una propuesta si la solicitud tiene %s',
     async (_caso, opciones, status, codigo) => {
       const contexto = crearServicio(opciones);
 
@@ -437,7 +471,7 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
     },
   );
 
-  it('persiste una propuesta pendiente con el siguiente intento', async () => {
+  it('[I1] persiste una propuesta pendiente con el siguiente intento', async () => {
     const contexto = crearServicio({
       ultimaPropuesta: { intento: 3 },
     });
@@ -489,6 +523,7 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
         lock: { mode: 'pessimistic_write' },
       }),
     );
+    sinEscriturasOficiales(contexto);
   });
 
   it('devuelve 404 si el docente no es propietario y no consulta la rendición', async () => {
@@ -508,7 +543,7 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
     expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
   });
 
-  it('traduce la colisión del índice único activo a un conflicto estable', async () => {
+  it('[I9] traduce la colisión del índice único activo a un conflicto estable', async () => {
     const error = new QueryFailedError(
       'INSERT',
       [],
@@ -606,7 +641,7 @@ describe('consultas de propuestas de CorreccionIa', () => {
     );
   });
 
-  it('no consulta propuestas de un examen ajeno', async () => {
+  it('[I7] no consulta propuestas de un examen ajeno', async () => {
     const contexto = crearServicio({ examen: null });
 
     await esperarErrorCodigo(
@@ -671,7 +706,7 @@ describe('consultas de propuestas de CorreccionIa', () => {
 });
 
 describe('CorreccionIaService.modificarPropuesta', () => {
-  it('modifica solo los campos editables y pasa a modificada', async () => {
+  it('[I2] modifica solo los campos editables y pasa a modificada', async () => {
     const contexto = crearServicio({ detalle: crearPropuesta() });
 
     const resultado = await contexto.servicio.modificarPropuesta(44, 12, {
@@ -811,7 +846,7 @@ describe('CorreccionIaService.modificarPropuesta', () => {
 
 describe('CorreccionIaService.descartarPropuesta', () => {
   it.each(['pendiente', 'generada', 'modificada'])(
-    'descarta una propuesta en estado %s y normaliza el motivo',
+    '[I3] descarta una propuesta en estado %s y normaliza el motivo',
     async (estado) => {
       const contexto = crearServicio({
         detalle: crearPropuesta({
@@ -915,7 +950,7 @@ describe('CorreccionIaService.regenerarPropuesta', () => {
   const regenerar = (servicio: CorreccionIaService) =>
     servicio.regenerarPropuesta(7, 21, 31, 'a', 12);
 
-  it('reemplaza la propuesta activa, enlaza el reemplazo y conserva el historial', async () => {
+  it('[I8] reemplaza la propuesta activa, enlaza el reemplazo y conserva el historial', async () => {
     const activa = crearPropuesta({
       propuesta_id: 43,
       estado: 'generada',
@@ -1088,7 +1123,7 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     },
   ) => servicio.aceptarPropuesta(44, 12, entrada);
 
-  it('aplica la valoración oficial y marca la propuesta como aceptada', async () => {
+  it('[I5] aplica la valoración oficial y marca la propuesta como aceptada', async () => {
     const propuesta = propuestaAceptable();
     const contexto = crearServicio({ detalle: propuesta });
 
@@ -1107,6 +1142,7 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
         estado_rendicion: 'corregida',
         pendientes_revision: 0,
       },
+      advertencias: [],
     });
     expect(propuesta).toMatchObject({
       estado: 'aceptada',
@@ -1143,6 +1179,29 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     sinEscriturasOficiales(contexto);
   });
 
+  it('[I20] acepta con advertencia si cambió el criterio vigente', async () => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable(),
+      soluciones: {
+        valor_correcto: '11',
+        tolerancia: '0',
+        rubrica: 'Criterios revisados',
+      },
+    });
+
+    await expect(aceptar(contexto.servicio)).resolves.toMatchObject({
+      propuesta: { estado: 'aceptada' },
+      advertencias: [
+        {
+          codigo: 'CRITERIO_ACTUALIZADO',
+          mensaje:
+            'El criterio del inciso cambió después de generar la propuesta.',
+        },
+      ],
+    });
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledTimes(1);
+  });
+
   it('no altera la retroalimentación existente si se omite', async () => {
     const contexto = crearServicio({ detalle: propuestaAceptable() });
 
@@ -1159,7 +1218,7 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     );
   });
 
-  it('rechaza una versión antigua', async () => {
+  it('[I16] rechaza una versión antigua', async () => {
     const propuesta = propuestaAceptable();
     const contexto = crearServicio({ detalle: propuesta });
 
@@ -1176,7 +1235,52 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     expect(propuesta.estado).toBe('generada');
   });
 
-  it('rechaza un puntaje confirmado que no coincide', async () => {
+  it.each([
+    ['version', propuestaAceptable({ version: 4 }), 'PROPUESTA_DESACTUALIZADA'],
+    [
+      'estado',
+      propuestaAceptable({
+        estado: 'descartada',
+        version: 3,
+      }),
+      'ESTADO_NO_PERMITE_OPERACION',
+    ],
+  ])(
+    '[I16] relee estado y version bajo bloqueo antes de validar %s',
+    async (_cambio, actualizada, codigo) => {
+      const inicial = propuestaAceptable({ version: 3 });
+      const contexto = crearServicio({
+        detalle: inicial,
+        detalleBajoBloqueo: actualizada,
+      });
+
+      await esperarErrorCodigo(
+        aceptar(contexto.servicio, {
+          version: 3,
+          puntaje_confirmado: '8.00',
+        }),
+        409,
+        codigo,
+      );
+
+      expect(contexto.correccionRepository.findOne).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: { propuesta_id: 44 },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+      expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+      expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+      expect(actualizada).toMatchObject({
+        estado:
+          codigo === 'ESTADO_NO_PERMITE_OPERACION' ? 'descartada' : 'generada',
+        version: codigo === 'ESTADO_NO_PERMITE_OPERACION' ? 3 : 4,
+      });
+    },
+  );
+
+  it('[I17] rechaza un puntaje confirmado que no coincide', async () => {
     const contexto = crearServicio({ detalle: propuestaAceptable() });
 
     await esperarErrorCodigo(
@@ -1270,7 +1374,7 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
   it.each([
     [{ calificaciones_revisadas_en: new Date() }, 'REVISION_CERRADA'],
     [{ resultados_publicados_en: new Date() }, 'RESULTADOS_PUBLICADOS'],
-  ])('rechaza aceptar con el examen cerrado', async (cierre, codigo) => {
+  ])('[I6] rechaza aceptar con el examen cerrado', async (cierre, codigo) => {
     const contexto = crearServicio({
       examen: examenConCierre(cierre),
       detalle: propuestaAceptable(),
@@ -1360,5 +1464,121 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     expect(contexto.notaOficial.estado_correccion).toBe('pendiente');
     expect(propuesta.estado).toBe('generada');
     expect(propuesta.version).toBe(3);
+  });
+
+  it('[I15] solo la aceptación usa la vía oficial; servicio y worker preservan los datos oficiales', async () => {
+    const respuesta = {
+      examen_id: 7,
+      estudiante_id: 21,
+      pregunta_id: 31,
+      letra: 'a',
+      estado_correccion: 'pendiente',
+      puntaje_obtenido: null,
+      respuesta_texto: 'Respuesta del estudiante',
+      ia_estado: 'sin_propuesta',
+      ia_puntaje_sugerido: '4.25',
+      ia_valoracion: 'valoración previa',
+      ia_explicacion: 'explicación previa',
+      ia_errores: [{ tipo: 'previo' }],
+      ia_confianza: '0.75',
+      ia_generado_en: '2026-01-01T00:00:00.000Z',
+    };
+    const respuestaAntes = { ...respuesta };
+    const rendicion = { estado: 'enviada', nota_final: '16.00' };
+    const rendicionAntes = { ...rendicion };
+
+    const solicitud = crearServicio({ respuesta, rendicion });
+    await solicitar(solicitud.servicio);
+
+    const modificacion = crearServicio({
+      respuesta,
+      rendicion,
+      detalle: propuestaAceptable(),
+    });
+    await modificacion.servicio.modificarPropuesta(44, 12, {
+      puntaje: '7.50',
+    });
+
+    const descarte = crearServicio({
+      respuesta,
+      rendicion,
+      detalle: propuestaAceptable(),
+    });
+    await descarte.servicio.descartarPropuesta(44, 12);
+
+    const regeneracion = crearServicio({
+      respuesta,
+      rendicion,
+      propuestaActiva: propuestaAceptable(),
+    });
+    await regeneracion.servicio.regenerarPropuesta(7, 21, 31, 'a', 12);
+
+    const almacen: AlmacenCorreccionIa = {
+      reclamar: jest
+        .fn<AlmacenCorreccionIa['reclamar']>()
+        .mockResolvedValueOnce(45)
+        .mockResolvedValueOnce(null),
+      cargarContexto: jest
+        .fn<AlmacenCorreccionIa['cargarContexto']>()
+        .mockResolvedValue({
+          propuesta_id: 45,
+          examen_cerrado: false,
+          enunciado: 'Enunciado',
+          tipo_respuesta: 'desarrollo',
+          respuesta_estudiante: 'Respuesta',
+          criterio: { rubrica: 'Criterios' },
+          criterio_fuente: 'rubrica',
+          puntaje_max: 10,
+        } satisfies ContextoCorreccionIa),
+      guardarGenerada: jest
+        .fn<AlmacenCorreccionIa['guardarGenerada']>()
+        .mockResolvedValue(
+          'generada' satisfies ResultadoPersistenciaCorreccionIa,
+        ),
+      marcarError: jest
+        .fn<AlmacenCorreccionIa['marcarError']>()
+        .mockResolvedValue(true),
+      recuperarAbandonadas: jest
+        .fn<AlmacenCorreccionIa['recuperarAbandonadas']>()
+        .mockResolvedValue({
+          reencoladas: 0,
+          agotadas: 0,
+          cerradas: 0,
+        } satisfies ResultadoRecuperacionCorreccionIa),
+    };
+    const worker = new CorreccionIaWorker(
+      almacen,
+      new FakeAiProvider({ modelo: 'fake-invariants' }),
+      cargarConfiguracionIa({ IA_PROVIDER: 'fake' }),
+    );
+    await worker.procesarCiclo();
+    await worker.esperarInactividad();
+
+    const aceptacion = crearServicio({
+      respuesta,
+      rendicion,
+      detalle: propuestaAceptable(),
+    });
+    await aceptar(aceptacion.servicio);
+
+    for (const contexto of [
+      solicitud,
+      modificacion,
+      descarte,
+      regeneracion,
+      aceptacion,
+    ]) {
+      sinEscriturasOficiales(contexto);
+    }
+    expect(aceptacion.aplicarValoracionOficial).toHaveBeenCalledTimes(1);
+    expect(almacen.guardarGenerada).toHaveBeenCalledTimes(1);
+    expect(almacen.guardarGenerada).toHaveBeenCalledWith(
+      45,
+      expect.objectContaining({ criterio_hash: expect.any(String) }),
+      expect.any(Date),
+    );
+    expect(respuesta).toEqual(respuestaAntes);
+    expect(rendicion).toEqual(rendicionAntes);
+    await worker.onModuleDestroy();
   });
 });

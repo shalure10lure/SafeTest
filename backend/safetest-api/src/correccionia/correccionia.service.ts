@@ -27,6 +27,7 @@ import {
   validarPuntajeSugeridoCorreccionIa,
   validarSolicitudCorreccionIa,
 } from './correccionia.validacion';
+import { crearHashCriterioActual } from './correccionia.criterio';
 import {
   CorreccionIa,
   type EstadoCorreccionIa,
@@ -178,6 +179,10 @@ export interface ResultadoAceptacionCorreccionIa {
     estado: 'aceptada';
   };
   calificacion: CalificacionOficialCorreccionIa;
+  advertencias: Array<{
+    codigo: 'CRITERIO_ACTUALIZADO';
+    mensaje: string;
+  }>;
 }
 
 const CAMPOS_MODIFICABLES_CORRECCION_IA = [
@@ -629,6 +634,39 @@ export class CorreccionIaService {
         });
       }
 
+      const solucionActual = await manager
+        .getRepository(SolucionInciso)
+        .findOne({
+          where: {
+            pregunta_id: propuesta.pregunta_id,
+            letra: propuesta.letra,
+          },
+        });
+      const referenciaActual = await manager
+        .getRepository(IaSolucionReferencia)
+        .findOne({
+          where: {
+            pregunta_id: propuesta.pregunta_id,
+            docente_id: docenteId,
+            revisada_en: Not(IsNull()),
+          },
+          order: { revisada_en: 'DESC' },
+        });
+      const hashCriterioActual = crearHashCriterioActual(
+        solucionActual,
+        referenciaActual,
+      );
+      const advertencias: ResultadoAceptacionCorreccionIa['advertencias'] =
+        hashCriterioActual === propuesta.criterio_hash
+          ? []
+          : [
+              {
+                codigo: 'CRITERIO_ACTUALIZADO',
+                mensaje:
+                  'El criterio del inciso cambió después de generar la propuesta.',
+              },
+            ];
+
       const datosValoracion: {
         puntaje: number;
         retroalimentacion?: string | null;
@@ -667,6 +705,7 @@ export class CorreccionIaService {
           estado_rendicion: calificacion.estado_rendicion,
           pendientes_revision: calificacion.pendientes_revision,
         },
+        advertencias,
       };
     });
   }

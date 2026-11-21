@@ -212,7 +212,7 @@ describe('validarResultadoCorreccionIa', () => {
   });
 
   it.each(['5.001', '0.001', 9.999])(
-    'rechaza puntaje sugerido con 3 decimales (%s)',
+    '[I14] rechaza puntaje sugerido con 3 decimales (%s)',
     (puntaje_sugerido) => {
       esperarError(
         () =>
@@ -238,7 +238,7 @@ describe('validarResultadoCorreccionIa', () => {
     ['no finito', 'Infinity'],
     ['no numérico', 'abc'],
     ['vacío', ' '],
-  ])('rechaza puntaje máximo %s', (_, puntaje_max) => {
+  ])('[I14] rechaza puntaje máximo %s', (_, puntaje_max) => {
     esperarError(
       () =>
         validarResultadoCorreccionIa({
@@ -255,7 +255,7 @@ describe('validarResultadoCorreccionIa', () => {
     ['mayor al máximo', '10.01'],
     ['no finito', 'NaN'],
     ['ausente', null],
-  ])('rechaza puntaje sugerido %s', (_, puntaje_sugerido) => {
+  ])('[I14] rechaza puntaje sugerido %s', (_, puntaje_sugerido) => {
     esperarError(
       () =>
         validarResultadoCorreccionIa({
@@ -271,7 +271,7 @@ describe('validarResultadoCorreccionIa', () => {
     ['negativa', '-0.01'],
     ['mayor que 1', '1.01'],
     ['no finita', 'NaN'],
-  ])('rechaza confianza %s', (_, confianza) => {
+  ])('[I14] rechaza confianza %s', (_, confianza) => {
     esperarError(
       () => validarResultadoCorreccionIa({ ...resultadoValido, confianza }),
       'CONFIANZA_FUERA_DE_RANGO',
