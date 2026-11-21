@@ -41,3 +41,20 @@ export interface EstadisticasMateria {
     por_periodo: EstadisticaPeriodo[];
     por_paralelo: EstadisticaParalelo[];
 }
+
+export interface ComparacionPeriodo {
+    semestre_id: number;
+    periodo: string;
+    fecha_inicio: string | null;
+    total_evaluaciones: number;
+    total_rendiciones: number;
+    promedio: number | null;
+    periodo_anterior: string | null;
+    diferencia_anterior: number | null;
+}
+
+export interface ComparacionPeriodos {
+    materia: MateriaEstadistica;
+    total_periodos: number;
+    comparaciones: ComparacionPeriodo[];
+}

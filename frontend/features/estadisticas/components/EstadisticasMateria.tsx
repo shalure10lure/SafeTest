@@ -17,6 +17,7 @@ import type {
     EstadisticasMateria as EstadisticasMateriaType,
     MateriaEstadistica,
 } from '../types';
+import type { Periodo } from '@/features/periodos/types';
 
 interface EstadisticasMateriaProps {
     materias: MateriaEstadistica[];
@@ -25,6 +26,7 @@ interface EstadisticasMateriaProps {
     estadisticas: EstadisticasMateriaType | null;
     isLoading: boolean;
     error: string | null;
+    periodosDisponibles: Periodo[];
 }
 
 function TarjetaEstadistica({
@@ -79,7 +81,16 @@ export function EstadisticasMateria({
     estadisticas,
     isLoading,
     error,
+    periodosDisponibles,
 }: EstadisticasMateriaProps) {
+
+    const periodosFiltrados = estadisticas?.por_periodo.filter(
+        (dato) =>
+            periodosDisponibles.some(
+                (periodo) => periodo.semestre_id === dato.semestre_id,
+            ),
+    ) ?? [];
+
     return (
         <section className="space-y-6">
             <div className="max-w-md space-y-2">
@@ -209,10 +220,10 @@ export function EstadisticasMateria({
                             titulo="Promedio por periodo"
                             descripcion="Observa cómo varía el rendimiento entre periodos académicos."
                         >
-                            {estadisticas.por_periodo.length > 0 ? (
+                            {periodosFiltrados.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart
-                                        data={estadisticas.por_periodo}
+                                        data={periodosFiltrados}
                                         margin={{ top: 10, right: 15, left: 0, bottom: 10 }}
                                     >
                                         <CartesianGrid strokeDasharray="3 3" />
@@ -239,43 +250,40 @@ export function EstadisticasMateria({
                             descripcion="Compara los promedios obtenidos en cada paralelo."
                         >
                             {estadisticas.por_paralelo.length > 0 ? (
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <BarChart
-                                       data={estadisticas.por_paralelo}
-                                       margin={{ top: 15, right: 20, left: 0, bottom: 55 }}
-                                   >
-                                       <CartesianGrid strokeDasharray="3 3" />
-
-                                       <XAxis
-                                           dataKey="nombre"
-                                           interval={0}
-                                           angle={-25}
-                                           textAnchor="end"
-                                           height={70}
-                                           fontSize={11}
-                                           tickMargin={12}
-                                       />
-                                       <YAxis />
-
-                                       <Tooltip
-                                           formatter={(valor) => [
-                                               `${Number(valor).toFixed(2)}`,
-                                               'Promedio',
-                                           ]}
-                                           labelFormatter={(nombre) => `Paralelo: ${nombre}`}
-                                       />
-
-                                       <Bar
-                                           dataKey="promedio"
-                                           name="Promedio"
-                                           fill="#0f766e"
-                                           radius={[5, 5, 0, 0]}
-                                       />
-                                   </BarChart>
-                               </ResponsiveContainer>
-                           ) : (
-                               <SinDatos />
-                           )}
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                        data={estadisticas.por_paralelo}
+                                        margin={{ top: 15, right: 20, left: 0, bottom: 55 }}
+                                    >
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis
+                                            dataKey="nombre"
+                                            interval={0}
+                                            angle={-25}
+                                            textAnchor="end"
+                                            height={70}
+                                            fontSize={11}
+                                            tickMargin={12}
+                                        />
+                                        <YAxis />
+                                        <Tooltip
+                                            formatter={(valor) => [
+                                                `${Number(valor).toFixed(2)}`,
+                                                'Promedio',
+                                            ]}
+                                            labelFormatter={(nombre) => `Paralelo: ${nombre}`}
+                                        />
+                                        <Bar
+                                            dataKey="promedio"
+                                            name="Promedio"
+                                            fill="#0f766e"
+                                            radius={[5, 5, 0, 0]}
+                                        />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <SinDatos />
+                            )}
                         </SeccionGrafico>
                     </div>
 

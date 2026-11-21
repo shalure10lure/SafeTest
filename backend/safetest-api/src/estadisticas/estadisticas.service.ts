@@ -1,10 +1,14 @@
-
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { Rendicion } from '../rendicion/entity/rendicion.entity';
 import { Materia } from '../materia/entity/materia.entity';
+import { Semestre } from '../semestre/entity/semestre.entity';
 
 function redondear(valor: string | number | null): number | null {
   if (valor === null || valor === undefined) {
@@ -22,6 +26,9 @@ export class EstadisticasService {
 
     @InjectRepository(Materia)
     private readonly materiaRepository: Repository<Materia>,
+
+    @InjectRepository(Semestre)
+    private readonly semestreRepository: Repository<Semestre>,
   ) {}
 
   async obtenerMaterias(docenteId: number) {
@@ -60,6 +67,16 @@ export class EstadisticasService {
       .innerJoin('rendicion.paralelo', 'paralelo')
       .where('paralelo.materia_id = :materiaId', { materiaId })
       .andWhere('paralelo.docente_id = :docenteId', { docenteId })
+      .andWhere('paralelo.semestre_id = examen.semestre_id')
+      .andWhere(
+       `EXISTS (
+          SELECT 1
+          FROM periodo_materia pm
+          WHERE pm.semestre_id = examen.semestre_id
+            AND pm.materia_id = :materiaId
+        )`,
+        { materiaId },
+      )
       .andWhere(
         '(examen.materia_id IS NULL OR examen.materia_id = :materiaId)',
         { materiaId },
@@ -151,4 +168,197 @@ export class EstadisticasService {
       })),
     };
   }
+
+  async compararPeriodos(
+    materiaId: number,
+    docenteId: number,
+    periodoIds: number[],
+  ) {
+    // 1. Validar la cantidad y los identificadores recibidos.
+    if (
+      !Array.isArray(periodoIds) ||
+      periodoIds.length < 2 ||
+      periodoIds.length > 6 ||
+      !periodoIds.every(
+        (id) => Number.isInteger(id) && id > 0,
+      ) ||
+      new Set(periodoIds).size !== periodoIds.length
+    ) {
+      throw new BadRequestException(
+        'Debes seleccionar entre 2 y 6 periodos diferentes y válidos',
+      );
+    }
+
+    // 2. Verificar que la materia pertenezca al docente.
+    const materia = await this.materiaRepository.findOne({
+      where: {
+        materia_id: materiaId,
+        docente_id: docenteId,
+      },
+      select: {
+        materia_id: true,
+        nombre: true,
+        codigo: true,
+      },
+    });
+
+    if (!materia) {
+      throw new NotFoundException('Materia no encontrada');
+    }
+
+    // 3. Obtener y validar los periodos seleccionados.
+    const periodosEncontrados = await this.semestreRepository.find({
+      where: {
+        semestre_id: In(periodoIds),
+      },
+      relations: {
+        materias: true,
+      },
+    });
+
+    if (periodosEncontrados.length !== periodoIds.length) {
+      throw new BadRequestException(
+        'Uno o más periodos seleccionados no existen',
+      );
+    }
+
+    const periodosValidos = periodosEncontrados.every(
+      (periodo) =>
+        periodo.docente_id === docenteId &&
+        periodo.activo &&
+        periodo.materias.some(
+          (materiaPeriodo) =>
+            materiaPeriodo.materia_id === materiaId,
+        ),
+    );
+
+    if (!periodosValidos) {
+      throw new BadRequestException(
+        'Los periodos deben estar activos, pertenecer al docente y tener asociada la materia',
+      );
+    }
+
+    // 4. Ordenar cronológicamente.
+    const periodos = [...periodosEncontrados].sort((a, b) => {
+      if (a.fecha_inicio && b.fecha_inicio) {
+        const diferenciaFecha = a.fecha_inicio.localeCompare(
+          b.fecha_inicio,
+        );
+
+        if (diferenciaFecha !== 0) {
+          return diferenciaFecha;
+        }
+      } else if (a.fecha_inicio) {
+        return -1;
+      } else if (b.fecha_inicio) {
+        return 1;
+      }
+
+      return a.semestre_id - b.semestre_id;
+    });
+
+    // 5. Obtener las estadísticas de todos los periodos.
+    const resultados = await this.rendicionRepository
+  .createQueryBuilder('rendicion')
+  .innerJoin('rendicion.examen', 'examen')
+  .innerJoin('rendicion.paralelo', 'paralelo')
+  .leftJoin(
+    'examen_pool_snapshot',
+    'snapshot',
+    'snapshot.examen_id = examen.examen_id',
+  )
+  .select('examen.semestre_id', 'semestre_id')
+  .addSelect(
+    'COUNT(DISTINCT examen.examen_id)',
+    'total_evaluaciones',
+  )
+  .addSelect('COUNT(*)', 'total_rendiciones')
+  .addSelect(
+    `AVG(
+      (rendicion.nota_final::numeric /
+      COALESCE(
+        NULLIF(examen.puntaje_total::numeric, 0),
+        NULLIF(snapshot.puntaje_maximo_garantizado, 0)
+      )) * 100
+    )`,
+    'promedio',
+  )
+  .where('examen.semestre_id IN (:...periodoIds)', {
+    periodoIds: periodos.map((periodo) => periodo.semestre_id),
+  })
+  .andWhere('paralelo.materia_id = :materiaId', {
+    materiaId,
+  })
+  .andWhere('paralelo.docente_id = :docenteId', {
+    docenteId,
+  })
+  .andWhere('paralelo.semestre_id = examen.semestre_id')
+  .andWhere(
+    '(examen.materia_id IS NULL OR examen.materia_id = :materiaId)',
+    { materiaId },
+  )
+  .andWhere('rendicion.estado = :estado', {
+    estado: 'corregida',
+  })
+  .andWhere('rendicion.nota_final IS NOT NULL')
+  .andWhere(
+    `COALESCE(
+      NULLIF(examen.puntaje_total::numeric, 0),
+      NULLIF(snapshot.puntaje_maximo_garantizado, 0)
+    ) > 0`,
+  )
+  .groupBy('examen.semestre_id')
+  .getRawMany();
+
+    // 6. Preparar los resultados, incluyendo periodos sin datos.
+    const resultadosPorPeriodo = new Map(
+      resultados.map((fila) => [
+        Number(fila.semestre_id),
+        fila,
+      ]),
+    );
+
+    const comparaciones = periodos.map((periodo, indice) => {
+      const fila = resultadosPorPeriodo.get(periodo.semestre_id);
+
+      const promedio = redondear(fila?.promedio ?? null);
+      const periodoAnterior =
+        indice > 0 ? periodos[indice - 1] : null;
+
+      const filaAnterior = periodoAnterior
+        ? resultadosPorPeriodo.get(periodoAnterior.semestre_id)
+        : null;
+
+      const promedioAnterior = redondear(
+        filaAnterior?.promedio ?? null,
+      );
+
+      const diferencia =
+        promedio !== null && promedioAnterior !== null
+          ? redondear(promedio - promedioAnterior)
+          : null;
+
+      return {
+        semestre_id: periodo.semestre_id,
+        periodo: periodo.gestion,
+        fecha_inicio: periodo.fecha_inicio,
+        total_evaluaciones: Number(
+          fila?.total_evaluaciones ?? 0,
+        ),
+        total_rendiciones: Number(
+          fila?.total_rendiciones ?? 0,
+        ),
+        promedio,
+        periodo_anterior: periodoAnterior?.gestion ?? null,
+        diferencia_anterior: diferencia,
+      };
+    });
+
+    return {
+      materia,
+      total_periodos: comparaciones.length,
+      comparaciones,
+    };
+  }
+
 }
