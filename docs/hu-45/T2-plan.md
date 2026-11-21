@@ -399,10 +399,15 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
   - `pendiente → procesando → generada | error`.
   - Recuperación por lease.
   - Verificación de publicación antes de persistir.
-- **Entregable:** `correccionia.worker.ts` + extensión de `AiProvider` +
-  `fake-ai.provider.ts`.
+- **Entregable:** `correccionia.worker.ts` + store atómico, extensión de
+  `AiProvider`, `fake-ai.provider.ts` y token independiente
+  `AI_CORRECCION_PROVIDER`.
 - **Criterio de aceptación:** I10 e I11; dos workers no procesan la misma fila.
 - **Fuera de alcance:** Gemini.
+- **Estado:** implementación enfocada lista; aceptación pendiente porque build y
+  lint no pudieron validarse con la versión instalada de Node. `intento`
+  permanece inmutable durante los reclamos y solo aumenta
+  `reintentos_worker`. Ver `T2-10-ejecucion.md`.
 
 ### T2-11 · Controladores y DTO
 

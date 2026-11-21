@@ -384,7 +384,7 @@ Parámetros propuestos:
 | Variable                       | Default | Uso                                                     |
 | ------------------------------ | ------- | ------------------------------------------------------- |
 | `IA_CORRECCION_LEASE_SEGUNDOS` | `120`   | Antigüedad máxima de `procesando`                       |
-| `IA_CORRECCION_MAX_REINTENTOS` | `3`     | Reintentos técnicos por solicitud (`reintentos_worker`) |
+| `IA_CORRECCION_MAX_INTENTOS`  | `3`     | Reclamos técnicos permitidos por propuesta (`reintentos_worker`) |
 
 Barrido (al arrancar el worker y periódicamente):
 
