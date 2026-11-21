@@ -338,6 +338,37 @@ describe('RevisionCalificacionesService', () => {
     });
   });
 
+  it('aplicarValoracionOficial se reutiliza dentro de una transacción externa y conserva el orden de bloqueo', async () => {
+    const contexto = montarServicio();
+
+    const resultado = await contexto.transaction(async (manager) =>
+      contexto.servicio.aplicarValoracionOficial(
+        manager,
+        ...argumentosValoracion,
+      ),
+    );
+
+    expect(contexto.transaction).toHaveBeenCalledTimes(1);
+    expect(contexto.query.setLock).toHaveBeenCalledWith('pessimistic_write');
+    expect(
+      contexto.repositorios.get(Rendicion)?.findOne,
+    ).toHaveBeenCalledWith({
+      where: { examen_id: 10, estudiante_id: 30 },
+      lock: { mode: 'pessimistic_write' },
+    });
+    expect(resultado).toEqual({
+      examen_id: 10,
+      estudiante_id: 30,
+      pregunta_id: 40,
+      letra: 'a',
+      estado_correccion: 'revisada',
+      puntaje_obtenido: '2.00',
+      nota_final: '1.60',
+      estado_rendicion: 'corregida',
+      pendientes_revision: 0,
+    });
+  });
+
   it('propaga errores del recálculo para que la transacción haga rollback', async () => {
     const contexto = montarServicio();
     contexto.repositorioRendicion.save.mockImplementation(async (entidad) => {

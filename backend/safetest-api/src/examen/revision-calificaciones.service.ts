@@ -298,7 +298,7 @@ export class RevisionCalificacionesService {
   ) {
     const entrada = this.validarEntrada(datos);
     return this.dataSource.transaction(async (manager) => {
-      return this.aplicarValoracionValidada(
+      return this.aplicarValoracionOficial(
         manager,
         examenId,
         estudianteId,
