@@ -8,12 +8,30 @@ import type {
   RespuestaValoracion, ResumenCalificaciones,
 } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
+import type {
+  AceptarCorreccionIaResponse,
+  CorreccionIa,
+  SolicitarCorreccionIaResponse,
+} from '../correccion-ia.types';
+import {
+  correccionIaService,
+  mensajeErrorCorreccionIa,
+} from '../services/correccion-ia.service';
 import FormularioValoracion from './FormularioValoracion';
+import PropuestaCorreccionIa from './PropuestaCorreccionIa';
 
 type FilaInciso = { pregunta: PreguntaCalificacion; inciso: IncisoCalificacion };
+type PropuestaIaVista = CorreccionIa | SolicitarCorreccionIaResponse;
 const clave = (fila: FilaInciso) => `${fila.pregunta.pregunta_id}-${fila.inciso.letra}`;
 const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const puntos = (n: number) => n.toLocaleString('es-BO', { maximumFractionDigits: 2 });
+const estadosConPropuestaReutilizable = new Set([
+  'pendiente',
+  'procesando',
+  'generada',
+  'modificada',
+  'error',
+]);
 
 /**
  * Cálculo solamente visual para rendiciones con incisos pendientes.
@@ -68,6 +86,10 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState<string | null>(null);
   const [editandoAuto, setEditandoAuto] = useState<string | null>(null);
+  const [propuestasIa, setPropuestasIa] = useState<
+    Record<string, PropuestaIaVista>
+  >({});
+  const [solicitandoIa, setSolicitandoIa] = useState<string | null>(null);
 
   const rutaGeneral = `/docente/evaluaciones/${examenId}/calificaciones`;
   const cargar = useCallback(async () => {
@@ -81,21 +103,63 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
 
   useEffect(() => {
     let activo = true;
-    setCargando(true);
-    setError(null);
-    setMensaje(null);
-    setDetalle(null);
-    setResumen(null);
-    Promise.all([
-      calificacionesService.detalle(examenId, estudianteId),
-      calificacionesService.resumen(examenId),
-    ]).then(([respuestas, lista]) => {
-      if (!activo) return;
-      setDetalle(respuestas);
-      setResumen(lista);
-    }).catch((fallo: unknown) => {
-      if (activo) setError(mensajeErrorCalificaciones(fallo));
-    }).finally(() => { if (activo) setCargando(false); });
+    async function cargarInicial() {
+      try {
+        const [respuestas, lista] = await Promise.all([
+          calificacionesService.detalle(examenId, estudianteId),
+          calificacionesService.resumen(examenId),
+        ]);
+        if (!activo) return;
+        setError(null);
+        setMensaje(null);
+        setDetalle(respuestas);
+        setResumen(lista);
+        setPropuestasIa({});
+        const pendientesIniciales = respuestas.preguntas.flatMap((pregunta) =>
+          pregunta.incisos
+            .filter((inciso) => inciso.pendiente_revision)
+            .map((inciso) => ({ pregunta, inciso })),
+        );
+        void Promise.all(
+          pendientesIniciales.map(async (fila) => {
+            try {
+              const historial = await correccionIaService.listarHistorial(
+                examenId,
+                estudianteId,
+                fila.pregunta.pregunta_id,
+                fila.inciso.letra,
+                { limite: 1 },
+              );
+              const propuesta = historial[0];
+              if (
+                activo &&
+                propuesta &&
+                estadosConPropuestaReutilizable.has(propuesta.estado)
+              ) {
+                setPropuestasIa((actuales) => ({
+                  ...actuales,
+                  [clave(fila)]: propuesta,
+                }));
+              }
+            } catch (fallo: unknown) {
+              if (activo) setError(mensajeErrorCorreccionIa(fallo));
+            }
+          }),
+        );
+      } catch (fallo: unknown) {
+        if (activo) {
+          setMensaje(null);
+          setError(mensajeErrorCalificaciones(fallo));
+          setDetalle(null);
+          setResumen(null);
+          setPropuestasIa({});
+        }
+      } finally {
+        if (activo) setCargando(false);
+      }
+    }
+
+    void cargarInicial();
     return () => { activo = false; };
   }, [examenId, estudianteId]);
 
@@ -111,6 +175,11 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const siguiente = candidatos[indice + 1];
   const confirmadas = !!detalle?.calificaciones_revisadas_en;
   const publicados = !!detalle?.resultados_publicados_en;
+  const cargandoPantalla =
+    cargando ||
+    (detalle !== null &&
+      (detalle.examen_id !== examenId ||
+        detalle.estudiante_id !== estudianteId));
   const bloqueado = confirmadas || publicados || detalle?.estado_rendicion === 'en_curso' || !!guardando;
   const completadas = filas.length - pendientes.length;
   const progreso = filas.length > 0 ? Math.round(completadas * 100 / filas.length) : 0;
@@ -122,6 +191,11 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     setGuardando(identificador);
     try {
       await calificacionesService.valorar(examenId, estudianteId, preguntaId, letra, datos);
+      setPropuestasIa((actuales) => {
+        const restantes = { ...actuales };
+        delete restantes[identificador];
+        return restantes;
+      });
       await cargar();
       setMensaje('Puntaje guardado y calificación recalculada correctamente.');
     } catch (fallo: unknown) {
@@ -129,6 +203,66 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     } finally {
       setGuardando(null);
     }
+  }
+
+  async function solicitarPropuesta(fila: FilaInciso) {
+    const identificador = clave(fila);
+    if (bloqueado || solicitandoIa !== null) return;
+    setError(null);
+    setSolicitandoIa(identificador);
+    try {
+      const propuesta = await correccionIaService.solicitar(
+        examenId,
+        estudianteId,
+        fila.pregunta.pregunta_id,
+        fila.inciso.letra,
+      );
+      setPropuestasIa((actuales) => ({
+        ...actuales,
+        [identificador]: propuesta,
+      }));
+    } catch (fallo: unknown) {
+      setError(mensajeErrorCorreccionIa(fallo));
+    } finally {
+      setSolicitandoIa(null);
+    }
+  }
+
+  function aplicarAceptacion(
+    propuesta: CorreccionIa,
+    resultado: AceptarCorreccionIaResponse,
+  ) {
+    const calificacion = resultado.calificacion;
+    setError(null);
+    setMensaje('Propuesta aceptada y calificación oficial actualizada.');
+    setDetalle((actual) => {
+      if (!actual) return actual;
+      return {
+        ...actual,
+        nota_final: calificacion.nota_final,
+        estado_rendicion: calificacion.estado_rendicion,
+        preguntas: actual.preguntas.map((pregunta) =>
+          pregunta.pregunta_id !== propuesta.pregunta_id
+            ? pregunta
+            : {
+                ...pregunta,
+                incisos: pregunta.incisos.map((inciso) =>
+                  inciso.letra !== propuesta.letra
+                    ? inciso
+                    : {
+                        ...inciso,
+                        puntaje_obtenido: calificacion.puntaje_obtenido,
+                        estado_correccion: calificacion.estado_correccion,
+                        pendiente_revision: false,
+                      },
+                ),
+              },
+        ),
+      };
+    });
+    void cargar().catch((fallo: unknown) => {
+      setError(mensajeErrorCalificaciones(fallo));
+    });
   }
 
   function irA(fila: FilaInciso) {
@@ -174,9 +308,9 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
 
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       {mensaje && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">{mensaje}</p>}
-      {cargando && <p role="status" className="rounded-xl border border-slate-200 bg-white p-10 text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando las respuestas y puntajes…</p>}
+      {cargandoPantalla && <p role="status" className="rounded-xl border border-slate-200 bg-white p-10 text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando las respuestas y puntajes…</p>}
 
-      {!cargando && detalle && parciales && (
+      {!cargandoPantalla && detalle && parciales && (
         <>
           {confirmadas && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">✓ Esta evaluación ya fue confirmada por el docente. Las valoraciones son de solo lectura.</div>}
           {pendientes.length === 0 && detalle.estado_rendicion === 'corregida' && (
@@ -237,16 +371,45 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                 </div>
                 {manuales.length === 0 ? (
                   <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Todas las respuestas de esta rendición fueron calificadas automáticamente. Si necesitas ajustar alguna, utiliza el botón <strong>Ajustar</strong> en la tabla anterior.</div>
-                ) : manuales.map((fila) => (
-                  <FormularioValoracion
-                    key={`${clave(fila)}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
-                    id={`revision-${clave(fila)}`} numeroPregunta={fila.pregunta.orden}
-                    preguntaId={fila.pregunta.pregunta_id} enunciadoPregunta={fila.pregunta.enunciado}
-                    inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando === clave(fila)}
-                    onGuardar={guardarValoracion}
-                    onSiguiente={pendientes.length > 1 && fila.inciso.pendiente_revision ? () => irAlSiguiente(fila) : undefined}
-                  />
-                ))}
+                ) : manuales.map((fila) => {
+                  const identificador = clave(fila);
+                  const propuestaIa = propuestasIa[identificador];
+                  const permiteNuevaPropuesta =
+                    !propuestaIa ||
+                    !estadosConPropuestaReutilizable.has(propuestaIa.estado);
+                  return (
+                    <div key={identificador} className="space-y-3">
+                      <FormularioValoracion
+                        key={`${identificador}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
+                        id={`revision-${identificador}`} numeroPregunta={fila.pregunta.orden}
+                        preguntaId={fila.pregunta.pregunta_id} enunciadoPregunta={fila.pregunta.enunciado}
+                        inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando === identificador}
+                        onGuardar={guardarValoracion}
+                        onSiguiente={pendientes.length > 1 && fila.inciso.pendiente_revision ? () => irAlSiguiente(fila) : undefined}
+                      />
+                      {fila.inciso.pendiente_revision && permiteNuevaPropuesta && (
+                        <button
+                          type="button"
+                          disabled={bloqueado || solicitandoIa !== null}
+                          onClick={() => void solicitarPropuesta(fila)}
+                          className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:bg-slate-900 dark:text-violet-200"
+                        >
+                          {solicitandoIa === identificador
+                            ? 'Solicitando…'
+                            : 'Sugerir con IA'}
+                        </button>
+                      )}
+                      {propuestaIa && (
+                        <PropuestaCorreccionIa
+                          key={propuestaIa.propuesta_id}
+                          propuesta={propuestaIa}
+                          bloqueado={bloqueado}
+                          onAceptada={aplicarAceptacion}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </section>
 
               <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
