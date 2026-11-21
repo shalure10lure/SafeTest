@@ -1,10 +1,11 @@
-import { HttpException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { QueryFailedError } from 'typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
 import { Examen } from '../examen/entity/examen.entity';
+import type { RevisionCalificacionesService } from '../examen/revision-calificaciones.service';
 import { Inciso } from '../inciso/entity/inciso.entity';
 import { IaSolucionReferencia } from '../iasolucionreferencia/entity/iasolucionreferencia.entity';
 import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
@@ -24,6 +25,7 @@ interface OpcionesServicio {
   propuestaActiva?: Record<string, unknown> | null;
   ultimaPropuesta?: Record<string, unknown> | null;
   errorGuardar?: Error;
+  errorValoracion?: Error;
   propuestas?: CorreccionIa[];
   detalle?: CorreccionIa | null;
 }
@@ -171,6 +173,78 @@ function crearServicio(opciones: OpcionesServicio = {}) {
       return repository;
     }),
   };
+  const notaOficial = {
+    puntaje_obtenido: null as string | null,
+    estado_correccion: 'pendiente',
+    nota_final: null as string | null,
+    estado_rendicion: 'enviada',
+    pendientes_revision: 1,
+  };
+  const aplicarValoracionOficial = jest.fn(
+    async (
+      _manager: unknown,
+      _examenId: number,
+      _estudianteId: number,
+      _preguntaId: number,
+      _letra: string,
+      _docenteId: number,
+      datos: { puntaje: number; retroalimentacion?: string | null },
+    ) => {
+      const maximo = Number(
+        (opciones.detalle?.puntaje_max_inciso ?? '10.00') as string,
+      );
+      if (
+        !Number.isFinite(datos.puntaje) ||
+        datos.puntaje < 0 ||
+        datos.puntaje > maximo
+      ) {
+        throw new BadRequestException(
+          `El puntaje debe estar entre 0 y ${maximo}.`,
+        );
+      }
+
+      notaOficial.puntaje_obtenido = datos.puntaje.toFixed(2);
+      notaOficial.estado_correccion = 'manual';
+      notaOficial.nota_final = '16.00';
+      notaOficial.estado_rendicion = 'corregida';
+      notaOficial.pendientes_revision = 0;
+
+      if (opciones.errorValoracion) {
+        throw opciones.errorValoracion;
+      }
+
+      return {
+        examen_id: 7,
+        estudiante_id: 21,
+        pregunta_id: 31,
+        letra: 'a',
+        estado_correccion: notaOficial.estado_correccion,
+        puntaje_obtenido: notaOficial.puntaje_obtenido,
+        nota_final: notaOficial.nota_final,
+        estado_rendicion: notaOficial.estado_rendicion,
+        pendientes_revision: notaOficial.pendientes_revision,
+      };
+    },
+  );
+  const revision = {
+    aplicarValoracionOficial,
+  } as unknown as RevisionCalificacionesService;
+
+  const transaction = jest.fn(
+    async (ejecutar: (manager: EntityManager) => Promise<unknown>) => {
+      const notaAntes = { ...notaOficial };
+      const detalleAntes = opciones.detalle ? { ...opciones.detalle } : null;
+      try {
+        return await ejecutar(manager as unknown as EntityManager);
+      } catch (error) {
+        Object.assign(notaOficial, notaAntes);
+        if (opciones.detalle && detalleAntes) {
+          Object.assign(opciones.detalle, detalleAntes);
+        }
+        throw error;
+      }
+    },
+  );
   const dataSource = {
     getRepository: jest.fn((entidad: unknown) => {
       const repository = repositorios.get(entidad);
@@ -179,17 +253,19 @@ function crearServicio(opciones: OpcionesServicio = {}) {
       }
       return repository;
     }),
-    transaction: async <T>(
-      ejecutar: (manager: EntityManager) => Promise<T>,
-    ): Promise<T> => ejecutar(manager as unknown as EntityManager),
+    transaction,
   } as unknown as DataSource;
 
   return {
-    servicio: new CorreccionIaService(dataSource),
+    servicio: new CorreccionIaService(dataSource, revision),
     correccionRepository,
     examenRepository,
     rendicionRepository,
     respuestaRepository,
+    manager,
+    transaction,
+    aplicarValoracionOficial,
+    notaOficial,
     orden,
   };
 }
@@ -989,5 +1065,300 @@ describe('CorreccionIaService.regenerarPropuesta', () => {
       'RENDICION_NO_ENVIADA',
     );
     expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('CorreccionIaService.aceptarPropuesta', () => {
+  const propuestaAceptable = (
+    cambios: Partial<CorreccionIa> = {},
+  ): CorreccionIa =>
+    crearPropuesta({
+      estado: 'generada',
+      version: 3,
+      puntaje_sugerido: '8.00',
+      puntaje_max_inciso: '10.00',
+      ...cambios,
+    });
+
+  const aceptar = (
+    servicio: CorreccionIaService,
+    entrada: { version: number; puntaje_confirmado: number | string } = {
+      version: 3,
+      puntaje_confirmado: '8.00',
+    },
+  ) => servicio.aceptarPropuesta(44, 12, entrada);
+
+  it('aplica la valoración oficial y marca la propuesta como aceptada', async () => {
+    const propuesta = propuestaAceptable();
+    const contexto = crearServicio({ detalle: propuesta });
+
+    const resultado = await contexto.servicio.aceptarPropuesta(44, 12, {
+      version: 3,
+      puntaje_confirmado: '8.00',
+      retroalimentacion: 'Buen razonamiento',
+    });
+
+    expect(resultado).toEqual({
+      propuesta: { propuesta_id: 44, estado: 'aceptada' },
+      calificacion: {
+        puntaje_obtenido: '8.00',
+        estado_correccion: 'manual',
+        nota_final: '16.00',
+        estado_rendicion: 'corregida',
+        pendientes_revision: 0,
+      },
+    });
+    expect(propuesta).toMatchObject({
+      estado: 'aceptada',
+      version: 4,
+      revisada_por_docente_id: 12,
+      puntaje_sugerido: '8.00',
+    });
+    expect(propuesta.revisada_en).toBeInstanceOf(Date);
+    expect(contexto.transaction).toHaveBeenCalledTimes(1);
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledWith(
+      contexto.manager,
+      7,
+      21,
+      31,
+      'a',
+      12,
+      { puntaje: 8, retroalimentacion: 'Buen razonamiento' },
+    );
+    expect(contexto.correccionRepository.save).toHaveBeenCalledTimes(1);
+    expect(contexto.correccionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ estado: 'aceptada', version: 4 }),
+    );
+    expect(contexto.examenRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lock: { mode: 'pessimistic_write' },
+      }),
+    );
+    expect(contexto.rendicionRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lock: { mode: 'pessimistic_write' },
+      }),
+    );
+    expect(contexto.correccionRepository.delete).not.toHaveBeenCalled();
+    sinEscriturasOficiales(contexto);
+  });
+
+  it('no altera la retroalimentación existente si se omite', async () => {
+    const contexto = crearServicio({ detalle: propuestaAceptable() });
+
+    await aceptar(contexto.servicio);
+
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledWith(
+      contexto.manager,
+      7,
+      21,
+      31,
+      'a',
+      12,
+      { puntaje: 8 },
+    );
+  });
+
+  it('rechaza una versión antigua', async () => {
+    const propuesta = propuestaAceptable();
+    const contexto = crearServicio({ detalle: propuesta });
+
+    await esperarErrorCodigo(
+      aceptar(contexto.servicio, {
+        version: 2,
+        puntaje_confirmado: '8.00',
+      }),
+      409,
+      'PROPUESTA_DESACTUALIZADA',
+    );
+    expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+    expect(propuesta.estado).toBe('generada');
+  });
+
+  it('rechaza un puntaje confirmado que no coincide', async () => {
+    const contexto = crearServicio({ detalle: propuestaAceptable() });
+
+    await esperarErrorCodigo(
+      aceptar(contexto.servicio, {
+        version: 3,
+        puntaje_confirmado: '7.99',
+      }),
+      409,
+      'PUNTAJE_CONFIRMADO_NO_COINCIDE',
+    );
+    expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('acepta el puntaje confirmado comparado numéricamente con 2 decimales', async () => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable({ puntaje_sugerido: '8' }),
+    });
+
+    await expect(
+      aceptar(contexto.servicio, {
+        version: 3,
+        puntaje_confirmado: 8.0,
+      }),
+    ).resolves.toMatchObject({
+      propuesta: { estado: 'aceptada' },
+    });
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledWith(
+      contexto.manager,
+      7,
+      21,
+      31,
+      'a',
+      12,
+      { puntaje: 8 },
+    );
+  });
+
+  it('rechaza una propuesta sin puntaje sugerido', async () => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable({ puntaje_sugerido: null }),
+    });
+
+    await esperarErrorCodigo(
+      aceptar(contexto.servicio),
+      409,
+      'SIN_PUNTAJE_SUGERIDO',
+    );
+    expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'pendiente',
+    'procesando',
+    'descartada',
+    'aceptada',
+    'error',
+    'reemplazada',
+  ])('rechaza aceptar una propuesta en estado %s', async (estado) => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable({
+        estado: estado as CorreccionIa['estado'],
+      }),
+    });
+
+    await esperarErrorCodigo(
+      aceptar(contexto.servicio),
+      409,
+      'ESTADO_NO_PERMITE_OPERACION',
+    );
+    expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('acepta una propuesta previamente modificada', async () => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable({ estado: 'modificada', version: 5 }),
+    });
+
+    await expect(
+      aceptar(contexto.servicio, {
+        version: 5,
+        puntaje_confirmado: '8.00',
+      }),
+    ).resolves.toMatchObject({
+      propuesta: { estado: 'aceptada' },
+    });
+  });
+
+  it.each([
+    [{ calificaciones_revisadas_en: new Date() }, 'REVISION_CERRADA'],
+    [{ resultados_publicados_en: new Date() }, 'RESULTADOS_PUBLICADOS'],
+  ])('rechaza aceptar con el examen cerrado', async (cierre, codigo) => {
+    const contexto = crearServicio({
+      examen: examenConCierre(cierre),
+      detalle: propuestaAceptable(),
+    });
+
+    await esperarErrorCodigo(aceptar(contexto.servicio), 409, codigo);
+    expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('devuelve 404 si el examen no pertenece al docente', async () => {
+    const contexto = crearServicio({
+      examen: null,
+      detalle: propuestaAceptable(),
+    });
+
+    await esperarErrorCodigo(
+      contexto.servicio.aceptarPropuesta(44, 99, {
+        version: 3,
+        puntaje_confirmado: '8.00',
+      }),
+      404,
+      'PROPUESTA_NO_ENCONTRADA',
+    );
+    expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un puntaje superior al máximo mediante la validación oficial', async () => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable({
+        puntaje_sugerido: '12.00',
+        puntaje_max_inciso: '10.00',
+      }),
+    });
+
+    await esperarStatus(
+      aceptar(contexto.servicio, {
+        version: 3,
+        puntaje_confirmado: '12.00',
+      }),
+      400,
+    );
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledTimes(1);
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+    expect(contexto.notaOficial.puntaje_obtenido).toBeNull();
+  });
+
+  it('revierte la propuesta si falla la valoración oficial', async () => {
+    const error = new Error('falló la valoración oficial');
+    const propuesta = propuestaAceptable();
+    const contexto = crearServicio({
+      detalle: propuesta,
+      errorValoracion: error,
+    });
+
+    await expect(aceptar(contexto.servicio)).rejects.toBe(error);
+
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledTimes(1);
+    expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
+    expect(propuesta.estado).toBe('generada');
+    expect(propuesta.version).toBe(3);
+    expect(contexto.notaOficial.puntaje_obtenido).toBeNull();
+  });
+
+  it('no confirma la nota si falla el cambio de estado de la propuesta', async () => {
+    const error = new Error('falló el guardado de la propuesta');
+    const propuesta = propuestaAceptable();
+    const contexto = crearServicio({
+      detalle: propuesta,
+      errorGuardar: error,
+    });
+
+    await expect(aceptar(contexto.servicio)).rejects.toBe(error);
+
+    expect(contexto.transaction).toHaveBeenCalledTimes(1);
+    expect(contexto.aplicarValoracionOficial).toHaveBeenCalledWith(
+      contexto.manager,
+      7,
+      21,
+      31,
+      'a',
+      12,
+      { puntaje: 8 },
+    );
+    expect(contexto.notaOficial.puntaje_obtenido).toBeNull();
+    expect(contexto.notaOficial.estado_correccion).toBe('pendiente');
+    expect(propuesta.estado).toBe('generada');
+    expect(propuesta.version).toBe(3);
   });
 });

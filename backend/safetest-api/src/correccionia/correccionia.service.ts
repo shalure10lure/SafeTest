@@ -15,6 +15,7 @@ import type {
 
 import { AsignacionPregunta } from '../asignacionpregunta/entity/asignacionpregunta.entity';
 import { Examen } from '../examen/entity/examen.entity';
+import { RevisionCalificacionesService } from '../examen/revision-calificaciones.service';
 import { Inciso } from '../inciso/entity/inciso.entity';
 import { IaSolucionReferencia } from '../iasolucionreferencia/entity/iasolucionreferencia.entity';
 import { OpcionMarcada } from '../opcionmarcada/entity/opcionmarcada.entity';
@@ -157,6 +158,28 @@ export interface DescarteCorreccionIa {
   estado: 'descartada';
 }
 
+export interface AceptarPropuestaCorreccionIa {
+  version: number;
+  puntaje_confirmado: number | string;
+  retroalimentacion?: string | null;
+}
+
+export interface CalificacionOficialCorreccionIa {
+  puntaje_obtenido: string | null;
+  estado_correccion: string;
+  nota_final: string | null;
+  estado_rendicion: string;
+  pendientes_revision: number;
+}
+
+export interface ResultadoAceptacionCorreccionIa {
+  propuesta: {
+    propuesta_id: number;
+    estado: 'aceptada';
+  };
+  calificacion: CalificacionOficialCorreccionIa;
+}
+
 const CAMPOS_MODIFICABLES_CORRECCION_IA = [
   'puntaje',
   'valoracion',
@@ -174,7 +197,10 @@ const MOTIVO_CORRECCION_IA_MAX_LONGITUD = 300;
 
 @Injectable()
 export class CorreccionIaService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly revision: RevisionCalificacionesService,
+  ) {}
 
   async listarPorExamen(
     examenId: number,
@@ -516,6 +542,131 @@ export class CorreccionIaService {
       return {
         propuesta_id: guardada.propuesta_id,
         estado: 'descartada',
+      };
+    });
+  }
+
+  async aceptarPropuesta(
+    propuestaId: number,
+    docenteId: number,
+    entrada: AceptarPropuestaCorreccionIa,
+  ): Promise<ResultadoAceptacionCorreccionIa> {
+    validarEntradaAceptacion(entrada);
+
+    return this.dataSource.transaction(async (manager) => {
+      const referencia = await manager.getRepository(CorreccionIa).findOne({
+        where: { propuesta_id: propuestaId },
+        select: {
+          propuesta_id: true,
+          examen_id: true,
+          estudiante_id: true,
+        },
+      });
+      if (!referencia) {
+        throw errorPropuestaNoEncontrada();
+      }
+
+      // Orden de bloqueo: examen → rendición → propuesta.
+      const examen = await manager.getRepository(Examen).findOne({
+        where: { examen_id: referencia.examen_id, docente_id: docenteId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!examen) {
+        throw errorPropuestaNoEncontrada();
+      }
+      asegurarEdicionPermitida(examen);
+
+      const rendicion = await manager.getRepository(Rendicion).findOne({
+        where: {
+          examen_id: referencia.examen_id,
+          estudiante_id: referencia.estudiante_id,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!rendicion) {
+        throw new NotFoundException('La rendición no existe.');
+      }
+
+      const propuesta = await manager.getRepository(CorreccionIa).findOne({
+        where: { propuesta_id: propuestaId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!propuesta) {
+        throw errorPropuestaNoEncontrada();
+      }
+
+      if (!['generada', 'modificada'].includes(propuesta.estado)) {
+        throw errorEstadoNoPermite(
+          'Solo se puede aceptar una propuesta generada o modificada.',
+        );
+      }
+
+      const puntajeSugerido = convertirPuntaje(propuesta.puntaje_sugerido);
+      if (puntajeSugerido === null) {
+        throw new ConflictException({
+          codigo: 'SIN_PUNTAJE_SUGERIDO',
+          motivo: 'La propuesta no tiene un puntaje sugerido.',
+        });
+      }
+
+      if (entrada.version !== propuesta.version) {
+        throw new ConflictException({
+          codigo: 'PROPUESTA_DESACTUALIZADA',
+          motivo:
+            'La propuesta cambió desde que fue consultada; vuelva a cargarla.',
+        });
+      }
+
+      const puntajeConfirmado = convertirPuntaje(entrada.puntaje_confirmado);
+      if (
+        puntajeConfirmado === null ||
+        !mismoPuntajeConDosDecimales(puntajeConfirmado, puntajeSugerido)
+      ) {
+        throw new ConflictException({
+          codigo: 'PUNTAJE_CONFIRMADO_NO_COINCIDE',
+          motivo:
+            'El puntaje confirmado no coincide con el puntaje sugerido vigente.',
+        });
+      }
+
+      const datosValoracion: {
+        puntaje: number;
+        retroalimentacion?: string | null;
+      } = { puntaje: puntajeSugerido };
+      if (entrada.retroalimentacion !== undefined) {
+        datosValoracion.retroalimentacion = entrada.retroalimentacion;
+      }
+
+      const calificacion = await this.revision.aplicarValoracionOficial(
+        manager,
+        propuesta.examen_id,
+        propuesta.estudiante_id,
+        propuesta.pregunta_id,
+        propuesta.letra,
+        docenteId,
+        datosValoracion,
+      );
+
+      // La propuesta conserva su puntaje_sugerido original; solo cambia de
+      // estado y registra la auditoría de la revisión humana.
+      propuesta.estado = 'aceptada';
+      propuesta.revisada_en = new Date();
+      propuesta.revisada_por_docente_id = docenteId;
+      propuesta.version += 1;
+      await manager.getRepository(CorreccionIa).save(propuesta);
+
+      return {
+        propuesta: {
+          propuesta_id: propuesta.propuesta_id,
+          estado: 'aceptada',
+        },
+        calificacion: {
+          puntaje_obtenido: calificacion.puntaje_obtenido,
+          estado_correccion: calificacion.estado_correccion,
+          nota_final: calificacion.nota_final,
+          estado_rendicion: calificacion.estado_rendicion,
+          pendientes_revision: calificacion.pendientes_revision,
+        },
       };
     });
   }
@@ -942,6 +1093,46 @@ function normalizarMotivoDescarte(motivo?: string | null): string | null {
     );
   }
   return normalizado.length === 0 ? null : normalizado;
+}
+
+function validarEntradaAceptacion(entrada: AceptarPropuestaCorreccionIa): void {
+  if (
+    typeof entrada !== 'object' ||
+    entrada === null ||
+    Array.isArray(entrada)
+  ) {
+    throw new BadRequestException(
+      'Envía un objeto con version y puntaje_confirmado.',
+    );
+  }
+  if (!Number.isInteger(entrada.version) || entrada.version < 1) {
+    throw new BadRequestException('La version debe ser un entero positivo.');
+  }
+  const confirmado = entrada.puntaje_confirmado;
+  if (
+    confirmado === undefined ||
+    confirmado === null ||
+    (typeof confirmado !== 'number' && typeof confirmado !== 'string')
+  ) {
+    throw new BadRequestException('puntaje_confirmado es obligatorio.');
+  }
+}
+
+function convertirPuntaje(
+  valor: number | string | null | undefined,
+): number | null {
+  if (typeof valor === 'number') {
+    return Number.isFinite(valor) ? valor : null;
+  }
+  if (typeof valor !== 'string' || valor.trim().length === 0) {
+    return null;
+  }
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function mismoPuntajeConDosDecimales(a: number, b: number): boolean {
+  return Math.round(a * 100) === Math.round(b * 100);
 }
 
 function mapearCorreccionIaDto(propuesta: CorreccionIa): CorreccionIaDto {

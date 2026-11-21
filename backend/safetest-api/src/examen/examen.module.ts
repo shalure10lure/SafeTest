@@ -87,5 +87,6 @@ import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module'
         PublicacionResultadosService,
         EnvioResultadosCorreoService,
     ],
+    exports: [RevisionCalificacionesService],
 })
 export class ExamenModule { }

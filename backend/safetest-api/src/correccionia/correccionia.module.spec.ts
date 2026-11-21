@@ -1,5 +1,6 @@
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 
+import { ExamenModule } from '../examen/examen.module';
 import { CorreccionIaService } from './correccionia.service';
 import { CorreccionIa } from './entity/correccionia.entity';
 import { CorreccionIaModule } from './correccionia.module';
@@ -40,5 +41,14 @@ describe('CorreccionIaModule', () => {
         }),
       ]),
     );
+  });
+
+  it('importa ExamenModule para reutilizar la valoración oficial', () => {
+    const imports = Reflect.getMetadata(
+      'imports',
+      CorreccionIaModule,
+    ) as unknown[];
+
+    expect(imports).toContain(ExamenModule);
   });
 });
