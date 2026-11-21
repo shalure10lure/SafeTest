@@ -1,4 +1,7 @@
-import type { SolicitudGeneracionIa } from '../ai.types';
+import type {
+  SolicitudCorreccionRespuesta,
+  SolicitudGeneracionIa,
+} from '../ai.types';
 import {
   cargarConfiguracionIa,
   ErrorConfiguracionIa,
@@ -87,6 +90,21 @@ function crearProveedor(
 }
 
 describe('GeminiAiProvider', () => {
+  it('declara claramente que la corrección Gemini se completa en T3', async () => {
+    const { proveedor } = crearProveedor(respuestaCon([]));
+    const solicitud: SolicitudCorreccionRespuesta = {
+      enunciado: 'Resuelve el ejercicio.',
+      tipo_respuesta: 'desarrollo',
+      respuesta_estudiante: 'Respuesta',
+      criterio: { rubrica: 'Criterios' },
+      puntaje_max: 10,
+    };
+
+    await expect(proveedor.corregirRespuesta(solicitud)).rejects.toThrow(
+      'La corrección con Gemini no está implementada; se completará en el caso 9.',
+    );
+  });
+
   it('devuelve las propuestas válidas con proveedor, modelo y tokens', async () => {
     const { proveedor } = crearProveedor(
       respuestaCon([

@@ -22,3 +22,6 @@ export interface AiProvider {
 
 /** Token de inyección para el proveedor seleccionado por configuración. */
 export const AI_PROVIDER = Symbol('AI_PROVIDER');
+
+/** Token independiente para el proveedor de corrección de HU-45. */
+export const AI_CORRECCION_PROVIDER = Symbol('AI_CORRECCION_PROVIDER');

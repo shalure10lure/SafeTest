@@ -12,7 +12,7 @@ import type {
   ResultadoCorreccionRespuesta,
   SolicitudCorreccionRespuesta,
 } from '../ia/ai.types';
-import { AI_PROVIDER } from '../ia/providers/ai.provider';
+import { AI_CORRECCION_PROVIDER } from '../ia/providers/ai.provider';
 import type { AiProvider } from '../ia/providers/ai.provider';
 import { crearHashCriterio } from './correccionia.criterio';
 import {
@@ -69,7 +69,7 @@ export class CorreccionIaWorker
     @Inject(ALMACEN_CORRECCION_IA)
     private readonly almacen: AlmacenCorreccionIa,
 
-    @Inject(AI_PROVIDER)
+    @Inject(AI_CORRECCION_PROVIDER)
     private readonly proveedor: AiProvider,
 
     @Inject(IA_CONFIG)
@@ -245,10 +245,7 @@ export class CorreccionIaWorker
       const solicitud = construirSolicitud(contexto);
       const hashCriterio = crearHashCriterio(contexto.criterio);
       const resultado = await this.proveedor.corregirRespuesta(solicitud);
-      const normalizado = normalizarResultado(
-        resultado,
-        contexto.puntaje_max,
-      );
+      const normalizado = normalizarResultado(resultado, contexto.puntaje_max);
 
       const persistencia = await this.almacen.guardarGenerada(
         propuestaId,

@@ -5,7 +5,10 @@ import {
 } from '../../config/ia.config';
 import { FakeAiProvider } from './fake-ai.provider';
 import { GeminiAiProvider } from './gemini-ai.provider';
-import { crearProveedorIa } from './provider.factory';
+import {
+  crearProveedorCorreccionIa,
+  crearProveedorIa,
+} from './provider.factory';
 
 function configGemini(
   base: IaConfig = cargarConfiguracionIa({ IA_PROVIDER: 'fake' }),
@@ -27,6 +30,20 @@ describe('crearProveedorIa', () => {
     );
 
     expect(proveedor).toBeInstanceOf(FakeAiProvider);
+  });
+
+  it('mantiene el proveedor fake de corrección independiente de IA_PROVIDER', () => {
+    const proveedorCorreccion = crearProveedorCorreccionIa();
+    const proveedorGeneracion = crearProveedorIa(
+      cargarConfiguracionIa({
+        IA_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'clave-de-prueba',
+        GEMINI_MODEL: 'modelo-de-prueba',
+      }),
+    );
+
+    expect(proveedorCorreccion).toBeInstanceOf(FakeAiProvider);
+    expect(proveedorGeneracion).toBeInstanceOf(GeminiAiProvider);
   });
 
   it('exige selección explícita del proveedor', () => {

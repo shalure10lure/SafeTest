@@ -89,7 +89,7 @@ const SQL_AGOTAR = `
   UPDATE correccion_ia AS c
      SET estado = 'error',
          error_codigo = 'TIEMPO_AGOTADO',
-         error_mensaje = $3,
+         error_mensaje = $4,
          finalizada_en = $1,
          actualizada_en = $1
     FROM examen AS e
@@ -107,10 +107,9 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   async reclamar(ahora: Date): Promise<number | null> {
-    const filas = await this.dataSource.query<FilasAfectadas[]>(
-      SQL_RECLAMAR,
-      [ahora],
-    );
+    const filas = await this.dataSource.query<FilasAfectadas[]>(SQL_RECLAMAR, [
+      ahora,
+    ]);
 
     return filas[0]?.propuesta_id ?? null;
   }
@@ -236,17 +235,19 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
     ahora: Date,
   ): Promise<ResultadoPersistenciaCorreccionIa> {
     return this.dataSource.transaction(async (manager) => {
-      const propuesta = await manager.getRepository(CorreccionIa).findOne({
+      const correcciones = manager.getRepository(CorreccionIa);
+      const referencia = await correcciones.findOne({
         where: { propuesta_id: propuestaId },
-        lock: { mode: 'pessimistic_write' },
+        select: { propuesta_id: true, examen_id: true },
       });
 
-      if (!propuesta || propuesta.estado !== 'procesando') {
+      if (!referencia) {
         return 'omitida';
       }
 
       const examen = await manager.getRepository(Examen).findOne({
-        where: { examen_id: propuesta.examen_id },
+        where: { examen_id: referencia.examen_id },
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!examen) {
@@ -254,6 +255,15 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
           'DATOS_INVALIDOS',
           'No se encontró el examen al persistir el resultado.',
         );
+      }
+
+      const propuesta = await correcciones.findOne({
+        where: { propuesta_id: propuestaId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!propuesta || propuesta.estado !== 'procesando') {
+        return 'omitida';
       }
 
       if (
@@ -269,9 +279,7 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
       propuesta.explicacion = resultado.explicacion;
       propuesta.errores = resultado.errores;
       propuesta.confianza =
-        resultado.confianza === null
-          ? null
-          : resultado.confianza.toFixed(2);
+        resultado.confianza === null ? null : resultado.confianza.toFixed(2);
       propuesta.proveedor = resultado.proveedor;
       propuesta.modelo = resultado.modelo;
       propuesta.criterio_fuente = resultado.criterio_fuente;
@@ -293,21 +301,45 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
     mensaje: string,
     ahora: Date,
   ): Promise<boolean> {
-    const resultado = await this.dataSource
-      .createQueryBuilder()
-      .update(CorreccionIa)
-      .set({
-        estado: 'error',
-        error_codigo: codigo.slice(0, 40),
-        error_mensaje: sanitizarMensajeError(mensaje),
-        finalizada_en: ahora,
-        actualizada_en: ahora,
-      })
-      .where('propuesta_id = :propuestaId', { propuestaId })
-      .andWhere('estado = :estado', { estado: 'procesando' })
-      .execute();
+    return this.dataSource.transaction(async (manager) => {
+      const correcciones = manager.getRepository(CorreccionIa);
+      const referencia = await correcciones.findOne({
+        where: { propuesta_id: propuestaId },
+        select: { propuesta_id: true, examen_id: true },
+      });
+      if (!referencia) {
+        return false;
+      }
 
-    return (resultado.affected ?? 0) > 0;
+      const examen = await manager.getRepository(Examen).findOne({
+        where: { examen_id: referencia.examen_id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const propuesta = await correcciones.findOne({
+        where: { propuesta_id: propuestaId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!propuesta || propuesta.estado !== 'procesando') {
+        return false;
+      }
+
+      const examenCerrado =
+        examen !== null &&
+        (examen.calificaciones_revisadas_en !== null ||
+          examen.resultados_publicados_en !== null);
+      propuesta.estado = 'error';
+      propuesta.error_codigo = examenCerrado
+        ? 'EXAMEN_PUBLICADO'
+        : codigo.slice(0, 40);
+      propuesta.error_mensaje = sanitizarMensajeError(
+        examenCerrado ? MENSAJE_EXAMEN_PUBLICADO : mensaje,
+      );
+      propuesta.finalizada_en = ahora;
+      propuesta.actualizada_en = ahora;
+
+      await correcciones.save(propuesta);
+      return true;
+    });
   }
 
   async recuperarAbandonadas(
@@ -323,10 +355,12 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
       SQL_REENCOLAR,
       [ahora, leaseSegundos, maxIntentos],
     );
-    const agotadas = await this.dataSource.query<FilasAfectadas[]>(
-      SQL_AGOTAR,
-      [ahora, leaseSegundos, maxIntentos],
-    );
+    const agotadas = await this.dataSource.query<FilasAfectadas[]>(SQL_AGOTAR, [
+      ahora,
+      leaseSegundos,
+      maxIntentos,
+      MENSAJE_TIEMPO_AGOTADO,
+    ]);
 
     return {
       reencoladas: reencoladas.length,
@@ -340,7 +374,9 @@ function esTipoRespuesta(valor: string): valor is TipoRespuesta {
   return (TIPOS_RESPUESTA as readonly string[]).includes(valor);
 }
 
-function convertirNumero(valor: number | string | null | undefined): number | null {
+function convertirNumero(
+  valor: number | string | null | undefined,
+): number | null {
   if (typeof valor === 'number') {
     return Number.isFinite(valor) ? valor : null;
   }
@@ -443,7 +479,8 @@ function textoDesdeContenido(contenido: unknown): string {
       continue;
     }
 
-    const texto = typeof valor === 'string' ? valor.trim() : JSON.stringify(valor);
+    const texto =
+      typeof valor === 'string' ? valor.trim() : JSON.stringify(valor);
 
     if (typeof texto === 'string' && texto.trim().length > 0) {
       partes.push(`${clave}: ${texto.trim()}`);
