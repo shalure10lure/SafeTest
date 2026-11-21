@@ -23,6 +23,7 @@ import { RespuestaInciso } from '../respuestainciso/entity/respuestainciso.entit
 import { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
 import {
   ErrorValidacionCorreccionIa,
+  validarPuntajeSugeridoCorreccionIa,
   validarSolicitudCorreccionIa,
 } from './correccionia.validacion';
 import {
@@ -144,6 +145,33 @@ export interface SolicitudCorreccionIa {
   intento: number;
 }
 
+export interface CambiosPropuestaCorreccionIa {
+  puntaje?: number | string | null;
+  valoracion?: string | null;
+  explicacion?: string | null;
+  errores?: ErrorCorreccionIaDto[] | null;
+}
+
+export interface DescarteCorreccionIa {
+  propuesta_id: number;
+  estado: 'descartada';
+}
+
+const CAMPOS_MODIFICABLES_CORRECCION_IA = [
+  'puntaje',
+  'valoracion',
+  'explicacion',
+  'errores',
+] as const;
+
+const ESTADOS_DESCARTABLES_CORRECCION_IA: readonly EstadoCorreccionIa[] = [
+  'pendiente',
+  'generada',
+  'modificada',
+];
+
+const MOTIVO_CORRECCION_IA_MAX_LONGITUD = 300;
+
 @Injectable()
 export class CorreccionIaService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
@@ -212,11 +240,7 @@ export class CorreccionIaService {
       !propuesta ||
       !(await this.esPropietarioExamen(propuesta.examen_id, docenteId))
     ) {
-      throw new NotFoundException({
-        codigo: 'PROPUESTA_NO_ENCONTRADA',
-        motivo:
-          'La propuesta no existe o no pertenece a un examen del docente.',
-      });
+      throw errorPropuestaNoEncontrada();
     }
 
     return mapearCorreccionIaDto(propuesta);
@@ -278,18 +302,7 @@ export class CorreccionIaService {
           'La evaluación debe estar publicada para solicitar una corrección IA.',
         );
       }
-      if (examen.calificaciones_revisadas_en !== null) {
-        throw new ConflictException({
-          codigo: 'REVISION_CERRADA',
-          motivo: 'Las calificaciones ya fueron confirmadas.',
-        });
-      }
-      if (examen.resultados_publicados_en !== null) {
-        throw new ConflictException({
-          codigo: 'RESULTADOS_PUBLICADOS',
-          motivo: 'Los resultados ya fueron publicados.',
-        });
-      }
+      asegurarEdicionPermitida(examen);
 
       const rendicion = await manager.getRepository(Rendicion).findOne({
         where: { examen_id: examenId, estudiante_id: estudianteId },
@@ -428,6 +441,290 @@ export class CorreccionIaService {
     });
   }
 
+  async modificarPropuesta(
+    propuestaId: number,
+    docenteId: number,
+    cambios: CambiosPropuestaCorreccionIa,
+  ): Promise<CorreccionIaDto> {
+    validarCambiosPropuesta(cambios);
+
+    return this.dataSource.transaction(async (manager) => {
+      const propuesta = await this.cargarPropuestaEditable(
+        manager,
+        propuestaId,
+        docenteId,
+      );
+      if (propuesta.estado !== 'generada') {
+        throw errorEstadoNoPermite(
+          'Solo se puede modificar una propuesta en estado generada.',
+        );
+      }
+
+      if (cambios.puntaje !== undefined) {
+        this.validarPuntajePropuesta(
+          cambios.puntaje,
+          propuesta.puntaje_max_inciso ?? '',
+        );
+        propuesta.puntaje_sugerido = Number(cambios.puntaje).toFixed(2);
+      }
+      if (cambios.valoracion !== undefined) {
+        propuesta.valoracion = cambios.valoracion;
+      }
+      if (cambios.explicacion !== undefined) {
+        propuesta.explicacion = cambios.explicacion;
+      }
+      if (cambios.errores !== undefined) {
+        propuesta.errores = cambios.errores;
+      }
+
+      propuesta.estado = 'modificada';
+      propuesta.version += 1;
+
+      const guardada = await manager
+        .getRepository(CorreccionIa)
+        .save(propuesta);
+      return mapearCorreccionIaDto(guardada);
+    });
+  }
+
+  async descartarPropuesta(
+    propuestaId: number,
+    docenteId: number,
+    motivo?: string | null,
+  ): Promise<DescarteCorreccionIa> {
+    const motivoNormalizado = normalizarMotivoDescarte(motivo);
+
+    return this.dataSource.transaction(async (manager) => {
+      const propuesta = await this.cargarPropuestaEditable(
+        manager,
+        propuestaId,
+        docenteId,
+      );
+      if (!ESTADOS_DESCARTABLES_CORRECCION_IA.includes(propuesta.estado)) {
+        throw errorEstadoNoPermite(
+          'Solo se puede descartar una propuesta pendiente, generada o modificada.',
+        );
+      }
+
+      propuesta.estado = 'descartada';
+      propuesta.motivo = motivoNormalizado;
+      propuesta.version += 1;
+
+      const guardada = await manager
+        .getRepository(CorreccionIa)
+        .save(propuesta);
+      return {
+        propuesta_id: guardada.propuesta_id,
+        estado: 'descartada',
+      };
+    });
+  }
+
+  async regenerarPropuesta(
+    examenId: number,
+    estudianteId: number,
+    preguntaId: number,
+    letra: string,
+    docenteId: number,
+  ): Promise<SolicitudCorreccionIa> {
+    return this.dataSource.transaction(async (manager) => {
+      const examen = await manager.getRepository(Examen).findOne({
+        where: { examen_id: examenId, docente_id: docenteId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!examen) {
+        throw errorExamenNoEncontrado();
+      }
+      asegurarEdicionPermitida(examen);
+
+      const rendicion = await manager.getRepository(Rendicion).findOne({
+        where: { examen_id: examenId, estudiante_id: estudianteId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!rendicion) {
+        throw new NotFoundException({
+          codigo: 'RENDICION_NO_ENCONTRADA',
+          motivo: 'No existe una rendición para este estudiante y evaluación.',
+        });
+      }
+      if (!['enviada', 'corregida'].includes(rendicion.estado)) {
+        throw new ConflictException({
+          codigo: 'RENDICION_NO_ENVIADA',
+          motivo:
+            'La rendición debe estar enviada para solicitar una corrección IA.',
+        });
+      }
+
+      const claveRespuesta = {
+        examen_id: examenId,
+        estudiante_id: estudianteId,
+        pregunta_id: preguntaId,
+        letra,
+      };
+      const asignacion = await manager
+        .getRepository(AsignacionPregunta)
+        .findOne({
+          where: {
+            examen_id: examenId,
+            estudiante_id: estudianteId,
+            pregunta_id: preguntaId,
+          },
+        });
+      const inciso = await manager.getRepository(Inciso).findOne({
+        where: { pregunta_id: preguntaId, letra },
+      });
+      if (!asignacion || !inciso) {
+        throw new NotFoundException({
+          codigo: 'INCISO_NO_ENCONTRADO',
+          motivo:
+            'El inciso no pertenece a una pregunta asignada en esta evaluación.',
+        });
+      }
+
+      const correcciones = manager.getRepository(CorreccionIa);
+      const respuesta = await manager.getRepository(RespuestaInciso).findOne({
+        where: claveRespuesta,
+        lock: { mode: 'pessimistic_write' },
+      });
+      const propuestaActiva = await correcciones.findOne({
+        where: {
+          ...claveRespuesta,
+          estado: In([...ESTADOS_PROPUESTA_ACTIVA]),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (propuestaActiva?.estado === 'procesando') {
+        throw new ConflictException({
+          codigo: 'PROPUESTA_EN_PROCESO',
+          motivo:
+            'La propuesta activa está siendo procesada; espere a que termine.',
+        });
+      }
+
+      if (!respuesta) {
+        this.validarSolicitud({
+          estado_correccion: 'pendiente',
+          estado_rendicion: rendicion.estado,
+          puntaje_obtenido: null,
+          permitir_inciso_corregido: true,
+          tipo_respuesta: inciso.tipo_respuesta,
+          respuesta_texto: null,
+          opciones_marcadas: 0,
+          puntaje_max: inciso.puntaje_max,
+        });
+        throw new Error('La respuesta ausente debió ser rechazada.');
+      }
+
+      const opcionesMarcadas = await manager
+        .getRepository(OpcionMarcada)
+        .countBy(claveRespuesta);
+      const solucionInciso = await manager
+        .getRepository(SolucionInciso)
+        .findOne({ where: { pregunta_id: preguntaId, letra } });
+      const solucionReferencia = await manager
+        .getRepository(IaSolucionReferencia)
+        .findOne({
+          where: {
+            pregunta_id: preguntaId,
+            docente_id: docenteId,
+            revisada_en: Not(IsNull()),
+          },
+          order: { revisada_en: 'DESC' },
+        });
+
+      this.validarSolicitud({
+        estado_correccion: respuesta.estado_correccion,
+        estado_rendicion: rendicion.estado,
+        puntaje_obtenido: respuesta.puntaje_obtenido,
+        permitir_inciso_corregido: true,
+        tipo_respuesta: inciso.tipo_respuesta,
+        respuesta_texto: respuesta.respuesta_texto,
+        opciones_marcadas: opcionesMarcadas,
+        puntaje_max: inciso.puntaje_max,
+        solucion_inciso: solucionInciso,
+        solucion_referencia: solucionReferencia,
+      });
+
+      const ultimaPropuesta = await correcciones.findOne({
+        where: claveRespuesta,
+        order: { intento: 'DESC' },
+      });
+      const intento = (ultimaPropuesta?.intento ?? 0) + 1;
+      const propuesta = correcciones.create({
+        ...claveRespuesta,
+        docente_id: docenteId,
+        estado: 'pendiente',
+        puntaje_max_inciso: inciso.puntaje_max,
+        puntaje_sugerido: null,
+        confianza: null,
+        intento,
+        reintentos_worker: 0,
+        version: 1,
+      });
+
+      try {
+        // Libera el índice único activo antes de insertar la nueva fila y,
+        // cuando ya existe el identificador, enlaza el reemplazo sin borrar
+        // ni reescribir el resto del historial.
+        if (propuestaActiva) {
+          propuestaActiva.estado = 'reemplazada';
+          propuestaActiva.version += 1;
+          await correcciones.save(propuestaActiva);
+        }
+
+        const guardada = await correcciones.save(propuesta);
+
+        if (propuestaActiva) {
+          propuestaActiva.reemplazada_por_id = guardada.propuesta_id;
+          await correcciones.save(propuestaActiva);
+        }
+
+        return {
+          propuesta_id: guardada.propuesta_id,
+          estado: 'pendiente',
+          intento: guardada.intento,
+        };
+      } catch (error) {
+        if (esColisionIndiceActivo(error)) {
+          throw this.errorPropuestaActivaExistente();
+        }
+        throw error;
+      }
+    });
+  }
+
+  private async cargarPropuestaEditable(
+    manager: EntityManager,
+    propuestaId: number,
+    docenteId: number,
+  ): Promise<CorreccionIa> {
+    const referencia = await manager.getRepository(CorreccionIa).findOne({
+      where: { propuesta_id: propuestaId },
+      select: { propuesta_id: true, examen_id: true },
+    });
+    if (!referencia) {
+      throw errorPropuestaNoEncontrada();
+    }
+
+    const examen = await manager.getRepository(Examen).findOne({
+      where: { examen_id: referencia.examen_id, docente_id: docenteId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!examen) {
+      throw errorPropuestaNoEncontrada();
+    }
+    asegurarEdicionPermitida(examen);
+
+    const propuesta = await manager.getRepository(CorreccionIa).findOne({
+      where: { propuesta_id: propuestaId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!propuesta) {
+      throw errorPropuestaNoEncontrada();
+    }
+    return propuesta;
+  }
+
   private async esPropietarioExamen(
     examenId: number,
     docenteId: number,
@@ -460,6 +757,23 @@ export class CorreccionIaService {
         throw new ConflictException(respuesta);
       }
       throw new BadRequestException(respuesta);
+    }
+  }
+
+  private validarPuntajePropuesta(
+    puntaje: number | string | null,
+    puntajeMaximo: number | string,
+  ): void {
+    try {
+      validarPuntajeSugeridoCorreccionIa(puntaje, puntajeMaximo);
+    } catch (error) {
+      if (!(error instanceof ErrorValidacionCorreccionIa)) {
+        throw error;
+      }
+      throw new BadRequestException({
+        codigo: error.codigo,
+        motivo: error.motivo,
+      });
     }
   }
 
@@ -520,6 +834,114 @@ function errorExamenNoEncontrado(): NotFoundException {
     codigo: 'EXAMEN_NO_ENCONTRADO',
     motivo: 'La evaluación no existe o no pertenece al docente.',
   });
+}
+
+function errorPropuestaNoEncontrada(): NotFoundException {
+  return new NotFoundException({
+    codigo: 'PROPUESTA_NO_ENCONTRADA',
+    motivo: 'La propuesta no existe o no pertenece a un examen del docente.',
+  });
+}
+
+function errorEstadoNoPermite(motivo: string): ConflictException {
+  return new ConflictException({
+    codigo: 'ESTADO_NO_PERMITE_OPERACION',
+    motivo,
+  });
+}
+
+function asegurarEdicionPermitida(examen: Examen): void {
+  if (examen.calificaciones_revisadas_en !== null) {
+    throw new ConflictException({
+      codigo: 'REVISION_CERRADA',
+      motivo: 'Las calificaciones ya fueron confirmadas.',
+    });
+  }
+  if (examen.resultados_publicados_en !== null) {
+    throw new ConflictException({
+      codigo: 'RESULTADOS_PUBLICADOS',
+      motivo: 'Los resultados ya fueron publicados.',
+    });
+  }
+}
+
+function validarCambiosPropuesta(cambios: CambiosPropuestaCorreccionIa): void {
+  if (cambios === null || typeof cambios !== 'object') {
+    throw new BadRequestException({
+      codigo: 'SIN_CAMBIOS',
+      motivo: 'Debe modificar al menos un campo no nulo.',
+    });
+  }
+
+  const valores = cambios as Record<string, unknown>;
+  const claves = Object.keys(valores);
+  const noPermitidos = claves.filter(
+    (clave) =>
+      !CAMPOS_MODIFICABLES_CORRECCION_IA.includes(
+        clave as (typeof CAMPOS_MODIFICABLES_CORRECCION_IA)[number],
+      ),
+  );
+  if (noPermitidos.length > 0) {
+    throw new BadRequestException(
+      `Solo se pueden modificar los campos: ${CAMPOS_MODIFICABLES_CORRECCION_IA.join(', ')}.`,
+    );
+  }
+
+  const conValor = claves.filter(
+    (clave) => valores[clave] !== undefined && valores[clave] !== null,
+  );
+  if (conValor.length === 0) {
+    throw new BadRequestException({
+      codigo: 'SIN_CAMBIOS',
+      motivo: 'Debe modificar al menos un campo no nulo.',
+    });
+  }
+
+  validarTiposCambios(cambios);
+}
+
+function validarTiposCambios(cambios: CambiosPropuestaCorreccionIa): void {
+  if (
+    cambios.valoracion !== undefined &&
+    cambios.valoracion !== null &&
+    typeof cambios.valoracion !== 'string'
+  ) {
+    throw new BadRequestException('El campo valoracion debe ser texto.');
+  }
+  if (
+    cambios.explicacion !== undefined &&
+    cambios.explicacion !== null &&
+    typeof cambios.explicacion !== 'string'
+  ) {
+    throw new BadRequestException('El campo explicacion debe ser texto.');
+  }
+  if (
+    cambios.errores !== undefined &&
+    cambios.errores !== null &&
+    (!Array.isArray(cambios.errores) ||
+      !cambios.errores.every(esErrorCorreccionIaDto))
+  ) {
+    throw new BadRequestException(
+      'El campo errores debe ser una lista de errores válidos.',
+    );
+  }
+}
+
+function normalizarMotivoDescarte(motivo?: string | null): string | null {
+  if (motivo === undefined || motivo === null) {
+    return null;
+  }
+  if (typeof motivo !== 'string') {
+    throw new BadRequestException('El motivo debe ser texto.');
+  }
+
+  const normalizado = motivo.trim();
+  if (normalizado.length > MOTIVO_CORRECCION_IA_MAX_LONGITUD) {
+    throw new BadRequestException(
+      `El motivo no puede superar los ${MOTIVO_CORRECCION_IA_MAX_LONGITUD} caracteres.`,
+    );
+  }
+  return normalizado.length === 0 ? null : normalizado;
 }
 
 function mapearCorreccionIaDto(propuesta: CorreccionIa): CorreccionIaDto {

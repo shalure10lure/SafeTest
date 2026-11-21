@@ -25,6 +25,7 @@ export interface EntradaValidacionSolicitudCorreccionIa {
   estado_correccion: string;
   estado_rendicion: string;
   puntaje_obtenido?: number | string | null;
+  permitir_inciso_corregido?: boolean;
   tipo_respuesta: string;
   respuesta_texto: string | null;
   opciones_marcadas: number;
@@ -43,6 +44,7 @@ export function validarSolicitudCorreccionIa(
   entrada: EntradaValidacionSolicitudCorreccionIa,
 ): void {
   const incisoPendiente =
+    entrada.permitir_inciso_corregido === true ||
     entrada.estado_correccion === 'pendiente' ||
     puntajeAusente(entrada.puntaje_obtenido);
   if (!incisoPendiente) {
@@ -79,20 +81,10 @@ export function validarSolicitudCorreccionIa(
 export function validarResultadoCorreccionIa(
   entrada: EntradaValidacionResultadoCorreccionIa,
 ): void {
-  const puntajeMaximo = validarPuntajeMaximo(entrada.puntaje_max);
-
-  const puntajeSugerido = convertirNumeroFinito(entrada.puntaje_sugerido);
-  if (
-    puntajeSugerido === null ||
-    puntajeSugerido < 0 ||
-    puntajeSugerido > puntajeMaximo ||
-    !tieneMaximoDosDecimales(puntajeSugerido)
-  ) {
-    throw new ErrorValidacionCorreccionIa(
-      'PUNTAJE_FUERA_DE_RANGO',
-      'El puntaje sugerido debe ser un número finito entre 0 y el puntaje máximo, con máximo 2 decimales.',
-    );
-  }
+  validarPuntajeSugeridoCorreccionIa(
+    entrada.puntaje_sugerido,
+    entrada.puntaje_max,
+  );
 
   if (entrada.confianza !== null) {
     const confianza = convertirNumeroFinito(entrada.confianza);
@@ -102,6 +94,25 @@ export function validarResultadoCorreccionIa(
         'La confianza debe ser nula o un número entre 0 y 1.',
       );
     }
+  }
+}
+
+export function validarPuntajeSugeridoCorreccionIa(
+  puntajeSugerido: number | string | null,
+  puntajeMaximo: number | string,
+): void {
+  const maximo = validarPuntajeMaximo(puntajeMaximo);
+  const sugerido = convertirNumeroFinito(puntajeSugerido);
+  if (
+    sugerido === null ||
+    sugerido < 0 ||
+    sugerido > maximo ||
+    !tieneMaximoDosDecimales(sugerido)
+  ) {
+    throw new ErrorValidacionCorreccionIa(
+      'PUNTAJE_FUERA_DE_RANGO',
+      'El puntaje sugerido debe ser un número finito entre 0 y el puntaje máximo, con máximo 2 decimales.',
+    );
   }
 }
 
