@@ -224,6 +224,7 @@ export default function InstruccionesEvaluacion({
     } = useIniciarRendicion();
     const [paraleloId, setParaleloId] = useState<number | null>(null);
     const [errorNavegacion, setErrorNavegacion] = useState('');
+     const [comprendeRestricciones, setComprendeRestricciones] = useState(false);
 
     if (cargando) return <PanelCarga />;
 
@@ -246,7 +247,8 @@ export default function InstruccionesEvaluacion({
           : null;
 
     const continuarEvaluacion = async () => {
-        if (paraleloSeleccionado === null || iniciando) return;
+        if (paraleloSeleccionado === null || iniciando ||
+             (instrucciones.bloquear_primer_cambio_pestana && !comprendeRestricciones)) return;
 
         setErrorNavegacion('');
         const resultado = await iniciarORecuperar(
@@ -268,6 +270,26 @@ export default function InstruccionesEvaluacion({
     return (
         <main className="mx-auto w-full max-w-3xl space-y-4 p-4 sm:p-6">
             <ResumenEvaluacion instrucciones={instrucciones} />
+
+             <section className="rounded-xl border border-amber-200 bg-amber-50 p-5" aria-label="Condiciones de seguridad">
+                 <h2 className="text-sm font-semibold text-amber-950">Condiciones de seguridad</h2>
+                 <p className="mt-2 text-sm leading-6 text-amber-900">
+                     SafeTest puede detectar y registrar cambios de visibilidad de la pestaña
+                     durante la rendición. No controla otras aplicaciones ni puede garantizar
+                     que se detecten todos los cambios. Un evento puede ser accidental.
+                 </p>
+                 {instrucciones.bloquear_primer_cambio_pestana ? (
+                     <label className="mt-3 flex items-start gap-2 text-sm text-amber-950">
+                         <input type="checkbox" checked={comprendeRestricciones}
+                             onChange={(e) => setComprendeRestricciones(e.target.checked)}
+                             className="mt-1 size-4 accent-amber-800" />
+                         <span>Entiendo que un solo cambio de pestaña detectado bloqueará mi
+                             rendición hasta que el docente la revise y desbloquee.</span>
+                     </label>
+                 ) : (
+                     <p className="mt-2 text-xs text-amber-900">No hay bloqueo automático configurado para esta evaluación.</p>
+                 )}
+             </section>
 
             <section className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div>
@@ -318,7 +340,8 @@ export default function InstruccionesEvaluacion({
                     disabled={
                         iniciando ||
                         paraleloSeleccionado === null ||
-                        instrucciones.paralelos_rendicion.length === 0
+                        instrucciones.paralelos_rendicion.length === 0 ||
+                         (instrucciones.bloquear_primer_cambio_pestana && !comprendeRestricciones)
                     }
                     onClick={() => void continuarEvaluacion()}
                     className="bg-emerald-700 text-white hover:bg-emerald-800"

@@ -16,6 +16,8 @@ import type {
     GuardarConfiguracionDto,
     GuardarProcedimientoRendicion,
     GuardarSeleccionDto,
+    RespuestaEventoSeguridad,
+    ResumenSeguridadDocente,
     InstruccionesEvaluacionEstudiante,
     PublicacionRespuestas,
     PreguntasRendicionEstudiante,
@@ -94,6 +96,26 @@ class EvaluacionesService extends BaseService {
     finalizarRendicion(id: number) {
         return this.post<RendicionFinalizadaEstudiante, Record<string, never>>(
             `/${id}/estudiante/rendicion/finalizar`,
+            {},
+        );
+    }
+
+    // HU-43: el estudiante envía el evento vinculado a su JWT.
+    registrarCambioPestana(id: number) {
+        return this.post<RespuestaEventoSeguridad, { tipo: 'pestana_oculta' }>(
+            `/${id}/estudiante/rendicion/seguridad/eventos`,
+            { tipo: 'pestana_oculta' },
+        );
+    }
+
+    // HU-43: revisión y desbloqueo, solo para el docente propietario.
+    getSeguridadRendiciones(id: number) {
+        return this.get<ResumenSeguridadDocente>(`/${id}/seguridad/rendiciones`);
+    }
+
+    desbloquearRendicion(id: number, estudianteId: number) {
+        return this.patch<{ desbloqueada: boolean }, Record<string, never>>(
+            `/${id}/seguridad/rendiciones/${estudianteId}/desbloquear`,
             {},
         );
     }

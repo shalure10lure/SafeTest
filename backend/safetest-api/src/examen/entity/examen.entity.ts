@@ -92,6 +92,10 @@ export class Examen {
   @Column({ name: 'respuestas_publicadas_en', type: 'timestamptz', nullable: true })
   respuestas_publicadas_en: Date | null;
 
+  // HU-43: bloqueo estricto opcional; desactivado en evaluaciones existentes.
+  @Column({ name: 'bloquear_primer_cambio_pestana', type: 'boolean', default: false })
+  bloquear_primer_cambio_pestana: boolean;
+
   @Column({ name: 'enviar_resultados_correo', type: 'boolean', default: false })
   enviar_resultados_correo: boolean;
 

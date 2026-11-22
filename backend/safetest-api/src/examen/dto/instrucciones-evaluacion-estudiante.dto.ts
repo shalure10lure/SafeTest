@@ -11,6 +11,7 @@ export class InstruccionesEvaluacionEstudianteDto {
   materia: string | null;
   docente: string | null;
   duracion_min: number | null;
+  bloquear_primer_cambio_pestana: boolean;
   disponible_desde: Date | null;
   disponible_hasta: Date | null;
   total_preguntas: number;

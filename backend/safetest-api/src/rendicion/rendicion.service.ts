@@ -604,6 +604,7 @@ export class RendicionService {
             examen_id: examenId,
             estudiante_id: estudianteId,
           },
+          lock: { mode: 'pessimistic_write' },
         });
 
         if (!rendicion) {
@@ -1514,6 +1515,13 @@ export class RendicionService {
     rendicion: Rendicion,
     examenId: number,
   ): Promise<void> {
+    // HU-43: se aplica en lectura, guardado, recursos y recuperación.
+    if (rendicion.bloqueada_seguridad_en !== null) {
+      throw new ConflictException(
+        'HU43_RENDICION_BLOQUEADA: La rendición fue restringida por seguridad. Contacta a tu docente.',
+      );
+    }
+
     if (rendicion.estado !== 'en_curso') {
       throw new ConflictException(
         'La rendición ya no está en curso.',
@@ -1717,6 +1725,9 @@ export class RendicionService {
       }
 
       if (rendicion.estado === 'en_curso') {
+        if (rendicion.bloqueada_seguridad_en !== null) {
+          throw new ConflictException('HU43_RENDICION_BLOQUEADA: El docente debe desbloquear tu rendición antes de finalizarla.');
+        }
         rendicion.estado = 'enviada';
         rendicion.fecha_envio = rendicion.fecha_envio ?? new Date();
 
@@ -1755,6 +1766,9 @@ export class RendicionService {
     tiempo_servidor: Date;
     vencida: boolean;
     puede_responder: boolean;
+    bloquear_primer_cambio_pestana: boolean;
+    bloqueada_seguridad: boolean;
+    bloqueada_seguridad_en: Date | null;
   }> {
     // Actualizar primero el estado si venció el tiempo.
     await this.finalizarSiVencida(examenId, estudianteId);
@@ -1772,6 +1786,7 @@ export class RendicionService {
           estado: true,
           fecha_inicio: true,
           fecha_envio: true,
+          bloqueada_seguridad_en: true,
         },
       });
 
@@ -1788,6 +1803,7 @@ export class RendicionService {
         select: {
           duracion_min: true,
           disponible_hasta: true,
+          bloquear_primer_cambio_pestana: true,
         },
       });
 
@@ -1812,7 +1828,7 @@ export class RendicionService {
       ahora.getTime() >= fechaLimite.getTime();
 
     const puedeResponder =
-      rendicion.estado === 'en_curso' && !vencida;
+      rendicion.estado === 'en_curso' && !vencida && rendicion.bloqueada_seguridad_en === null;
 
     return {
       examen_id: examenId,
@@ -1823,6 +1839,9 @@ export class RendicionService {
       tiempo_servidor: ahora,
       vencida,
       puede_responder: puedeResponder,
+      bloquear_primer_cambio_pestana: examen.bloquear_primer_cambio_pestana,
+      bloqueada_seguridad: rendicion.bloqueada_seguridad_en !== null,
+      bloqueada_seguridad_en: rendicion.bloqueada_seguridad_en,
     };
   }
 

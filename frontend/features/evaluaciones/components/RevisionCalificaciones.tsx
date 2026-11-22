@@ -79,7 +79,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
 
   const visibles = useMemo(() => estudiantes.filter((e) => {
     if (!e.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) &&
-        !String(e.estudiante_id).includes(busqueda)) return false;
+      !String(e.estudiante_id).includes(busqueda)) return false;
     if (filtro === 'pendientes') return !e.lista_para_publicar;
     if (filtro === 'listas') return e.lista_para_publicar;
     return true;
@@ -147,13 +147,21 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
           <nav aria-label="Ruta de navegación" className="flex flex-wrap items-center gap-1 text-xs text-slate-400">
             <Link href="/docente/evaluaciones" className="hover:text-violet-600">Mis evaluaciones</Link>
             <span aria-hidden="true">›</span>
+            
             <span>Resultados</span>
           </nav>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Revisión general de resultados</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{datos?.titulo ?? `Evaluación #${examenId}`}</p>
         </div>
+      
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/docente/evaluaciones" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">← Mis evaluaciones</Link>
+          <Link
+              href={`/docente/evaluaciones/${examenId}/seguridad`}
+              className="inline-flex items-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+            >
+              Ver seguridad y bloqueos
+            </Link>
           <button
             type="button"
             onClick={() => setPreguntarConfirmacion(true)}
@@ -163,6 +171,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
           >
             {confirmadas ? 'Revisión confirmada' : 'Confirmar revisión'}
           </button>
+          
           <button
             type="button"
             onClick={() => setPreguntarPublicacion(true)}
@@ -273,7 +282,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             </div>
             <div className="border-t border-slate-100 px-4 py-3 text-right text-xs text-slate-400 dark:border-slate-800">{visibles.length} de {estudiantes.length} rendiciones</div>
           </section>
-
+          
           {preguntarConfirmacion && puedeConfirmar && (
             <section role="group" aria-label="Confirmar revisión" className="rounded-xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
               <h2 className="font-semibold text-violet-950 dark:text-violet-100">¿Confirmar todas las calificaciones?</h2>

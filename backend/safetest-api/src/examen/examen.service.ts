@@ -408,6 +408,8 @@ export class ExamenService {
                 // La columna `numeric` se persiste como texto, igual que otros
                 // puntajes del modelo.
                 puntaje_total: String(dto.puntaje_total),
+                bloquear_primer_cambio_pestana:
+                    dto.bloquear_primer_cambio_pestana ?? examen.bloquear_primer_cambio_pestana,
             },
         );
 
@@ -1747,6 +1749,7 @@ export class ExamenService {
                     disponible_desde: examen.disponible_desde,
                     disponible_hasta: examen.disponible_hasta,
                     modo_entrega_nota: examen.modo_entrega_nota,
+                    bloquear_primer_cambio_pestana: examen.bloquear_primer_cambio_pestana,
                     modo_asignacion: examen.modo_asignacion,
                     // NULL = las respuestas correctas aún no se publicaron.
                     resultados_publicados_en: examen.resultados_publicados_en,

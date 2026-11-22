@@ -75,6 +75,9 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
     const [hasta, setHasta] = useState(aInputLocal(evaluacion.disponible_hasta));
     const [entrega, setEntrega] = useState<ModoEntregaNota>(
         evaluacion.modo_entrega_nota,
+     );
+     const [bloqueoEstricto, setBloqueoEstricto] = useState(
+         evaluacion.bloquear_primer_cambio_pestana ?? false,
     );
     const [puntajeTotal, setPuntajeTotal] = useState(
         evaluacion.puntaje_total === null
@@ -171,6 +174,7 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
                 disponible_hasta: aIso(hasta),
                 modo_entrega_nota: entrega,
                 puntaje_total: puntajeTotalNumero,
+                 bloquear_primer_cambio_pestana: bloqueoEstricto,
             });
 
             router.push(ROUTES.docente.evaluacionAsignacion(evaluacion.examen_id));
@@ -422,6 +426,32 @@ function FormularioConfiguracion({ evaluacion }: { evaluacion: EvaluacionDetalle
                 />
             </SeccionConfiguracion>
 
+             <SeccionConfiguracion
+                 numero={6}
+                 titulo="Seguridad de la evaluación"
+                 descripcion="Controles disponibles en navegadores compatibles. No bloquean otras aplicaciones."
+             >
+                 <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-4">
+                     <input
+                         type="checkbox"
+                         checked={bloqueoEstricto}
+                         onChange={(e) => setBloqueoEstricto(e.target.checked)}
+                         className="mt-1 size-4 accent-violet-600"
+                     />
+                     <span className="space-y-1">
+                         <span className="block text-sm font-semibold text-slate-900">
+                             Restringir la rendición al primer cambio de pestaña detectado
+                         </span>
+                         <span className="block text-xs leading-5 text-slate-600">
+                             Si la pestaña del examen queda oculta, se registra el evento.
+                             Con esta opción activa, el estudiante no podrá continuar
+                             hasta que el docente desbloquee su rendición. La detección
+                             puede fallar o activarse por cambios involuntarios.
+                         </span>
+                     </span>
+                 </label>
+             </SeccionConfiguracion>
+
             {errorGuardar && (
                 <p className="text-sm text-red-600" role="alert">
                     {errorGuardar}
@@ -469,6 +499,11 @@ export default function ConfiguracionEvaluacion({ examenId }: { examenId: number
         return (
             <p className="text-sm text-slate-600">
                 Solo puedes configurar una evaluación en borrador.
+                <span className="mt-3 block">
+                    <LinkButton href={`/docente/evaluaciones/${examenId}/seguridad`}>
+                        Consultar eventos de seguridad →
+                    </LinkButton>
+                </span>
             </p>
         );
     }

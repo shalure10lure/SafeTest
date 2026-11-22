@@ -44,6 +44,7 @@ export interface InstruccionesEvaluacionEstudiante {
     disponible_hasta: string | null;
     total_preguntas: number;
     estado_disponibilidad: 'disponible';
+    bloquear_primer_cambio_pestana?: boolean;
     paralelos_rendicion: {
         paralelo_id: number;
         nombre_paralelo: string;
@@ -159,6 +160,7 @@ export interface Evaluacion {
     disponible_desde: string | null;
     disponible_hasta: string | null;
     modo_entrega_nota: ModoEntregaNota;
+    bloquear_primer_cambio_pestana?: boolean;
     modo_asignacion: ModoAsignacion;
 
     materia: {
@@ -316,6 +318,7 @@ export interface GuardarConfiguracionDto {
     modo_entrega_nota: ModoEntregaNota;
     /** Número positivo con un máximo de 2 decimales. */
     puntaje_total: number;
+    bloquear_primer_cambio_pestana?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -483,4 +486,35 @@ export interface PublicacionRespuestas {
     resultados_publicados_en: string;
     /** `true` si ya estaban publicadas y la operación fue idempotente. */
     ya_publicadas: boolean;
+}
+
+
+// HU-43: eventos detectables, nunca prueba definitiva de uso de otra app.
+export interface RespuestaEventoSeguridad {
+    examen_id: number;
+    tipo: 'pestana_oculta';
+    evento_registrado: boolean;
+    bloqueada_seguridad: boolean;
+    bloqueada_seguridad_en: string | null;
+}
+
+export interface EventoSeguridadDocente {
+    evento_id: number;
+    tipo: string;
+    fecha_hora: string;
+}
+
+export interface RendicionSeguridadDocente {
+    estudiante_id: number;
+    nombre_completo: string;
+    estado: string;
+    bloqueada_seguridad_en: string | null;
+    eventos: EventoSeguridadDocente[];
+}
+
+export interface ResumenSeguridadDocente {
+    examen_id: number;
+    titulo: string | null;
+    bloquear_primer_cambio_pestana?: boolean;
+    rendiciones: RendicionSeguridadDocente[];
 }
