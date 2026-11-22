@@ -47,16 +47,27 @@ export interface CorreccionIa {
   motivo: string | null;
 }
 
-/** Los endpoints de solicitud y regeneración no reciben campos. */
+/** Los endpoints de regeneración no reciben campos. */
 export type CuerpoVacioCorreccionIa = undefined;
 
-export interface SolicitarCorreccionIaResponse {
+export interface RegenerarCorreccionIaResponse {
   propuesta_id: number;
   estado: 'pendiente';
   intento: number;
 }
 
-export type RegenerarCorreccionIaResponse = SolicitarCorreccionIaResponse;
+export interface OmisionCorreccionIaLote {
+  estudiante_id: number;
+  pregunta_id: number;
+  letra: string;
+  motivo: string;
+}
+
+export interface ResultadoLoteCorreccionIa {
+  solicitadas: number;
+  omitidas: number;
+  detalle_omitidas: OmisionCorreccionIaLote[];
+}
 
 export interface FiltrosBandejaCorreccionIa {
   estado?: EstadoCorreccionIa;
@@ -70,11 +81,6 @@ export interface FiltrosBandejaCorreccionIa {
 export interface BandejaCorreccionesIaResponse {
   total: number;
   propuestas: CorreccionIa[];
-}
-
-export interface FiltrosHistorialCorreccionIa {
-  estado?: EstadoCorreccionIa;
-  limite?: number;
 }
 
 export interface ActualizarCorreccionIaRequest {

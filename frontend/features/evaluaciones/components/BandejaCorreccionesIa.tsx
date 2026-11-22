@@ -40,9 +40,15 @@ function enlaceRevision(examenId: number, propuesta: CorreccionIa): string {
 
 interface Props {
   examenId: number;
+  seguimientoLote?: boolean;
+  onSeguimientoFinalizado?: () => void;
 }
 
-export default function BandejaCorreccionesIa({ examenId }: Props) {
+export default function BandejaCorreccionesIa({
+  examenId,
+  seguimientoLote = false,
+  onSeguimientoFinalizado,
+}: Props) {
   const [estado, setEstado] = useState<EstadoCorreccionIa | ''>('');
   const [estudianteTexto, setEstudianteTexto] = useState('');
   const [soloPendientesRevision, setSoloPendientesRevision] = useState(false);
@@ -90,38 +96,91 @@ export default function BandejaCorreccionesIa({ examenId }: Props) {
     if (!estudianteValido) return;
 
     let activa = true;
-    correccionIaService
-      .listarPorExamen(examenId, filtros)
-      .then((resultado) => {
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+
+    async function consultar() {
+      try {
+        const resultado = await correccionIaService.listarPorExamen(
+          examenId,
+          seguimientoLote
+            ? { limite: 200, desplazamiento: 0 }
+            : filtros,
+        );
         if (!activa) return;
         setRespuesta(resultado);
         setErrorConsulta(null);
         setConsultaTerminada(claveConsulta);
-      })
-      .catch((fallo: unknown) => {
+        const hayPropuestasActivas = resultado.propuestas.some(
+          (propuesta) =>
+            propuesta.estado === 'pendiente' ||
+            propuesta.estado === 'procesando',
+        );
+        if (seguimientoLote && hayPropuestasActivas) {
+          temporizador = setTimeout(() => void consultar(), 2500);
+        } else if (seguimientoLote) {
+          onSeguimientoFinalizado?.();
+        }
+      } catch (fallo: unknown) {
         if (!activa) return;
         setErrorConsulta({
           clave: claveConsulta,
           mensaje: mensajeErrorCorreccionIa(fallo),
         });
         setConsultaTerminada(claveConsulta);
-      });
+        if (seguimientoLote) {
+          temporizador = setTimeout(() => void consultar(), 2500);
+        }
+      }
+    }
+
+    void consultar();
 
     return () => {
       activa = false;
+      if (temporizador !== undefined) clearTimeout(temporizador);
     };
-  }, [claveConsulta, examenId, filtros, estudianteValido]);
+  }, [
+    claveConsulta,
+    examenId,
+    filtros,
+    estudianteValido,
+    seguimientoLote,
+    onSeguimientoFinalizado,
+  ]);
 
   const consultaActual = consultaTerminada === claveConsulta;
   const cargando = estudianteValido && !consultaActual;
   const error =
     errorConsulta?.clave === claveConsulta ? errorConsulta.mensaje : null;
-  const propuestas =
-    consultaActual && !error && estudianteValido
-      ? respuesta?.propuestas ?? []
-      : [];
-  const total =
-    consultaActual && !error && estudianteValido ? (respuesta?.total ?? 0) : 0;
+  const registros = consultaActual && !error && estudianteValido
+    ? respuesta?.propuestas ?? []
+    : [];
+  const filtradas = seguimientoLote
+    ? registros.filter((propuesta) => {
+        if (estado && propuesta.estado !== estado) return false;
+        if (estudianteId !== undefined && propuesta.estudiante_id !== estudianteId) {
+          return false;
+        }
+        if (
+          soloPendientesRevision &&
+          !esperaDecision(propuesta.estado)
+        ) {
+          return false;
+        }
+        return true;
+      })
+    : registros;
+  const propuestas = seguimientoLote
+    ? filtradas.slice(
+        (pagina - 1) * TAMANO_PAGINA,
+        pagina * TAMANO_PAGINA,
+      )
+    : filtradas;
+  const total = consultaActual && !error && estudianteValido
+    ? seguimientoLote
+      ? filtradas.length
+      : (respuesta?.total ?? 0)
+    : 0;
   const totalPaginas = Math.max(1, Math.ceil(total / TAMANO_PAGINA));
   const resumenPagina = {
     generada: propuestas.filter((propuesta) => propuesta.estado === 'generada')

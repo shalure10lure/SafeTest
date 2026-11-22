@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EstudianteCalificacion, ResumenCalificaciones } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
+import type { ResultadoLoteCorreccionIa } from '../correccion-ia.types';
+import {
+  correccionIaService,
+  mensajeErrorCorreccionIa,
+} from '../services/correccion-ia.service';
 import BandejaCorreccionesIa from './BandejaCorreccionesIa';
 import CorreoResultadosPanel from './CorreoResultadosPanel';
 
@@ -41,6 +46,10 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
   const [publicando, setPublicando] = useState(false);
   const [preguntarSoluciones, setPreguntarSoluciones] = useState(false);
   const [publicandoSoluciones, setPublicandoSoluciones] = useState(false);
+  const [solicitandoLote, setSolicitandoLote] = useState(false);
+  const [seguimientoLote, setSeguimientoLote] = useState(false);
+  const [resultadoLote, setResultadoLote] =
+    useState<ResultadoLoteCorreccionIa | null>(null);
 
   const cargar = useCallback(async () => {
     const respuesta = await calificacionesService.resumen(examenId);
@@ -77,6 +86,10 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     datos.total_rendiciones > 0 && datos.total_pendientes === 0;
   const puedePublicar = !!datos && confirmadas && !publicados && finalizado &&
     datos.total_rendiciones > 0 && datos.total_pendientes === 0;
+  const finalizarSeguimientoLote = useCallback(
+    () => setSeguimientoLote(false),
+    [],
+  );
 
   const visibles = useMemo(() => estudiantes.filter((e) => {
     if (!e.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) &&
@@ -138,6 +151,23 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
       setPublicandoSoluciones(false);
+    }
+  }
+
+  async function revisarTodoConIa() {
+    if (confirmadas || publicados || solicitandoLote || seguimientoLote) return;
+    setSolicitandoLote(true);
+    setResultadoLote(null);
+    setError(null);
+    setNotificacion(null);
+    try {
+      const resultado = await correccionIaService.revisarTodo(examenId);
+      setResultadoLote(resultado);
+      setSeguimientoLote(resultado.solicitadas > 0);
+    } catch (fallo: unknown) {
+      setError(mensajeErrorCorreccionIa(fallo));
+    } finally {
+      setSolicitandoLote(false);
     }
   }
 
@@ -233,7 +263,65 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
 
           <CorreoResultadosPanel examenId={examenId} publicados={publicados} />
 
-          <BandejaCorreccionesIa examenId={examenId} />
+          {!confirmadas && !publicados && (
+            <section
+              aria-label="Revisión de propuestas con IA"
+              className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/20"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Corrección asistida por IA</h2>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                    Las propuestas son provisionales y no cambian las calificaciones oficiales.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void revisarTodoConIa()}
+                  disabled={solicitandoLote || seguimientoLote}
+                  className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {solicitandoLote
+                    ? 'Solicitando…'
+                    : seguimientoLote
+                      ? 'Procesando propuestas…'
+                      : 'Revisar todo con IA'}
+                </button>
+              </div>
+              {resultadoLote && (
+                <div
+                  role="status"
+                  aria-label="Resumen de solicitudes de corrección IA"
+                  className="space-y-2 rounded-lg bg-white p-3 text-sm dark:bg-slate-900"
+                >
+                  <p>
+                    Solicitadas: <strong>{resultadoLote.solicitadas}</strong>
+                    {' · '}Omitidas: <strong>{resultadoLote.omitidas}</strong>
+                  </p>
+                  {resultadoLote.detalle_omitidas.length > 0 && (
+                    <ul aria-label="Motivos de omisión" className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                      {resultadoLote.detalle_omitidas.map((omision, indice) => (
+                        <li key={`${omision.estudiante_id}-${omision.pregunta_id}-${omision.letra}-${indice}`}>
+                          Estudiante #{omision.estudiante_id}, pregunta #{omision.pregunta_id}, inciso {omision.letra}: {omision.motivo}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {seguimientoLote && (
+                    <p className="text-xs text-violet-800 dark:text-violet-200">
+                      El avance se actualiza automáticamente en la bandeja.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          <BandejaCorreccionesIa
+            examenId={examenId}
+            seguimientoLote={seguimientoLote}
+            onSeguimientoFinalizado={finalizarSeguimientoLote}
+          />
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" aria-label="Resultados de los estudiantes">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">

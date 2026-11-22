@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   InternalServerErrorException,
   Injectable,
   NotFoundException,
@@ -200,6 +201,47 @@ const ESTADOS_DESCARTABLES_CORRECCION_IA: readonly EstadoCorreccionIa[] = [
 
 const MOTIVO_CORRECCION_IA_MAX_LONGITUD = 300;
 
+const LIMITE_LOTE_POR_DEFECTO = 500;
+
+const TAMANO_TANDA_LOTE = 50;
+
+const MOTIVO_LIMITE_LOTE =
+  'Se alcanzó el límite máximo de incisos procesados por lote.';
+
+const MOTIVO_ERROR_LOTE =
+  'No se pudo crear la propuesta de IA para este inciso.';
+
+export interface OmisionCorreccionIaLote {
+  estudiante_id: number;
+  pregunta_id: number;
+  letra: string;
+  motivo: string;
+}
+
+export interface ResultadoLoteCorreccionIa {
+  solicitadas: number;
+  omitidas: number;
+  detalle_omitidas: OmisionCorreccionIaLote[];
+}
+
+interface ClaveRespuestaCorreccionIa {
+  examen_id: number;
+  estudiante_id: number;
+  pregunta_id: number;
+  letra: string;
+}
+
+interface DatosCreacionPropuestaCorreccionIa {
+  claveRespuesta: ClaveRespuestaCorreccionIa;
+  docenteId: number;
+  inciso: Pick<Inciso, 'tipo_respuesta' | 'puntaje_max'>;
+  respuesta: Pick<
+    RespuestaInciso,
+    'estado_correccion' | 'puntaje_obtenido' | 'respuesta_texto'
+  >;
+  estadoRendicion: string;
+}
+
 @Injectable()
 export class CorreccionIaService {
   constructor(
@@ -398,78 +440,110 @@ export class CorreccionIaService {
         throw new Error('La respuesta ausente debió ser rechazada.');
       }
 
-      const correcciones = manager.getRepository(CorreccionIa);
-      const propuestaActiva = await correcciones.findOne({
-        where: {
-          ...claveRespuesta,
-          estado: In([...ESTADOS_PROPUESTA_ACTIVA]),
-        },
-        lock: { mode: 'pessimistic_write' },
+      return this.crearPropuestaPendiente(manager, {
+        claveRespuesta,
+        docenteId,
+        inciso,
+        respuesta,
+        estadoRendicion: rendicion.estado,
       });
-      if (propuestaActiva) {
-        throw this.errorPropuestaActivaExistente();
-      }
+    });
+  }
 
-      const opcionesMarcadas = await manager
-        .getRepository(OpcionMarcada)
-        .countBy(claveRespuesta);
-      const solucionInciso = await manager
-        .getRepository(SolucionInciso)
-        .findOne({ where: { pregunta_id: preguntaId, letra } });
-      const solucionReferencia = await manager
-        .getRepository(IaSolucionReferencia)
-        .findOne({
-          where: {
-            pregunta_id: preguntaId,
-            docente_id: docenteId,
-            revisada_en: Not(IsNull()),
+  async solicitarLote(
+    examenId: number,
+    docenteId: number,
+  ): Promise<ResultadoLoteCorreccionIa> {
+    const examen = await this.dataSource.getRepository(Examen).findOne({
+      where: { examen_id: examenId, docente_id: docenteId },
+      select: {
+        examen_id: true,
+        calificaciones_revisadas_en: true,
+        resultados_publicados_en: true,
+      },
+    });
+    if (!examen) {
+      throw errorExamenNoEncontrado();
+    }
+    asegurarEdicionPermitida(examen);
+
+    const limite = leerLimiteLote();
+    const resultado: ResultadoLoteCorreccionIa = {
+      solicitadas: 0,
+      omitidas: 0,
+      detalle_omitidas: [],
+    };
+
+    const rendiciones = await this.dataSource.getRepository(Rendicion).find({
+      where: {
+        examen_id: examenId,
+        estado: In(['enviada', 'corregida']),
+      },
+      select: { estudiante_id: true, estado: true },
+      order: { estudiante_id: 'ASC' },
+    });
+    const estudiantes = [
+      ...new Set(rendiciones.map((rendicion) => rendicion.estudiante_id)),
+    ];
+    const estadoPorEstudiante = new Map(
+      rendiciones.map((rendicion) => [
+        rendicion.estudiante_id,
+        rendicion.estado,
+      ]),
+    );
+
+    for (
+      let indice = 0;
+      indice < estudiantes.length;
+      indice += TAMANO_TANDA_LOTE
+    ) {
+      const tanda = estudiantes.slice(indice, indice + TAMANO_TANDA_LOTE);
+      const respuestas = await this.dataSource
+        .getRepository(RespuestaInciso)
+        .find({
+          where: { examen_id: examenId, estudiante_id: In(tanda) },
+          order: {
+            estudiante_id: 'ASC',
+            pregunta_id: 'ASC',
+            letra: 'ASC',
           },
-          order: { revisada_en: 'DESC' },
         });
 
-      this.validarSolicitud({
-        estado_correccion: respuesta.estado_correccion,
-        estado_rendicion: rendicion.estado,
-        puntaje_obtenido: respuesta.puntaje_obtenido,
-        tipo_respuesta: inciso.tipo_respuesta,
-        respuesta_texto: respuesta.respuesta_texto,
-        opciones_marcadas: opcionesMarcadas,
-        puntaje_max: inciso.puntaje_max,
-        solucion_inciso: solucionInciso,
-        solucion_referencia: solucionReferencia,
-      });
-
-      const ultimaPropuesta = await correcciones.findOne({
-        where: claveRespuesta,
-        order: { intento: 'DESC' },
-      });
-      const intento = (ultimaPropuesta?.intento ?? 0) + 1;
-      const propuesta = correcciones.create({
-        ...claveRespuesta,
-        docente_id: docenteId,
-        estado: 'pendiente',
-        puntaje_max_inciso: inciso.puntaje_max,
-        puntaje_sugerido: null,
-        confianza: null,
-        intento,
-        reintentos_worker: 0,
-        version: 1,
-      });
-
-      try {
-        const guardada = await correcciones.save(propuesta);
-        return {
-          propuesta_id: guardada.propuesta_id,
-          estado: 'pendiente',
-          intento: guardada.intento,
+      for (const respuesta of respuestas) {
+        const omision = {
+          estudiante_id: respuesta.estudiante_id,
+          pregunta_id: respuesta.pregunta_id,
+          letra: respuesta.letra,
         };
-      } catch (error) {
-        if (esColisionIndiceActivo(error)) {
-          throw this.errorPropuestaActivaExistente();
+
+        if (resultado.solicitadas >= limite) {
+          resultado.omitidas += 1;
+          resultado.detalle_omitidas.push({
+            ...omision,
+            motivo: MOTIVO_LIMITE_LOTE,
+          });
+          continue;
         }
-        throw error;
+
+        try {
+          await this.crearPropuestaParaLote(
+            examenId,
+            docenteId,
+            respuesta,
+            estadoPorEstudiante.get(respuesta.estudiante_id) ?? 'enviada',
+          );
+          resultado.solicitadas += 1;
+        } catch (error) {
+          resultado.omitidas += 1;
+          resultado.detalle_omitidas.push({
+            ...omision,
+            motivo: motivoOmisionLote(error),
+          });
+        }
       }
-    });
+    }
+
+    return resultado;
   }
 
   async modificarPropuesta(
@@ -883,6 +957,124 @@ export class CorreccionIaService {
     });
   }
 
+  private async crearPropuestaParaLote(
+    examenId: number,
+    docenteId: number,
+    respuesta: RespuestaInciso,
+    estadoRendicion: string,
+  ): Promise<SolicitudCorreccionIa> {
+    return this.dataSource.transaction(async (manager) => {
+      const inciso = await manager.getRepository(Inciso).findOne({
+        where: {
+          pregunta_id: respuesta.pregunta_id,
+          letra: respuesta.letra,
+        },
+      });
+      if (!inciso) {
+        throw new NotFoundException({
+          codigo: 'INCISO_NO_ENCONTRADO',
+          motivo:
+            'El inciso no pertenece a una pregunta asignada en esta evaluación.',
+        });
+      }
+
+      return this.crearPropuestaPendiente(manager, {
+        claveRespuesta: {
+          examen_id: examenId,
+          estudiante_id: respuesta.estudiante_id,
+          pregunta_id: respuesta.pregunta_id,
+          letra: respuesta.letra,
+        },
+        docenteId,
+        inciso,
+        respuesta,
+        estadoRendicion,
+      });
+    });
+  }
+
+  private async crearPropuestaPendiente(
+    manager: EntityManager,
+    datos: DatosCreacionPropuestaCorreccionIa,
+  ): Promise<SolicitudCorreccionIa> {
+    const { claveRespuesta, docenteId, inciso, respuesta, estadoRendicion } =
+      datos;
+    const correcciones = manager.getRepository(CorreccionIa);
+    const propuestaActiva = await correcciones.findOne({
+      where: {
+        ...claveRespuesta,
+        estado: In([...ESTADOS_PROPUESTA_ACTIVA]),
+      },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (propuestaActiva) {
+      throw this.errorPropuestaActivaExistente();
+    }
+
+    const opcionesMarcadas = await manager
+      .getRepository(OpcionMarcada)
+      .countBy(claveRespuesta);
+    const solucionInciso = await manager.getRepository(SolucionInciso).findOne({
+      where: {
+        pregunta_id: claveRespuesta.pregunta_id,
+        letra: claveRespuesta.letra,
+      },
+    });
+    const solucionReferencia = await manager
+      .getRepository(IaSolucionReferencia)
+      .findOne({
+        where: {
+          pregunta_id: claveRespuesta.pregunta_id,
+          docente_id: docenteId,
+          revisada_en: Not(IsNull()),
+        },
+        order: { revisada_en: 'DESC' },
+      });
+
+    this.validarSolicitud({
+      estado_correccion: respuesta.estado_correccion,
+      estado_rendicion: estadoRendicion,
+      puntaje_obtenido: respuesta.puntaje_obtenido,
+      tipo_respuesta: inciso.tipo_respuesta,
+      respuesta_texto: respuesta.respuesta_texto,
+      opciones_marcadas: opcionesMarcadas,
+      puntaje_max: inciso.puntaje_max,
+      solucion_inciso: solucionInciso,
+      solucion_referencia: solucionReferencia,
+    });
+
+    const ultimaPropuesta = await correcciones.findOne({
+      where: claveRespuesta,
+      order: { intento: 'DESC' },
+    });
+    const intento = (ultimaPropuesta?.intento ?? 0) + 1;
+    const propuesta = correcciones.create({
+      ...claveRespuesta,
+      docente_id: docenteId,
+      estado: 'pendiente',
+      puntaje_max_inciso: inciso.puntaje_max,
+      puntaje_sugerido: null,
+      confianza: null,
+      intento,
+      reintentos_worker: 0,
+      version: 1,
+    });
+
+    try {
+      const guardada = await correcciones.save(propuesta);
+      return {
+        propuesta_id: guardada.propuesta_id,
+        estado: 'pendiente',
+        intento: guardada.intento,
+      };
+    } catch (error) {
+      if (esColisionIndiceActivo(error)) {
+        throw this.errorPropuestaActivaExistente();
+      }
+      throw error;
+    }
+  }
+
   private async cargarPropuestaEditable(
     manager: EntityManager,
     propuestaId: number,
@@ -1038,6 +1230,42 @@ function errorEstadoNoPermite(motivo: string): ConflictException {
     codigo: 'ESTADO_NO_PERMITE_OPERACION',
     motivo,
   });
+}
+
+function leerLimiteLote(): number {
+  const valor = process.env.IA_CORRECCION_LOTE_MAX?.trim();
+  if (!valor) {
+    return LIMITE_LOTE_POR_DEFECTO;
+  }
+
+  const limite = Number(valor);
+  return Number.isInteger(limite) && limite > 0
+    ? limite
+    : LIMITE_LOTE_POR_DEFECTO;
+}
+
+function motivoOmisionLote(error: unknown): string {
+  if (error instanceof HttpException) {
+    const respuesta = error.getResponse();
+    if (typeof respuesta === 'string') {
+      return respuesta;
+    }
+    if (esRespuestaConMotivo(respuesta)) {
+      return respuesta.motivo;
+    }
+  }
+
+  return MOTIVO_ERROR_LOTE;
+}
+
+function esRespuestaConMotivo(valor: unknown): valor is { motivo: string } {
+  return (
+    typeof valor === 'object' &&
+    valor !== null &&
+    !Array.isArray(valor) &&
+    'motivo' in valor &&
+    typeof valor.motivo === 'string'
+  );
 }
 
 function asegurarEdicionPermitida(examen: Examen): void {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -7,11 +7,13 @@ import type {
   CorreccionIa,
 } from '../correccion-ia.types';
 import type { ResumenCalificaciones } from '../calificaciones.types';
+import type { ResultadoLoteCorreccionIa } from '../correccion-ia.types';
 import RevisionCalificaciones from './RevisionCalificaciones';
 
 const mocks = vi.hoisted(() => ({
   resumen: vi.fn(),
   listarPorExamen: vi.fn(),
+  revisarTodo: vi.fn(),
 }));
 
 vi.mock('next/link', () => ({
@@ -32,13 +34,18 @@ vi.mock('../services/calificaciones.service', () => ({
 }));
 
 vi.mock('../services/correccion-ia.service', () => ({
-  correccionIaService: { listarPorExamen: mocks.listarPorExamen },
+  correccionIaService: {
+    listarPorExamen: mocks.listarPorExamen,
+    revisarTodo: mocks.revisarTodo,
+  },
   mensajeErrorCorreccionIa: () => 'Error de propuestas',
 }));
 
 vi.mock('./CorreoResultadosPanel', () => ({ default: () => null }));
 
-function resumen(): ResumenCalificaciones {
+function resumen(
+  cambios: Partial<ResumenCalificaciones> = {},
+): ResumenCalificaciones {
   return {
     examen_id: 12,
     titulo: 'Evaluación publicada',
@@ -62,6 +69,7 @@ function resumen(): ResumenCalificaciones {
         lista_para_publicar: true,
       },
     ],
+    ...cambios,
   };
 }
 
@@ -100,6 +108,11 @@ function propuesta(): CorreccionIa {
 
 beforeEach(() => {
   mocks.resumen.mockReset().mockResolvedValue(resumen());
+  mocks.revisarTodo.mockReset().mockResolvedValue({
+    solicitadas: 0,
+    omitidas: 0,
+    detalle_omitidas: [],
+  });
   const respuesta: BandejaCorreccionesIaResponse = {
     total: 1,
     propuestas: [propuesta()],
@@ -109,6 +122,93 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+it('solicita el lote y muestra cuántas se omitieron y el motivo en español', async () => {
+  mocks.resumen.mockResolvedValue(
+    resumen({
+      calificaciones_revisadas_en: null,
+      resultados_publicados_en: null,
+    }),
+  );
+  mocks.revisarTodo.mockResolvedValueOnce({
+    solicitadas: 2,
+    omitidas: 1,
+    detalle_omitidas: [
+      {
+        estudiante_id: 46,
+        pregunta_id: 32,
+        letra: 'b',
+        motivo: 'La rendición no está enviada.',
+      },
+    ],
+  });
+  render(<RevisionCalificaciones examenId={12} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Revisar todo con IA' }));
+
+  expect(mocks.revisarTodo).toHaveBeenCalledExactlyOnceWith(12);
+  const resumenLote = await screen.findByRole('status', {
+    name: 'Resumen de solicitudes de corrección IA',
+  });
+  await waitFor(() => {
+    expect(resumenLote.textContent).toContain(
+      'Solicitadas: 2 · Omitidas: 1',
+    );
+    expect(resumenLote.textContent).toContain(
+      'Estudiante #46, pregunta #32, inciso b: La rendición no está enviada.',
+    );
+  });
+});
+
+it('deshabilita el botón mientras se solicita el lote', async () => {
+  mocks.resumen.mockResolvedValue(
+    resumen({
+      calificaciones_revisadas_en: null,
+      resultados_publicados_en: null,
+    }),
+  );
+  let finalizarLote!: (resultado: ResultadoLoteCorreccionIa) => void;
+  mocks.revisarTodo.mockReturnValueOnce(
+    new Promise<ResultadoLoteCorreccionIa>((resolve) => {
+      finalizarLote = resolve;
+    }),
+  );
+  render(<RevisionCalificaciones examenId={12} />);
+
+  const boton = await screen.findByRole('button', {
+    name: 'Revisar todo con IA',
+  });
+  fireEvent.click(boton);
+
+  expect((boton as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    screen.getByRole('button', { name: 'Solicitando…' }),
+  ).toBeDefined();
+  await act(async () => {
+    finalizarLote({ solicitadas: 0, omitidas: 0, detalle_omitidas: [] });
+  });
+  await screen.findByRole('status', {
+    name: 'Resumen de solicitudes de corrección IA',
+  });
+});
+
+it('oculta la solicitud por lote cuando la revisión está cerrada', async () => {
+  mocks.resumen.mockResolvedValue(
+    resumen({
+      calificaciones_revisadas_en: '2026-06-25T10:00:00.000Z',
+      resultados_publicados_en: null,
+    }),
+  );
+  render(<RevisionCalificaciones examenId={12} />);
+
+  await screen.findByRole('heading', {
+    name: 'Revisión general de resultados',
+  });
+  expect(
+    screen.queryByRole('button', { name: 'Revisar todo con IA' }),
+  ).toBeNull();
+  expect(mocks.revisarTodo).not.toHaveBeenCalled();
 });
 
 it('sigue mostrando la bandeja histórica, solo de lectura, tras confirmar y publicar resultados', async () => {

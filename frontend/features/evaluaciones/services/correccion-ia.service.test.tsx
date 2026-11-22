@@ -68,29 +68,36 @@ describe('correccionIaService', () => {
     mocks.patch.mockResolvedValue({ data: propuesta });
   });
 
-  it('solicita una propuesta con POST sin cuerpo', async () => {
-    const respuesta = {
-      propuesta_id: 42,
-      estado: 'pendiente',
-      intento: 1,
-    };
-    mocks.post.mockResolvedValueOnce({ data: respuesta });
-
-    await expect(
-      correccionIaService.solicitar(12, 7, 21, 'a'),
-    ).resolves.toEqual(respuesta);
-    expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
-      '/examenes/12/calificaciones/7/respuestas/21/a/ia',
-      undefined,
-      undefined,
-    );
-  });
-
   it('regenera una propuesta con POST en la ruta de regeneración', async () => {
     await correccionIaService.regenerar(12, 7, 21, 'b');
 
     expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
       '/examenes/12/calificaciones/7/respuestas/21/b/ia/regenerar',
+      undefined,
+      undefined,
+    );
+  });
+
+  it('solicita la revisión en lote con POST sin cuerpo', async () => {
+    const respuesta = {
+      solicitadas: 2,
+      omitidas: 1,
+      detalle_omitidas: [
+        {
+          estudiante_id: 8,
+          pregunta_id: 31,
+          letra: 'a',
+          motivo: 'La rendición no está enviada.',
+        },
+      ],
+    };
+    mocks.post.mockResolvedValueOnce({ data: respuesta });
+
+    await expect(correccionIaService.revisarTodo(12)).resolves.toEqual(
+      respuesta,
+    );
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
+      '/examenes/12/correcciones-ia/lote',
       undefined,
       undefined,
     );
@@ -111,18 +118,6 @@ describe('correccionIaService', () => {
     expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
       '/examenes/12/correcciones-ia',
       { params: filtros },
-    );
-  });
-
-  it('consulta el historial por inciso y codifica la letra en la ruta', async () => {
-    await correccionIaService.listarHistorial(12, 7, 21, 'a/b', {
-      estado: 'modificada',
-      limite: 25,
-    });
-
-    expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
-      '/examenes/12/calificaciones/7/respuestas/21/a%2Fb/ia',
-      { params: { estado: 'modificada', limite: 25 } },
     );
   });
 

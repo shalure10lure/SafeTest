@@ -8,14 +8,14 @@ import type {
   AdvertenciaAceptacionCorreccionIa,
   CorreccionIa,
   ErrorCorreccionIa,
-  SolicitarCorreccionIaResponse,
+  RegenerarCorreccionIaResponse,
 } from '../correccion-ia.types';
 import {
   correccionIaService,
   mensajeErrorCorreccionIa,
 } from '../services/correccion-ia.service';
 
-type PropuestaIaVista = CorreccionIa | SolicitarCorreccionIaResponse;
+type PropuestaIaVista = CorreccionIa | RegenerarCorreccionIaResponse;
 
 interface Props {
   propuesta: PropuestaIaVista;

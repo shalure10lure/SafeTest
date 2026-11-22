@@ -12,9 +12,8 @@ import type {
   DescartarCorreccionIaRequest,
   DescartarCorreccionIaResponse,
   FiltrosBandejaCorreccionIa,
-  FiltrosHistorialCorreccionIa,
   RegenerarCorreccionIaResponse,
-  SolicitarCorreccionIaResponse,
+  ResultadoLoteCorreccionIa,
 } from '../correccion-ia.types';
 
 interface ErrorHttpCorreccionIa {
@@ -75,18 +74,6 @@ class CorreccionIaService extends BaseService {
     super('');
   }
 
-  solicitar(
-    examenId: number,
-    estudianteId: number,
-    preguntaId: number,
-    letra: string,
-  ): Promise<SolicitarCorreccionIaResponse> {
-    return this.post<
-      SolicitarCorreccionIaResponse,
-      CuerpoVacioCorreccionIa
-    >(rutaInciso(examenId, estudianteId, preguntaId, letra), undefined);
-  }
-
   regenerar(
     examenId: number,
     estudianteId: number,
@@ -99,25 +86,19 @@ class CorreccionIaService extends BaseService {
     >(`${rutaInciso(examenId, estudianteId, preguntaId, letra)}/regenerar`, undefined);
   }
 
+  revisarTodo(examenId: number): Promise<ResultadoLoteCorreccionIa> {
+    return this.post<ResultadoLoteCorreccionIa, CuerpoVacioCorreccionIa>(
+      `/examenes/${examenId}/correcciones-ia/lote`,
+      undefined,
+    );
+  }
+
   listarPorExamen(
     examenId: number,
     filtros?: FiltrosBandejaCorreccionIa,
   ): Promise<BandejaCorreccionesIaResponse> {
     return this.get<BandejaCorreccionesIaResponse>(
       `/examenes/${examenId}/correcciones-ia`,
-      filtros === undefined ? undefined : { params: filtros },
-    );
-  }
-
-  listarHistorial(
-    examenId: number,
-    estudianteId: number,
-    preguntaId: number,
-    letra: string,
-    filtros?: FiltrosHistorialCorreccionIa,
-  ): Promise<CorreccionIa[]> {
-    return this.get<CorreccionIa[]>(
-      rutaInciso(examenId, estudianteId, preguntaId, letra),
       filtros === undefined ? undefined : { params: filtros },
     );
   }

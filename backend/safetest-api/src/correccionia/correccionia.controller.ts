@@ -116,6 +116,17 @@ export class CorreccionIaController {
     );
   }
 
+  @Post('correcciones-ia/lote')
+  @ValidarEntradaCorreccionIa('body', CuerpoVacioDto)
+  @HttpCode(HttpStatus.OK)
+  solicitarLote(
+    @Param('examenId', ParseIntPipe) examenId: number,
+    @Body() _cuerpo: CuerpoVacioDto,
+    @Req() request: Request,
+  ) {
+    return this.correccionIa.solicitarLote(examenId, this.docenteId(request));
+  }
+
   @Get('correcciones-ia')
   @ValidarEntradaCorreccionIa('query', ListarCorreccionesIaDto)
   listarPorExamen(

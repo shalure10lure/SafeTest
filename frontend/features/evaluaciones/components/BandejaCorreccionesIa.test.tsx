@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,6 +77,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe('BandejaCorreccionesIa', () => {
@@ -176,5 +177,72 @@ describe('BandejaCorreccionesIa', () => {
       await screen.findByText('Resultado provisional (generado con IA)'),
     ).toBeDefined();
     expect(mocks.listarPorExamen).toHaveBeenCalledTimes(2);
+  });
+
+  it('actualiza durante el lote y limpia el temporizador al desmontar', async () => {
+    vi.useFakeTimers();
+    mocks.listarPorExamen
+      .mockResolvedValueOnce(
+        respuesta([propuesta({ estado: 'procesando', puntaje_sugerido: null })]),
+      )
+      .mockResolvedValueOnce(
+        respuesta([propuesta({ estado: 'procesando', puntaje_sugerido: null })]),
+      );
+    const alFinalizar = vi.fn();
+    const bandeja = render(
+      <BandejaCorreccionesIa
+        examenId={12}
+        seguimientoLote
+        onSeguimientoFinalizado={alFinalizar}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.listarPorExamen).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(mocks.listarPorExamen).toHaveBeenCalledTimes(2);
+    expect(alFinalizar).not.toHaveBeenCalled();
+    expect(screen.getAllByText('En proceso').length).toBeGreaterThan(0);
+
+    bandeja.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(mocks.listarPorExamen).toHaveBeenCalledTimes(2);
+  });
+
+  it('refleja el estado generado al siguiente sondeo y finaliza el seguimiento', async () => {
+    vi.useFakeTimers();
+    mocks.listarPorExamen
+      .mockResolvedValueOnce(
+        respuesta([propuesta({ estado: 'procesando', puntaje_sugerido: null })]),
+      )
+      .mockResolvedValueOnce(respuesta([propuesta({ estado: 'generada' })]));
+    const alFinalizar = vi.fn();
+    render(
+      <BandejaCorreccionesIa
+        examenId={12}
+        seguimientoLote
+        onSeguimientoFinalizado={alFinalizar}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+
+    expect(mocks.listarPorExamen).toHaveBeenCalledTimes(2);
+    expect(alFinalizar).toHaveBeenCalledOnce();
+    expect(screen.getAllByText('Generada').length).toBeGreaterThan(0);
   });
 });

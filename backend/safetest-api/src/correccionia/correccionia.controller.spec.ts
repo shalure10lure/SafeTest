@@ -42,6 +42,11 @@ const servicio = {
     estado: 'pendiente',
     intento: 2,
   }),
+  solicitarLote: promesaMock({
+    solicitadas: 2,
+    omitidas: 0,
+    detalle_omitidas: [],
+  }),
   listarPorExamen: promesaMock({
     total: 1,
     propuestas: [PROPUESTA],
@@ -138,6 +143,29 @@ describe('CorreccionIa controllers', () => {
       .expect({ propuesta_id: 43, estado: 'pendiente', intento: 2 });
 
     expect(servicio.regenerarPropuesta).toHaveBeenCalledWith(1, 2, 3, 'A', 71);
+  });
+
+  it('solicita el lote con el docente autenticado y sin cuerpo', async () => {
+    await request(app.getHttpServer())
+      .post('/examenes/1/correcciones-ia/lote')
+      .send({})
+      .expect(200)
+      .expect({
+        solicitadas: 2,
+        omitidas: 0,
+        detalle_omitidas: [],
+      });
+
+    expect(servicio.solicitarLote).toHaveBeenCalledWith(1, 71);
+  });
+
+  it('rechaza campos extra en el cuerpo del lote sin llamar al servicio', async () => {
+    await request(app.getHttpServer())
+      .post('/examenes/1/correcciones-ia/lote')
+      .send({ docente_id: 999 })
+      .expect(400);
+
+    expect(servicio.solicitarLote).not.toHaveBeenCalled();
   });
 
   it('lista la bandeja del examen con filtros convertidos y docente del token', async () => {

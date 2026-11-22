@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   detalle: vi.fn(),
   resumen: vi.fn(),
   valorar: vi.fn(),
-  solicitar: vi.fn(),
   regenerar: vi.fn(),
   listarPorExamen: vi.fn(),
   obtenerDetalle: vi.fn(),
@@ -54,7 +53,6 @@ vi.mock('../services/calificaciones.service', () => ({
 
 vi.mock('../services/correccion-ia.service', () => ({
   correccionIaService: {
-    solicitar: mocks.solicitar,
     regenerar: mocks.regenerar,
     listarPorExamen: mocks.listarPorExamen,
     obtenerDetalle: mocks.obtenerDetalle,
@@ -214,9 +212,6 @@ beforeEach(() => {
   mocks.detalle.mockReset().mockResolvedValue(detalle());
   mocks.resumen.mockReset().mockResolvedValue(resumen());
   mocks.valorar.mockReset().mockResolvedValue({});
-  mocks.solicitar
-    .mockReset()
-    .mockResolvedValue({ propuesta_id: 77, estado: 'pendiente', intento: 1 });
   mocks.regenerar
     .mockReset()
     .mockResolvedValue({ propuesta_id: 78, estado: 'pendiente', intento: 2 });
@@ -238,11 +233,12 @@ afterEach(() => {
 });
 
 describe('RevisionEstudiante — propuestas de corrección IA', () => {
-  it('solo solicita al pulsar el botón y marca la propuesta pendiente como provisional', async () => {
+  it('recupera la propuesta activa desde la bandeja y ya no ofrece solicitud individual', async () => {
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta({ estado: 'pendiente', puntaje_sugerido: null })],
+    });
     await cargarPantalla();
-
-    expect(mocks.solicitar).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Sugerir con IA' }));
 
     expect(
       await screen.findByRole('heading', {
@@ -250,7 +246,8 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       }),
     ).toBeDefined();
     expect(screen.getByText('La propuesta está pendiente de procesamiento.')).toBeDefined();
-    expect(mocks.solicitar).toHaveBeenCalledWith(12, 8, 31, 'a');
+    expect(screen.queryByRole('button', { name: 'Sugerir con IA' })).toBeNull();
+    expect(mocks.listarPorExamen).toHaveBeenCalledTimes(1);
     expect(
       (screen.getByLabelText('Puntaje asignado') as HTMLInputElement).value,
     ).toBe('');
@@ -268,7 +265,6 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       puntaje: 4,
       retroalimentacion: null,
     });
-    expect(mocks.solicitar).not.toHaveBeenCalled();
   });
 
   it('muestra la propuesta generada y actualiza la nota oficial solo después de aceptarla', async () => {
@@ -295,8 +291,12 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       .mockResolvedValueOnce(detalle())
       .mockResolvedValue(detalleAceptado);
 
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta({ estado: 'pendiente', puntaje_sugerido: null })],
+    });
+
     await cargarPantalla();
-    fireEvent.click(screen.getByRole('button', { name: 'Sugerir con IA' }));
     await screen.findByText('La propuesta está pendiente de procesamiento.');
     expect(
       (screen.getByLabelText('Puntaje asignado') as HTMLInputElement).value,
@@ -316,7 +316,7 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
     ).toBe('');
 
     fireEvent.click(screen.getByRole('button', { name: 'Aceptar' }));
-    await screen.findByText('Propuesta aceptada y calificación oficial actualizada.');
+    await screen.findAllByText('Propuesta aceptada y calificación oficial actualizada.');
 
     expect(mocks.aceptar).toHaveBeenCalledWith(77, {
       version: 2,
@@ -393,7 +393,7 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
     ).toBe('');
 
     fireEvent.click(screen.getByRole('button', { name: 'Aceptar' }));
-    await screen.findByText('Propuesta aceptada y calificación oficial actualizada.');
+    await screen.findAllByText('Propuesta aceptada y calificación oficial actualizada.');
     expect(mocks.aceptar).toHaveBeenCalledWith(77, {
       version: 3,
       puntaje_confirmado: '4.25',
@@ -420,25 +420,19 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
   });
 
   it('muestra el error del worker y permite regenerar', async () => {
-    mocks.solicitar.mockResolvedValue({
-      propuesta_id: 77,
-      estado: 'pendiente',
-      intento: 1,
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [
+        propuesta({
+          estado: 'error',
+          puntaje_sugerido: null,
+          error_codigo: 'PROVEEDOR_ERROR',
+          error_mensaje: 'El proveedor no pudo procesar la respuesta.',
+        }),
+      ],
     });
-    mocks.obtenerDetalle.mockResolvedValue(
-      propuesta({
-        estado: 'error',
-        puntaje_sugerido: null,
-        error_codigo: 'PROVEEDOR_ERROR',
-        error_mensaje: 'El proveedor no pudo procesar la respuesta.',
-      }),
-    );
 
     await cargarPantalla();
-    fireEvent.click(screen.getByRole('button', { name: 'Sugerir con IA' }));
-    await screen.findByText('La propuesta está pendiente de procesamiento.');
-    await avanzarSondeo();
-
     expect(
       screen.getByText('El proveedor no pudo procesar la respuesta.'),
     ).toBeDefined();
@@ -503,7 +497,7 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       await screen.findByText('No fue posible recuperar las propuestas.'),
     ).toBeDefined();
     expect(screen.getByLabelText('Puntaje asignado')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Sugerir con IA' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Sugerir con IA' })).toBeNull();
   });
 
   it('limpia el temporizador de sondeo al desmontar la tarjeta', async () => {
@@ -553,6 +547,5 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       (screen.getByRole('button', { name: 'Descartar' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
-    expect(mocks.solicitar).not.toHaveBeenCalled();
   });
 });

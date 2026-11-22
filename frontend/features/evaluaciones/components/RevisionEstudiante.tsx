@@ -11,7 +11,6 @@ import { calificacionesService, mensajeErrorCalificaciones } from '../services/c
 import type {
   AceptarCorreccionIaResponse,
   CorreccionIa,
-  SolicitarCorreccionIaResponse,
 } from '../correccion-ia.types';
 import {
   correccionIaService,
@@ -21,7 +20,7 @@ import FormularioValoracion from './FormularioValoracion';
 import PropuestaCorreccionIa from './PropuestaCorreccionIa';
 
 type FilaInciso = { pregunta: PreguntaCalificacion; inciso: IncisoCalificacion };
-type PropuestaIaVista = CorreccionIa | SolicitarCorreccionIaResponse;
+type PropuestaIaVista = CorreccionIa;
 const clave = (fila: FilaInciso) => `${fila.pregunta.pregunta_id}-${fila.inciso.letra}`;
 const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const puntos = (n: number) => n.toLocaleString('es-BO', { maximumFractionDigits: 2 });
@@ -90,7 +89,6 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const [propuestasIa, setPropuestasIa] = useState<
     Record<string, PropuestaIaVista>
   >({});
-  const [solicitandoIa, setSolicitandoIa] = useState<string | null>(null);
 
   const rutaGeneral = `/docente/evaluaciones/${examenId}/calificaciones`;
   const cargar = useCallback(async () => {
@@ -220,29 +218,6 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
       throw new Error(mensajeErrorCalificaciones(fallo));
     } finally {
       setGuardando(null);
-    }
-  }
-
-  async function solicitarPropuesta(fila: FilaInciso) {
-    const identificador = clave(fila);
-    if (bloqueado || solicitandoIa !== null) return;
-    setError(null);
-    setSolicitandoIa(identificador);
-    try {
-      const propuesta = await correccionIaService.solicitar(
-        examenId,
-        estudianteId,
-        fila.pregunta.pregunta_id,
-        fila.inciso.letra,
-      );
-      setPropuestasIa((actuales) => ({
-        ...actuales,
-        [identificador]: propuesta,
-      }));
-    } catch (fallo: unknown) {
-      setError(mensajeErrorCorreccionIa(fallo));
-    } finally {
-      setSolicitandoIa(null);
     }
   }
 
@@ -392,9 +367,6 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                 ) : manuales.map((fila) => {
                   const identificador = clave(fila);
                   const propuestaIa = propuestasIa[identificador];
-                  const permiteNuevaPropuesta =
-                    !propuestaIa ||
-                    !estadosConPropuestaReutilizable.has(propuestaIa.estado);
                   return (
                     <div key={identificador} className="space-y-3">
                       <FormularioValoracion
@@ -405,18 +377,6 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                         onGuardar={guardarValoracion}
                         onSiguiente={pendientes.length > 1 && fila.inciso.pendiente_revision ? () => irAlSiguiente(fila) : undefined}
                       />
-                      {fila.inciso.pendiente_revision && permiteNuevaPropuesta && (
-                        <button
-                          type="button"
-                          disabled={bloqueado || solicitandoIa !== null}
-                          onClick={() => void solicitarPropuesta(fila)}
-                          className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:bg-slate-900 dark:text-violet-200"
-                        >
-                          {solicitandoIa === identificador
-                            ? 'Solicitando…'
-                            : 'Sugerir con IA'}
-                        </button>
-                      )}
                       {propuestaIa && (
                         <PropuestaCorreccionIa
                           key={propuestaIa.propuesta_id}

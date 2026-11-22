@@ -140,10 +140,12 @@ export default function FormularioValoracion({
             />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:col-span-2">
-            <button type="submit" disabled={bloqueado || guardando || !valido || !cambiado} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-              {guardando ? 'Guardando…' : 'Guardar revisión'}
-            </button>
-            {onSiguiente && <button type="button" onClick={onSiguiente} className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700">Siguiente pendiente →</button>}
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="submit" disabled={bloqueado || guardando || !valido || !cambiado} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                {guardando ? 'Guardando…' : 'Guardar revisión'}
+              </button>
+              {onSiguiente && <button type="button" onClick={onSiguiente} className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700">Siguiente pendiente →</button>}
+            </div>
           </div>
           {error && <p role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-2">{error}</p>}
           {guardado && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300 sm:col-span-2">Revisión guardada. Se actualizó la calificación en el backend.</p>}
