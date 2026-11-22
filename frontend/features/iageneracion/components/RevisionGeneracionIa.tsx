@@ -12,6 +12,7 @@ import {
 
 import { Badge, Card, type Tono } from '@/components/ui/Card';
 import LinkButton from '@/components/ui/LinkButton';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { ROUTES } from '@/constants/routes';
 import { mensajeErrorGeneracionIa } from '@/features/iageneracion/errores';
 import {
@@ -286,6 +287,10 @@ export default function RevisionGeneracionIa({
     const [propuestaEditando, setPropuestaEditando] = useState<number | null>(
         null,
     );
+    const [confirmacionPendiente, setConfirmacionPendiente] = useState<{
+        propuesta: PropuestaGeneracionIa;
+        tipo: 'aceptar' | 'descartar' | 'insertar';
+    } | null>(null);
     const propuestaInsertandoRef = useRef<number | null>(null);
 
     const cargar = useCallback(
@@ -376,11 +381,6 @@ export default function RevisionGeneracionIa({
         nuevoEstado: 'aceptar' | 'descartar',
     ) {
         const esAceptacion = nuevoEstado === 'aceptar';
-        const confirmacion = esAceptacion
-            ? '¿Aceptar esta propuesta? Todavía no se guardará en el banco de preguntas; para eso deberás usar «Insertar en el banco».'
-            : '¿Descartar esta propuesta? No se creará ni modificará ninguna pregunta del banco.';
-
-        if (!window.confirm(confirmacion)) return;
 
         setAccion({ propuestaId: propuesta.propuesta_id, tipo: nuevoEstado });
         setError('');
@@ -425,13 +425,6 @@ export default function RevisionGeneracionIa({
             return;
         }
 
-        if (
-            !window.confirm(
-                '¿Insertar esta propuesta aceptada en el banco de preguntas?',
-            )
-        ) {
-            return;
-        }
 
         propuestaInsertandoRef.current = propuesta.propuesta_id;
         setAccion({ propuestaId: propuesta.propuesta_id, tipo: 'insertar' });
@@ -661,12 +654,12 @@ export default function RevisionGeneracionIa({
                                 void guardar(propuesta.propuesta_id, dto)
                             }
                             onAceptar={() =>
-                                void cambiarEstado(propuesta, 'aceptar')
+                                setConfirmacionPendiente({ propuesta, tipo: 'aceptar' })
                             }
                             onDescartar={() =>
-                                void cambiarEstado(propuesta, 'descartar')
+                                setConfirmacionPendiente({ propuesta, tipo: 'descartar' })
                             }
-                            onInsertar={() => void insertar(propuesta)}
+                            onInsertar={() => setConfirmacionPendiente({ propuesta, tipo: 'insertar' })}
                         />
                     ))
                 )}
@@ -677,6 +670,64 @@ export default function RevisionGeneracionIa({
                     Volver al banco de preguntas
                 </LinkButton>
             </div>
+            <ConfirmDialog
+                abierto={confirmacionPendiente !== null}
+                titulo={
+                    confirmacionPendiente?.tipo === 'insertar'
+                        ? '¿Insertar en el banco?'
+                        : confirmacionPendiente?.tipo === 'aceptar'
+                          ? '¿Aceptar esta propuesta?'
+                          : '¿Descartar esta propuesta?'
+                }
+                textoConfirmar={
+                    confirmacionPendiente?.tipo === 'insertar'
+                        ? 'Insertar en el banco'
+                        : confirmacionPendiente?.tipo === 'aceptar'
+                          ? 'Aceptar propuesta'
+                          : 'Descartar propuesta'
+                }
+                textoCancelar="Cancelar"
+                varianteConfirmar={
+                    confirmacionPendiente?.tipo === 'descartar'
+                        ? 'destructiva'
+                        : 'normal'
+                }
+                procesando={accion !== null}
+                onCancelar={() => setConfirmacionPendiente(null)}
+                onConfirmar={async () => {
+                    const pendiente = confirmacionPendiente;
+                    if (!pendiente) return;
+
+                    if (pendiente.tipo === 'insertar') {
+                        await insertar(pendiente.propuesta);
+                    } else {
+                        await cambiarEstado(
+                            pendiente.propuesta,
+                            pendiente.tipo,
+                        );
+                    }
+
+                    setConfirmacionPendiente(null);
+                }}
+            >
+                {confirmacionPendiente?.tipo === 'insertar' ? (
+                    <p>
+                        ¿Quieres insertar esta propuesta aceptada en el banco
+                        de preguntas?
+                    </p>
+                ) : confirmacionPendiente?.tipo === 'aceptar' ? (
+                    <p>
+                        La propuesta será aceptada, pero todavía no se
+                        guardará en el banco. Para hacerlo deberás usar
+                        «Insertar en el banco».
+                    </p>
+                ) : (
+                    <p>
+                        ¿Quieres descartar esta propuesta? No se creará ni
+                        modificará ninguna pregunta del banco.
+                    </p>
+                )}
+            </ConfirmDialog>
         </main>
     );
 }
