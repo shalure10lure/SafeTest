@@ -370,8 +370,10 @@ describe('CorreccionIaService.solicitarLote', () => {
 
     const resultado = await solicitarLote(contexto.servicio);
 
-    expect(resultado.solicitadas).toBe(1);
-    expect(resultado.omitidas).toBe(5);
+    // El inciso 34 no tiene rúbrica ni solución, pero es de desarrollo: se
+    // corrige con el criterio predeterminado y por tanto se solicita.
+    expect(resultado.solicitadas).toBe(2);
+    expect(resultado.omitidas).toBe(4);
     expect(resultado.detalle_omitidas).toEqual([
       {
         estudiante_id: 22,
@@ -386,12 +388,6 @@ describe('CorreccionIaService.solicitarLote', () => {
         motivo: expect.stringContaining('vacía'),
       },
       {
-        estudiante_id: 24,
-        pregunta_id: 34,
-        letra: 'a',
-        motivo: expect.stringContaining('valor correcto'),
-      },
-      {
         estudiante_id: 25,
         pregunta_id: 35,
         letra: 'a',
@@ -404,7 +400,7 @@ describe('CorreccionIaService.solicitarLote', () => {
         motivo: expect.stringContaining('ya fue corregido'),
       },
     ]);
-    expect(contexto.propuestas).toHaveLength(2);
+    expect(contexto.propuestas).toHaveLength(3);
     expect(contexto.propuestas[1]).toMatchObject({
       estudiante_id: 21,
       examen_id: 7,
@@ -416,7 +412,7 @@ describe('CorreccionIaService.solicitarLote', () => {
       puntaje_sugerido: null,
       confianza: null,
     });
-    expect(contexto.correccionRepository.save).toHaveBeenCalledTimes(1);
+    expect(contexto.correccionRepository.save).toHaveBeenCalledTimes(2);
     expect(contexto.aplicarValoracionOficial).not.toHaveBeenCalled();
     expect(contexto.examenRepository.save).not.toHaveBeenCalled();
     expect(contexto.examenRepository.update).not.toHaveBeenCalled();
@@ -518,6 +514,41 @@ describe('CorreccionIaService.solicitarLote', () => {
     expect(contexto.propuestas).toHaveLength(2);
   });
 
+  it('acota la consulta de rendiciones al estudiante indicado', async () => {
+    const contexto = crearContextoLote({
+      respuestas: [
+        {
+          estudiante_id: 21,
+          pregunta_id: 31,
+          letra: 'a',
+          respuesta_texto: 'Respuesta válida',
+        },
+      ],
+    });
+
+    await contexto.servicio.solicitarLote(7, 12, 21);
+
+    const consulta = (
+      contexto.rendicionRepository.find.mock.calls as unknown as Array<
+        [{ where: Record<string, unknown> }]
+      >
+    )[0][0];
+    expect(consulta.where).toMatchObject({ examen_id: 7, estudiante_id: 21 });
+  });
+
+  it('sin estudiante consulta todas las rendiciones del examen', async () => {
+    const contexto = crearContextoLote({ respuestas: [] });
+
+    await solicitarLote(contexto.servicio);
+
+    const consulta = (
+      contexto.rendicionRepository.find.mock.calls as unknown as Array<
+        [{ where: Record<string, unknown> }]
+      >
+    )[0][0];
+    expect(consulta.where).not.toHaveProperty('estudiante_id');
+  });
+
   it('aplica el límite por defecto de 500 incisos', async () => {
     delete process.env.IA_CORRECCION_LOTE_MAX;
     const contexto = crearContextoLote({
@@ -586,3 +617,5 @@ describe('CorreccionIaService.solicitarLote', () => {
     expect(contexto.correccionRepository.save).not.toHaveBeenCalled();
   });
 });
+
+

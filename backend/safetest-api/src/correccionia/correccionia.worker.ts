@@ -15,6 +15,7 @@ import type {
 import { AI_CORRECCION_PROVIDER } from '../ia/providers/ai.provider';
 import type { AiProvider } from '../ia/providers/ai.provider';
 import { crearHashCriterio } from './correccionia.criterio';
+import { CONFIANZA_MAXIMA_CRITERIO_PREDETERMINADO } from './correccionia.criterio-predeterminado';
 import {
   describirFalloCorreccion,
   ErrorProcesamientoCorreccionIa,
@@ -103,10 +104,10 @@ export class CorreccionIaWorker
     try {
       await this.recuperarAbandonadas();
       this.ultimaRecuperacion = Date.now();
-    } catch {
+    } catch (error) {
       // La base puede no estar disponible al arrancar; el ciclo reintenta.
       this.logger.error(
-        'No se pudieron recuperar las propuestas abandonadas al arrancar.',
+        `No se pudieron recuperar las propuestas abandonadas al arrancar. ${describirCausa(error)}`,
       );
     }
 
@@ -185,14 +186,14 @@ export class CorreccionIaWorker
       }
 
       return lanzadas;
-    } catch {
+    } catch (error) {
       // Si la base aún no está disponible, no se repite el log cada ciclo.
       const ahora = Date.now();
 
       if (ahora - this.ultimoErrorCola >= INTERVALO_RECUPERACION_MS) {
         this.ultimoErrorCola = ahora;
         this.logger.error(
-          'No se pudo consultar la cola de correcciones pendientes.',
+          `No se pudo consultar la cola de correcciones pendientes. ${describirCausa(error)}`,
         );
       }
 
@@ -246,6 +247,18 @@ export class CorreccionIaWorker
       const hashCriterio = crearHashCriterio(contexto.criterio);
       const resultado = await this.proveedor.corregirRespuesta(solicitud);
       const normalizado = normalizarResultado(resultado, contexto.puntaje_max);
+
+      // Sin rúbrica ni solución del docente la confianza del modelo no es
+      // fiable: se limita para que la interfaz pida revisión cuidadosa.
+      if (
+        contexto.criterio_fuente === 'predeterminado' &&
+        normalizado.confianza !== null
+      ) {
+        normalizado.confianza = Math.min(
+          normalizado.confianza,
+          CONFIANZA_MAXIMA_CRITERIO_PREDETERMINADO,
+        );
+      }
 
       const persistencia = await this.almacen.guardarGenerada(
         propuestaId,
@@ -308,12 +321,32 @@ export class CorreccionIaWorker
 
     try {
       await this.recuperarAbandonadas();
-    } catch {
+    } catch (error) {
       this.logger.error(
-        'No se pudieron recuperar las propuestas abandonadas en este ciclo.',
+        `No se pudieron recuperar las propuestas abandonadas en este ciclo. ${describirCausa(error)}`,
       );
     }
   }
+}
+
+/**
+ * Resume la causa técnica de un fallo de base de datos para el log (código
+ * PostgreSQL y mensaje), sin incluir parámetros ni datos académicos. Una tabla
+ * o columna inexistente indica migraciones sin aplicar.
+ */
+export function describirCausa(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Causa: desconocida.';
+  }
+
+  const codigo = (error as { code?: unknown }).code;
+  const etiqueta = typeof codigo === 'string' ? ` [${codigo}]` : '';
+  const pista =
+    codigo === '42P01' || codigo === '42703'
+      ? ' Pista: faltan migraciones; ejecuta `npm run migration:run`.'
+      : '';
+
+  return `Causa${etiqueta}: ${error.message.slice(0, 300)}.${pista}`;
 }
 
 function construirSolicitud(
@@ -423,3 +456,5 @@ function esErrorCorreccionRespuesta(
 
   return error.ubicacion === undefined || typeof error.ubicacion === 'string';
 }
+
+

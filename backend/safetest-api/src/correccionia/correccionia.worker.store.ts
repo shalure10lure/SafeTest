@@ -17,6 +17,7 @@ import {
   MENSAJE_TIEMPO_AGOTADO,
   sanitizarMensajeError,
 } from './correccionia.errores';
+import { criterioPredeterminado } from './correccionia.criterio-predeterminado';
 import { CorreccionIa } from './entity/correccionia.entity';
 import type {
   AlmacenCorreccionIa,
@@ -29,6 +30,29 @@ import type {
 
 interface FilasAfectadas {
   propuesta_id: number;
+}
+
+/**
+ * Con PostgreSQL, TypeORM devuelve `[filas, conteo]` en las sentencias
+ * `UPDATE ... RETURNING`, y solo `filas` en los `SELECT`. Sin normalizar, el
+ * reclamo leía `filas[0]` como si fuera una fila (era el arreglo de filas) y
+ * devolvía siempre `null`: la propuesta quedaba en `procesando` sin que el
+ * worker la ejecutara jamás.
+ */
+export function extraerFilas(resultado: unknown): FilasAfectadas[] {
+  if (!Array.isArray(resultado)) {
+    return [];
+  }
+
+  if (
+    resultado.length === 2 &&
+    Array.isArray(resultado[0]) &&
+    typeof resultado[1] === 'number'
+  ) {
+    return resultado[0] as FilasAfectadas[];
+  }
+
+  return resultado as FilasAfectadas[];
 }
 
 const SQL_RECLAMAR = `
@@ -107,9 +131,9 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   async reclamar(ahora: Date): Promise<number | null> {
-    const filas = await this.dataSource.query<FilasAfectadas[]>(SQL_RECLAMAR, [
-      ahora,
-    ]);
+    const filas = extraerFilas(
+      await this.dataSource.query<unknown>(SQL_RECLAMAR, [ahora]),
+    );
 
     return filas[0]?.propuesta_id ?? null;
   }
@@ -210,7 +234,11 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
         order: { revisada_en: 'DESC' },
       });
 
-    const { criterio, fuente } = construirCriterio(solucion, referencia);
+    const { criterio, fuente } = construirCriterio(
+      solucion,
+      referencia,
+      inciso.tipo_respuesta,
+    );
 
     return {
       propuesta_id: propuesta.propuesta_id,
@@ -347,20 +375,27 @@ export class CorreccionIaWorkerStore implements AlmacenCorreccionIa {
     leaseSegundos: number,
     maxIntentos: number,
   ): Promise<ResultadoRecuperacionCorreccionIa> {
-    const cerradas = await this.dataSource.query<FilasAfectadas[]>(
-      SQL_CERRAR_PROCESANDO_DE_EXAMEN_CERRADO,
-      [ahora, leaseSegundos, MENSAJE_EXAMEN_PUBLICADO],
+    const cerradas = extraerFilas(
+      await this.dataSource.query<unknown>(
+        SQL_CERRAR_PROCESANDO_DE_EXAMEN_CERRADO,
+        [ahora, leaseSegundos, MENSAJE_EXAMEN_PUBLICADO],
+      ),
     );
-    const reencoladas = await this.dataSource.query<FilasAfectadas[]>(
-      SQL_REENCOLAR,
-      [ahora, leaseSegundos, maxIntentos],
+    const reencoladas = extraerFilas(
+      await this.dataSource.query<unknown>(SQL_REENCOLAR, [
+        ahora,
+        leaseSegundos,
+        maxIntentos,
+      ]),
     );
-    const agotadas = await this.dataSource.query<FilasAfectadas[]>(SQL_AGOTAR, [
-      ahora,
-      leaseSegundos,
-      maxIntentos,
-      MENSAJE_TIEMPO_AGOTADO,
-    ]);
+    const agotadas = extraerFilas(
+      await this.dataSource.query<unknown>(SQL_AGOTAR, [
+        ahora,
+        leaseSegundos,
+        maxIntentos,
+        MENSAJE_TIEMPO_AGOTADO,
+      ]),
+    );
 
     return {
       reencoladas: reencoladas.length,
@@ -423,6 +458,7 @@ function construirRespuestaEstudiante(
 function construirCriterio(
   solucion: SolucionInciso | null,
   referencia: IaSolucionReferencia | null,
+  tipoRespuesta: string,
 ): {
   criterio: CriterioCorreccionIa;
   fuente: FuenteCriterioCorreccionIa;
@@ -453,6 +489,11 @@ function construirCriterio(
       criterio: { solucion_referencia: textoReferencia },
       fuente: 'solucion_referencia',
     };
+  }
+
+  const predeterminado = criterioPredeterminado(tipoRespuesta);
+  if (predeterminado) {
+    return { criterio: predeterminado, fuente: 'predeterminado' };
   }
 
   throw new ErrorProcesamientoCorreccionIa(
@@ -489,3 +530,5 @@ function textoDesdeContenido(contenido: unknown): string {
 
   return partes.join('\n');
 }
+
+

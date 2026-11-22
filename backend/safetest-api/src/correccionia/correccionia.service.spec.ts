@@ -454,7 +454,23 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
       400,
       'RESPUESTA_VACIA',
     ],
-    ['criterios insuficientes', { soluciones: null }, 400, 'SIN_CRITERIOS'],
+    [
+      'criterios insuficientes en un inciso numérico',
+      {
+        soluciones: null,
+        inciso: { tipo_respuesta: 'numerica', puntaje_max: '10.00' },
+        respuesta: {
+          examen_id: 7,
+          estudiante_id: 21,
+          pregunta_id: 31,
+          letra: 'a',
+          estado_correccion: 'pendiente',
+          respuesta_texto: '42',
+        },
+      },
+      400,
+      'SIN_CRITERIOS',
+    ],
     [
       'puntaje máximo inválido',
       { inciso: { tipo_respuesta: 'desarrollo', puntaje_max: 'NaN' } },
@@ -1582,3 +1598,5 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     await worker.onModuleDestroy();
   });
 });
+
+

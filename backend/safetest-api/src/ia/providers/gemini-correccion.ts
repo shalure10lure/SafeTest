@@ -15,6 +15,7 @@ export const INSTRUCCION_SISTEMA_CORRECCION = [
   'El puntaje sugerido debe ser un número entre 0 y puntaje_max, inclusive, y tener como máximo dos decimales.',
   'La confianza debe ser nula o un número entre 0 y 1, inclusive.',
   'Incluye errores concretos detectados; usa una lista vacía si no detectas errores.',
+  'Si el criterio es un criterio predeterminado sin solución de referencia, no inventes una respuesta correcta única: valora pertinencia y coherencia, indica en la explicación que requiere revisión docente y usa confianza baja.',
 ].join(' ');
 
 export function construirPromptCorreccion(
@@ -248,3 +249,5 @@ function neutralizarEtiquetas(texto: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
+

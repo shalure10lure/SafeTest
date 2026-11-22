@@ -156,8 +156,29 @@ describe('CorreccionIa controllers', () => {
         detalle_omitidas: [],
       });
 
-    expect(servicio.solicitarLote).toHaveBeenCalledWith(1, 71);
+    expect(servicio.solicitarLote).toHaveBeenCalledWith(1, 71, undefined);
   });
+
+  it('acota el lote a un estudiante cuando se indica estudiante_id', async () => {
+    await request(app.getHttpServer())
+      .post('/examenes/1/correcciones-ia/lote')
+      .send({ estudiante_id: 21 })
+      .expect(200);
+
+    expect(servicio.solicitarLote).toHaveBeenCalledWith(1, 71, 21);
+  });
+
+  it.each([[0], [-3], ['abc'], [1.5]])(
+    'rechaza un estudiante_id inválido (%p) sin llamar al servicio',
+    async (valor) => {
+      await request(app.getHttpServer())
+        .post('/examenes/1/correcciones-ia/lote')
+        .send({ estudiante_id: valor })
+        .expect(400);
+
+      expect(servicio.solicitarLote).not.toHaveBeenCalled();
+    },
+  );
 
   it('rechaza campos extra en el cuerpo del lote sin llamar al servicio', async () => {
     await request(app.getHttpServer())
@@ -408,3 +429,5 @@ describe('CorreccionIa controllers', () => {
     expect(servicio.obtenerDetalle).not.toHaveBeenCalled();
   });
 });
+
+

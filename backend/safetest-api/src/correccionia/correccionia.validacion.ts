@@ -1,4 +1,5 @@
 import { incisoRespondido } from '../rendicion/validacion-respuesta';
+import { admiteCriterioPredeterminado } from './correccionia.criterio-predeterminado';
 import type { IaSolucionReferencia } from '../iasolucionreferencia/entity/iasolucionreferencia.entity';
 import type { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
 
@@ -130,7 +131,7 @@ function validarPuntajeMaximo(valor: number | string): number {
 function validarCriteriosSuficientes(
   entrada: Pick<
     EntradaValidacionSolicitudCorreccionIa,
-    'solucion_inciso' | 'solucion_referencia'
+    'solucion_inciso' | 'solucion_referencia' | 'tipo_respuesta'
   >,
 ): void {
   const valorCorrecto = entrada.solucion_inciso?.valor_correcto;
@@ -143,6 +144,12 @@ function validarCriteriosSuficientes(
     fechaRevision instanceof Date && Number.isFinite(fechaRevision.getTime());
 
   if (!tieneValorCorrectoFinito && !tieneRubrica && !tieneReferenciaRevisada) {
+    // Los incisos de desarrollo se corrigen con el criterio predeterminado,
+    // para que el docente no tenga que configurar nada antes de usar la IA.
+    if (admiteCriterioPredeterminado(entrada.tipo_respuesta)) {
+      return;
+    }
+
     throw new ErrorValidacionCorreccionIa(
       'SIN_CRITERIOS',
       'No hay un valor correcto finito, una rúbrica no vacía ni una solución de referencia revisada.',
@@ -178,3 +185,5 @@ function puntajeAusente(valor: number | string | null | undefined): boolean {
 function tieneMaximoDosDecimales(valor: number): boolean {
   return Math.abs(valor * 100 - Math.round(valor * 100)) <= 1e-7;
 }
+
+

@@ -1,9 +1,56 @@
 import { jest } from '@jest/globals';
 import type { DataSource } from 'typeorm';
 
-import { CorreccionIaWorkerStore } from './correccionia.worker.store';
+import {
+  CorreccionIaWorkerStore,
+  extraerFilas,
+} from './correccionia.worker.store';
+import { describirCausa } from './correccionia.worker';
 
 describe('CorreccionIaWorkerStore', () => {
+  it('reclama la fila cuando TypeORM devuelve [filas, conteo] en UPDATE ... RETURNING', async () => {
+    // Formato real de TypeORM + PostgreSQL verificado contra una base real.
+    const query = jest.fn(async () => [[{ propuesta_id: 88 }], 1]);
+    const store = new CorreccionIaWorkerStore({ query } as unknown as DataSource);
+
+    await expect(store.reclamar(new Date())).resolves.toBe(88);
+  });
+
+  it('devuelve null cuando UPDATE ... RETURNING no afecta filas ([[], 0])', async () => {
+    const query = jest.fn(async () => [[], 0]);
+    const store = new CorreccionIaWorkerStore({ query } as unknown as DataSource);
+
+    await expect(store.reclamar(new Date())).resolves.toBeNull();
+  });
+
+  it('cuenta filas reales (no el tamaño de la tupla) al recuperar abandonadas', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([[{ propuesta_id: 1 }], 1])
+      .mockResolvedValueOnce([[], 0])
+      .mockResolvedValueOnce([[{ propuesta_id: 2 }, { propuesta_id: 3 }], 2]);
+    const store = new CorreccionIaWorkerStore({ query } as unknown as DataSource);
+
+    await expect(
+      store.recuperarAbandonadas(new Date(), 120, 3),
+    ).resolves.toEqual({ cerradas: 1, reencoladas: 0, agotadas: 2 });
+  });
+
+  it('extraerFilas acepta SELECT (arreglo plano) y rechaza valores no arreglo', () => {
+    expect(extraerFilas([{ propuesta_id: 5 }])).toEqual([{ propuesta_id: 5 }]);
+    expect(extraerFilas([])).toEqual([]);
+    expect(extraerFilas(undefined)).toEqual([]);
+  });
+
+  it('describirCausa incluye código y pista de migraciones para tabla inexistente', () => {
+    const error = Object.assign(new Error('relation "correccion_ia" does not exist'), { code: '42P01' });
+    const texto = describirCausa(error);
+    expect(texto).toContain('[42P01]');
+    expect(texto).toContain('correccion_ia');
+    expect(texto).toContain('migration:run');
+    expect(describirCausa('x')).toContain('desconocida');
+  });
+
   it('reclama una fila con una sentencia SKIP LOCKED sin cambiar el intento funcional', async () => {
     const query = jest.fn(async (_sql: string, _parametros?: unknown[]) => [
       { propuesta_id: 73 },
@@ -61,3 +108,5 @@ describe('CorreccionIaWorkerStore', () => {
     expect(query.mock.calls[2][1]).toEqual([ahora, 120, 3, expect.any(String)]);
   });
 });
+
+

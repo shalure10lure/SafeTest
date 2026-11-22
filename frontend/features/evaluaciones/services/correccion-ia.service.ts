@@ -93,6 +93,19 @@ class CorreccionIaService extends BaseService {
     );
   }
 
+  /** Solicita propuestas solo para las respuestas pendientes de un estudiante. */
+  revisarEstudiante(
+    examenId: number,
+    estudianteId: number,
+  ): Promise<ResultadoLoteCorreccionIa> {
+    return this.post<
+      ResultadoLoteCorreccionIa,
+      { estudiante_id: number }
+    >(`/examenes/${examenId}/correcciones-ia/lote`, {
+      estudiante_id: estudianteId,
+    });
+  }
+
   listarPorExamen(
     examenId: number,
     filtros?: FiltrosBandejaCorreccionIa,
@@ -184,3 +197,5 @@ export function mensajeErrorCorreccionIa(error: unknown): string {
 }
 
 export const correccionIaService = new CorreccionIaService();
+
+
