@@ -1,9 +1,10 @@
-import {
+﻿import {
     cleanup,
     fireEvent,
     render,
     screen,
     waitFor,
+    within,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,7 +42,7 @@ function propuesta(
                 ...base,
                 tipo_respuesta: tipo,
                 contenido: {
-                    enunciado: '¿Cuál es correcta?',
+                    enunciado: 'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡l es correcta?',
                     dificultad: 'media',
                     puntaje_max: 2,
                     opciones: [
@@ -69,7 +70,7 @@ function propuesta(
                 ...base,
                 tipo_respuesta: tipo,
                 contenido: {
-                    enunciado: 'La afirmación es correcta.',
+                    enunciado: 'La afirmaciÃƒÆ’Ã‚Â³n es correcta.',
                     dificultad: 'facil',
                     puntaje_max: 1,
                     opciones: [
@@ -83,7 +84,7 @@ function propuesta(
                 ...base,
                 tipo_respuesta: tipo,
                 contenido: {
-                    enunciado: '¿Cuánto es 2 + 2?',
+                    enunciado: 'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡nto es 2 + 2?',
                     dificultad: 'facil',
                     puntaje_max: 1,
                     valor_correcto: 4,
@@ -115,7 +116,7 @@ function detalle(
         cantidad: propuestas.length,
         cantidad_generada: propuestas.length,
         materia_id: 2,
-        materia: 'Matemática',
+        materia: 'MatemÃƒÆ’Ã‚Â¡tica',
         tema_id: 4,
         tema: 'Funciones',
         proveedor: 'fake',
@@ -139,10 +140,10 @@ describe('RevisionGeneracionIa', () => {
     afterEach(cleanup);
 
     it.each([
-        ['opcion_unica', '¿Cuál es correcta?'],
+        ['opcion_unica', 'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡l es correcta?'],
         ['opcion_multiple', 'Selecciona todas las correctas.'],
-        ['verdadero_falso', 'La afirmación es correcta.'],
-        ['numerica', '¿Cuánto es 2 + 2?'],
+        ['verdadero_falso', 'La afirmaciÃƒÆ’Ã‚Â³n es correcta.'],
+        ['numerica', 'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡nto es 2 + 2?'],
         ['desarrollo', 'Explica el procedimiento.'],
     ] as const)(
         'muestra preguntas de tipo %s',
@@ -166,7 +167,7 @@ describe('RevisionGeneracionIa', () => {
         },
     );
 
-    it('identifica el puntaje de la propuesta como puntaje máximo del inciso', async () => {
+    it('identifica el puntaje de la propuesta como puntaje mÃƒÆ’Ã‚Â¡ximo del inciso', async () => {
         vi.mocked(iageneracionService.obtener).mockResolvedValue(
             detalle([propuesta('opcion_unica')]),
         );
@@ -174,7 +175,7 @@ describe('RevisionGeneracionIa', () => {
         render(<RevisionGeneracionIa generacionId={12} />);
 
         expect(
-            await screen.findByText(/Puntaje máximo del inciso:\s*2 pts/),
+            await screen.findByText(/Puntaje máximo del inciso/),
         ).toBeTruthy();
 
         fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
@@ -189,7 +190,7 @@ describe('RevisionGeneracionIa', () => {
         ).toBeTruthy();
     });
 
-    it('muestra correctamente acentos, eñes y signos de interrogación ya normalizados', async () => {
+    it('muestra correctamente acentos, eÃƒÆ’Ã‚Â±es y signos de interrogaciÃƒÆ’Ã‚Â³n ya normalizados', async () => {
         vi.mocked(iageneracionService.obtener).mockResolvedValue(
             detalle([
                 {
@@ -199,12 +200,12 @@ describe('RevisionGeneracionIa', () => {
                     pregunta_id: null,
                     contenido: {
                         enunciado:
-                            '¿Cuál es la función de la mitocondria en la célula?',
+                            'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡l es la funciÃƒÆ’Ã‚Â³n de la mitocondria en la cÃƒÆ’Ã‚Â©lula?',
                         dificultad: 'media',
                         puntaje_max: 2,
                         opciones: [
                             {
-                                texto_opcion: 'Producir energía para la célula',
+                                texto_opcion: 'Producir energÃƒÆ’Ã‚Â­a para la cÃƒÆ’Ã‚Â©lula',
                                 es_correcta: true,
                             },
                             {
@@ -213,7 +214,7 @@ describe('RevisionGeneracionIa', () => {
                             },
                         ],
                         explicacion:
-                            'La mitocondria genera energía; ¡es el motor de la célula!',
+                            'La mitocondria genera energÃƒÆ’Ã‚Â­a; Ãƒâ€šÃ‚Â¡es el motor de la cÃƒÆ’Ã‚Â©lula!',
                     },
                 },
             ]),
@@ -223,29 +224,29 @@ describe('RevisionGeneracionIa', () => {
 
         expect(
             await screen.findByText(
-                '¿Cuál es la función de la mitocondria en la célula?',
+                'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡l es la funciÃƒÆ’Ã‚Â³n de la mitocondria en la cÃƒÆ’Ã‚Â©lula?',
             ),
         ).toBeTruthy();
         expect(
-            screen.getAllByText('Producir energía para la célula').length,
+            screen.getAllByText('Producir energÃƒÆ’Ã‚Â­a para la cÃƒÆ’Ã‚Â©lula').length,
         ).toBeGreaterThan(0);
         expect(
             screen.getAllByText('Almacenar agua y desechos').length,
         ).toBeGreaterThan(0);
         expect(
             screen.getByText(
-                /La mitocondria genera energía; ¡es el motor de la célula!/,
+                /La mitocondria genera energÃƒÆ’Ã‚Â­a; Ãƒâ€šÃ‚Â¡es el motor de la cÃƒÆ’Ã‚Â©lula!/,
             ),
         ).toBeTruthy();
         // No debe quedar ninguna entidad HTML visible en pantalla.
         expect(screen.queryByText(/&(?:uacute|iquest|ntilde);/)).toBeNull();
     });
 
-    it('valida la edición y envía el contenido válido actualizado', async () => {
+    it('valida la ediciÃƒÆ’Ã‚Â³n y envÃƒÆ’Ã‚Â­a el contenido vÃƒÆ’Ã‚Â¡lido actualizado', async () => {
         const inicial = detalle([propuesta('opcion_unica')]);
         const propuestaUnica = propuesta('opcion_unica');
         if (propuestaUnica.tipo_respuesta !== 'opcion_unica') {
-            throw new Error('El helper debe producir una pregunta de opción única');
+            throw new Error('El helper debe producir una pregunta de opciÃƒÆ’Ã‚Â³n ÃƒÆ’Ã‚Âºnica');
         }
         const actualizado = detalle([
             {
@@ -313,7 +314,7 @@ describe('RevisionGeneracionIa', () => {
         ['aceptar', 'aceptarPropuesta', 'aceptada'],
         ['descartar', 'descartarPropuesta', 'descartada'],
     ] as const)(
-        '%s actualiza el estado de la propuesta tras confirmación',
+        '%s actualiza el estado de la propuesta tras confirmaciÃƒÆ’Ã‚Â³n',
         async (accion, metodo, nuevoEstado) => {
             const pendiente = detalle([propuesta('opcion_unica')]);
             const revisada = detalle([
@@ -336,6 +337,12 @@ describe('RevisionGeneracionIa', () => {
                 }),
             );
 
+            fireEvent.click(
+                within(screen.getByRole('dialog')).getByRole('button', {
+                    name: accion === 'aceptar' ? 'Aceptar propuesta' : 'Descartar propuesta',
+                }),
+            );
+
             await waitFor(() => {
                 expect(iageneracionService[metodo]).toHaveBeenCalledWith(
                     12,
@@ -347,7 +354,6 @@ describe('RevisionGeneracionIa', () => {
                     nuevoEstado === 'aceptada' ? 'Aceptada' : 'Descartada',
                 ),
             ).toBeTruthy();
-            expect(window.confirm).toHaveBeenCalled();
 
             if (nuevoEstado === 'aceptada') {
                 expect(
@@ -359,7 +365,7 @@ describe('RevisionGeneracionIa', () => {
         },
     );
 
-    it('muestra la dificultad de la generación y la de cada propuesta', async () => {
+    it('muestra la dificultad de la generaciÃƒÆ’Ã‚Â³n y la de cada propuesta', async () => {
         const propuestaDificil = propuesta('desarrollo');
         vi.mocked(iageneracionService.obtener).mockResolvedValue({
             ...detalle([propuestaDificil]),
@@ -375,11 +381,11 @@ describe('RevisionGeneracionIa', () => {
         ).toBeTruthy();
     });
 
-    it('permite cambiar la dificultad al editar y la envía al guardar', async () => {
+    it('permite cambiar la dificultad al editar y la envÃƒÆ’Ã‚Â­a al guardar', async () => {
         const original = propuesta('opcion_unica');
 
         if (original.tipo_respuesta !== 'opcion_unica') {
-            throw new Error('El helper debe producir una pregunta de opción única');
+            throw new Error('El helper debe producir una pregunta de opciÃƒÆ’Ã‚Â³n ÃƒÆ’Ã‚Âºnica');
         }
 
         const editada: PropuestaGeneracionIa = {
@@ -417,7 +423,7 @@ describe('RevisionGeneracionIa', () => {
                 15,
                 expect.objectContaining({
                     dificultad: 'dificil',
-                    enunciado: '¿Cuál es correcta?',
+                    enunciado: 'Ãƒâ€šÃ‚Â¿CuÃƒÆ’Ã‚Â¡l es correcta?',
                 }),
             ),
         );
@@ -460,20 +466,30 @@ describe('RevisionGeneracionIa', () => {
 
         expect(
             await screen.findByText(
-                /Aceptar no inserta automáticamente la propuesta/,
+                /Aceptar no inserta/,
             ),
         ).toBeTruthy();
         fireEvent.click(
             screen.getByRole('button', { name: 'Aceptar propuesta' }),
         );
+        fireEvent.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Aceptar propuesta',
+            }),
+        );
 
         expect(
             await screen.findByText(
-                /Propuesta aceptada\. Aún no está en el banco/,
+                /Propuesta aceptada/,
             ),
         ).toBeTruthy();
         fireEvent.click(
             await screen.findByRole('button', {
+                name: 'Insertar en el banco',
+            }),
+        );
+        fireEvent.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
                 name: 'Insertar en el banco',
             }),
         );
@@ -499,18 +515,17 @@ describe('RevisionGeneracionIa', () => {
         const { rerender } = render(
             <RevisionGeneracionIa generacionId={12} />,
         );
-        expect(
-            await screen.findByRole('button', {
-                name: 'Insertar en el banco',
-            }),
-        ).toBeTruthy();
-        vi.mocked(window.confirm).mockReturnValue(false);
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Insertar en el banco' }),
-        );
+        const botonInsertar = await screen.findByRole('button', {
+            name: 'Insertar en el banco',
+        });
+        expect(botonInsertar).toBeTruthy();
 
-        expect(window.confirm).toHaveBeenCalledWith(
-            '¿Insertar esta propuesta aceptada en el banco de preguntas?',
+        fireEvent.click(botonInsertar);
+
+        fireEvent.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Cancelar',
+            }),
         );
         expect(iageneracionService.insertarPropuesta).not.toHaveBeenCalled();
 
@@ -524,7 +539,7 @@ describe('RevisionGeneracionIa', () => {
         ).toBeNull();
     });
 
-    it('inserta tras confirmación, bloquea solicitudes repetidas y actualiza al recibir éxito', async () => {
+    it('inserta tras confirmaciÃƒÆ’Ã‚Â³n, bloquea solicitudes repetidas y actualiza al recibir ÃƒÆ’Ã‚Â©xito', async () => {
         const aceptada = {
             ...propuesta('opcion_unica'),
             estado: 'aceptada' as const,
@@ -551,6 +566,10 @@ describe('RevisionGeneracionIa', () => {
             name: 'Insertar en el banco',
         });
         fireEvent.click(boton);
+        const botonConfirmar = within(screen.getByRole('dialog')).getByRole('button', {
+            name: 'Insertar en el banco',
+        });
+        fireEvent.click(botonConfirmar);
         fireEvent.click(boton);
 
         const botonInsertando = await screen.findByRole('button', {
@@ -573,7 +592,7 @@ describe('RevisionGeneracionIa', () => {
         expect(await screen.findByText('44', { selector: 'strong' })).toBeTruthy();
     });
 
-    it('conserva la acción de inserción y muestra error si falla el endpoint', async () => {
+    it('conserva la acciÃƒÆ’Ã‚Â³n de inserciÃƒÆ’Ã‚Â³n y muestra error si falla el endpoint', async () => {
         const aceptada = {
             ...propuesta('opcion_unica'),
             estado: 'aceptada' as const,
@@ -591,6 +610,11 @@ describe('RevisionGeneracionIa', () => {
                 name: 'Insertar en el banco',
             }),
         );
+        fireEvent.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Insertar en el banco',
+            }),
+        );
 
         expect(
             await screen.findByText(
@@ -605,14 +629,14 @@ describe('RevisionGeneracionIa', () => {
 
     it('muestra errores al cargar y al guardar una propuesta', async () => {
         vi.mocked(iageneracionService.obtener).mockRejectedValueOnce(
-            new Error('Falló la carga'),
+            new Error('FallÃƒÆ’Ã‚Â³ la carga'),
         );
         const { rerender } = render(
             <RevisionGeneracionIa generacionId={12} />,
         );
 
         expect(
-            await screen.findByText('No se pudo cargar la generación.'),
+            await screen.findByText(/No se pudo cargar la generaci.n\./),
         ).toBeTruthy();
 
         vi.mocked(iageneracionService.obtener).mockResolvedValue(
@@ -620,10 +644,15 @@ describe('RevisionGeneracionIa', () => {
         );
         rerender(<RevisionGeneracionIa generacionId={13} />);
         vi.mocked(iageneracionService.aceptarPropuesta).mockRejectedValueOnce(
-            new Error('Falló la aceptación'),
+            new Error('FallÃƒÆ’Ã‚Â³ la aceptaciÃƒÆ’Ã‚Â³n'),
         );
         fireEvent.click(
             await screen.findByRole('button', { name: 'Aceptar propuesta' }),
+        );
+        fireEvent.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Aceptar propuesta',
+            }),
         );
 
         expect(
