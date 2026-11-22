@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ROUTES } from '@/constants/routes';
 import Link from 'next/link';
 
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { temasService } from '@/features/temas/services/temas.service';
 import { materiasService } from '@/features/materias/services/materias.service';
 import { mensajeDeError } from '@/features/evaluaciones/mensaje-error';
@@ -17,6 +18,7 @@ export default function TemasPage() {
     const [error, setError] = useState<string | null>(null);
     const [eliminandoId, setEliminandoId] = useState<number | null>(null);
     const [errorEliminacion, setErrorEliminacion] = useState<string | null>(null);
+    const [temaPendienteEliminar, setTemaPendienteEliminar] = useState<Tema | null>(null);
 
     const cargarDatos = useCallback(async () => {
         try {
@@ -42,14 +44,10 @@ export default function TemasPage() {
         void cargarDatos();
     }, [cargarDatos]);
 
-    async function eliminarTema(tema: Tema) {
-        const confirmado = window.confirm(
-            `¿Eliminar el tema "${tema.nombre_tema}"? Esta acción no se puede deshacer.`,
-        );
+    async function eliminarTema() {
+        const tema = temaPendienteEliminar;
 
-        if (!confirmado) {
-            return;
-        }
+        if (!tema) return;
 
         try {
             setEliminandoId(tema.tema_id);
@@ -66,6 +64,7 @@ export default function TemasPage() {
             );
         } finally {
             setEliminandoId(null);
+            setTemaPendienteEliminar(null);
         }
     }
 
@@ -193,7 +192,7 @@ export default function TemasPage() {
 
                                                     <button
                                                         type="button"
-                                                        onClick={() => void eliminarTema(tema)}
+                                                        onClick={() => setTemaPendienteEliminar(tema)}
                                                         disabled={eliminandoId === tema.tema_id}
                                                         className="font-medium text-red-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                                                     >
@@ -211,6 +210,21 @@ export default function TemasPage() {
                     </div>
                 )}
             </section>
+            <ConfirmDialog
+                abierto={temaPendienteEliminar !== null}
+                titulo="¿Eliminar tema?"
+                textoConfirmar="Eliminar tema"
+                varianteConfirmar="destructiva"
+                onConfirmar={() => void eliminarTema()}
+                onCancelar={() => setTemaPendienteEliminar(null)}
+                procesando={eliminandoId !== null}
+            >
+                <p>
+                    ¿Estás seguro de que deseas eliminar el tema
+                    {' "'}{temaPendienteEliminar?.nombre_tema}{'"'}?
+                </p>
+                <p>Esta acción no se puede deshacer.</p>
+            </ConfirmDialog>
         </main>
     );
 }

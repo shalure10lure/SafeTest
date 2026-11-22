@@ -26,14 +26,14 @@ export function usePreguntas(filtros: FiltrosPreguntas = {}) {
         const vigente = () => peticion === ultimaPeticion.current;
 
         try {
-            setIsLoading(true);
-            setError(null);
-
             const datos = await preguntasService.getAll(
                 JSON.parse(filtrosKey) as FiltrosPreguntas,
             );
 
-            if (vigente()) setPreguntas(datos);
+            if (vigente()) {
+                setPreguntas(datos);
+                setError(null);
+            }
         } catch {
             if (vigente()) {
                 setError('No se pudieron cargar las preguntas.');
@@ -45,12 +45,6 @@ export function usePreguntas(filtros: FiltrosPreguntas = {}) {
 
     const eliminarPregunta = useCallback(
         async (id: number) => {
-            const confirmar = window.confirm(
-                '¿Estás seguro de que deseas eliminar esta pregunta?',
-            );
-
-            if (!confirmar) return;
-
             try {
                 setIsDeleting(true);
                 setErrorEliminacion(null);
@@ -78,7 +72,17 @@ export function usePreguntas(filtros: FiltrosPreguntas = {}) {
     }, []);
 
     useEffect(() => {
-        void cargarPreguntas();
+        let cancelado = false;
+
+        void Promise.resolve().then(() => {
+            if (!cancelado) {
+                void cargarPreguntas();
+            }
+        });
+
+        return () => {
+            cancelado = true;
+        };
     }, [cargarPreguntas]);
 
     return {

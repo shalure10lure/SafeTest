@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { estadisticasService } from '../services/estadisticas.service';
 import type {
+    ComparacionPeriodos,
     EstadisticasMateria,
     MateriaEstadistica,
 } from '../types';
@@ -14,6 +15,9 @@ export function useEstadisticas() {
     const [estadisticas, setEstadisticas] = useState<EstadisticasMateria | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [comparacion, setComparacion] = useState<ComparacionPeriodos | null>(null);
+    const [isLoadingComparacion, setIsLoadingComparacion] = useState(false);
+    const [errorComparacion, setErrorComparacion] = useState<string | null>(null);
 
     const cargarMaterias = useCallback(async () => {
         try {
@@ -51,6 +55,32 @@ export function useEstadisticas() {
         }
     }, []);
 
+    const compararPeriodos = useCallback(async (
+        materiaId: number,
+        periodoIds: number[],
+    ) => {
+        try {
+            setIsLoadingComparacion(true);
+            setErrorComparacion(null);
+
+            const datos = await estadisticasService.compararPeriodos(
+                materiaId,
+                periodoIds,
+            );
+
+            setComparacion(datos);
+        } catch {
+            setComparacion(null);
+            setErrorComparacion('No se pudo realizar la comparación de periodos');
+        } finally {
+            setIsLoadingComparacion(false);
+        }
+    }, []);
+    const limpiarComparacion = useCallback(() => {
+        setComparacion(null);
+        setErrorComparacion(null);
+    }, []);
+
     useEffect(() => {
         cargarMaterias();
     }, [cargarMaterias]);
@@ -69,5 +99,11 @@ export function useEstadisticas() {
         isLoading,
         error,
         refetch: cargarMaterias,
+        comparacion,
+        isLoadingComparacion,
+        errorComparacion,
+        compararPeriodos,
+        setComparacion,
+        limpiarComparacion,
     };
 }

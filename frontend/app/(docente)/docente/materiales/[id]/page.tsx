@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { RotateCw } from 'lucide-react';
 
@@ -8,6 +9,7 @@ import { ROUTES } from '@/constants/routes';
 import RoleGuard from '@/features/auth/components/RoleGuard';
 import DetalleMaterial from '@/features/materiales/components/DetalleMaterial';
 import { useMaterialDetalle } from '@/features/materiales/hooks/useMaterialDetalle';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 const BOTON_SECUNDARIO =
     'inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600';
@@ -36,10 +38,23 @@ export default function DetalleMaterialPage() {
         limpiarMensajes,
     } = useMaterialDetalle(idValido ? id : null);
 
-    async function eliminarMaterial() {
-        const eliminado = await eliminar();
+    const [confirmacionPendiente, setConfirmacionPendiente] = useState<
+        'revocar' | 'eliminar' | null
+    >(null);
 
-        if (eliminado) router.push(ROUTES.docente.materiales);
+    async function confirmarAccionPendiente() {
+        if (confirmacionPendiente === 'revocar') {
+            await revocar();
+            setConfirmacionPendiente(null);
+            return;
+        }
+
+        if (confirmacionPendiente === 'eliminar') {
+            const eliminado = await eliminar();
+            setConfirmacionPendiente(null);
+
+            if (eliminado) router.push(ROUTES.docente.materiales);
+        }
     }
 
     return (
@@ -127,10 +142,45 @@ export default function DetalleMaterialPage() {
                         mensaje={mensaje}
                         onLimpiarMensajes={limpiarMensajes}
                         onAutorizar={autorizar}
-                        onRevocar={revocar}
-                        onEliminar={() => void eliminarMaterial()}
+                        onRevocar={() => setConfirmacionPendiente('revocar')}
+                        onEliminar={() => setConfirmacionPendiente('eliminar')}
                     />
                 )}
+                <ConfirmDialog
+                    abierto={confirmacionPendiente !== null}
+                    titulo={
+                        confirmacionPendiente === 'revocar'
+                            ? '¿Revocar autorización para IA?'
+                            : '¿Eliminar material?'
+                    }
+                    textoConfirmar={
+                        confirmacionPendiente === 'revocar'
+                            ? 'Revocar autorización'
+                            : 'Eliminar material'
+                    }
+                    varianteConfirmar="destructiva"
+                    onConfirmar={() => void confirmarAccionPendiente()}
+                    onCancelar={() => setConfirmacionPendiente(null)}
+                    procesando={accion !== null}
+                >
+                    {confirmacionPendiente === 'revocar' ? (
+                        <>
+                            <p>
+                                ¿Revocar la autorización de &quot;{material?.titulo}&quot; para IA?
+                            </p>
+                            <p>
+                                Dejará de usarse en nuevas generaciones de preguntas.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p>
+                                ¿Eliminar el material &quot;{material?.titulo}&quot;?
+                            </p>
+                            <p>Esta acción no se puede deshacer.</p>
+                        </>
+                    )}
+                </ConfirmDialog>
             </main>
         </RoleGuard>
     );

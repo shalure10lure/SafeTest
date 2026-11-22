@@ -3,6 +3,8 @@
 
 import { useMemo, useState } from 'react';
 
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+
 import { useMaterias } from '@/features/materias/hooks/useMaterias';
 import { useTemas } from '@/features/temas/hooks/useTemas';
 
@@ -20,6 +22,7 @@ export default function PreguntasPage() {
     const [materiaId, setMateriaId] = useState('');
     const [temaId, setTemaId] = useState('');
     const [tipo, setTipo] = useState('');
+    const [preguntaPendiente, setPreguntaPendiente] = useState<number | null>(null);
 
     const buscarDiferido = useDebouncedValor(buscar, 350);
 
@@ -58,6 +61,13 @@ export default function PreguntasPage() {
         eliminarPregunta,
         limpiarErrorEliminacion,
     } = usePreguntas(filtros);
+
+    async function confirmarEliminacion() {
+        if (preguntaPendiente === null) return;
+
+        await eliminarPregunta(preguntaPendiente);
+        setPreguntaPendiente(null);
+    }
 
     const hayFiltros = Boolean(
         materiaId || temaId || tipo || buscar.trim(),
@@ -159,8 +169,25 @@ export default function PreguntasPage() {
                 error={error}
                 hayFiltros={hayFiltros}
                 onLimpiarFiltros={limpiarFiltros}
-                onEliminar={eliminarPregunta}
+                onEliminar={(id) => setPreguntaPendiente(id)}
             />
+            <ConfirmDialog
+                abierto={preguntaPendiente !== null}
+                titulo="¿Eliminar esta pregunta?"
+                textoConfirmar="Eliminar pregunta"
+                textoCancelar="Cancelar"
+                varianteConfirmar="destructiva"
+                procesando={isDeleting}
+                onCancelar={() => setPreguntaPendiente(null)}
+                onConfirmar={() => void confirmarEliminacion()}
+            >
+                <p>
+                    ¿Estás seguro de que deseas eliminar esta pregunta?
+                </p>
+                <p>
+                    Esta acción no se puede deshacer.
+                </p>
+            </ConfirmDialog>
         </main>
     );
 }

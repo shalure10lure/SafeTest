@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { mensajeErrorCalificaciones } from '../services/calificaciones.service';
 import {
   correoResultadosService,
@@ -25,15 +26,19 @@ export default function CorreoResultadosPanel({
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [reintentando, setReintentando] = useState(false);
+  const [confirmacionAbierta, setConfirmacionAbierta] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   useEffect(() => {
     let activo = true;
-    setCargando(true);
-    setError(null);
     correoResultadosService.estado(examenId)
-      .then((resultado) => { if (activo) setDatos(resultado); })
+      .then((resultado) => {
+        if (activo) {
+          setDatos(resultado);
+          setError(null);
+        }
+      })
       .catch((fallo: unknown) => { if (activo) setError(mensajeErrorCalificaciones(fallo)); })
       .finally(() => { if (activo) setCargando(false); });
     return () => { activo = false; };
@@ -57,7 +62,6 @@ export default function CorreoResultadosPanel({
   }
 
   async function reintentar() {
-    if (!window.confirm('¿Reintentar los correos pendientes o con error? Un fallo de red anterior podría haber entregado el mensaje sin confirmación.')) return;
     setReintentando(true);
     setError(null);
     setMensaje(null);
@@ -122,7 +126,7 @@ export default function CorreoResultadosPanel({
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50 dark:border-slate-700"
                 >Actualizar</button>
                 {(datos.errores > 0 || datos.pendientes > 0) && (
-                  <button type="button" disabled={reintentando} onClick={() => void reintentar()} className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+                  <button type="button" disabled={reintentando} onClick={() => setConfirmacionAbierta(true)} className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
                     {reintentando ? 'Reintentando…' : 'Reintentar fallidos'}
                   </button>
                 )}
@@ -151,6 +155,27 @@ export default function CorreoResultadosPanel({
           )}
         </>
       )}
+      <ConfirmDialog
+        abierto={confirmacionAbierta}
+        titulo="¿Reintentar el envío de correos?"
+        textoConfirmar="Reintentar envíos"
+        textoCancelar="Cancelar"
+        procesando={reintentando}
+        onCancelar={() => setConfirmacionAbierta(false)}
+        onConfirmar={async () => {
+          await reintentar();
+          setConfirmacionAbierta(false);
+        }}
+      >
+        <p>
+          Se volverán a intentar los correos pendientes o con error.
+        </p>
+        <p>
+          Ten en cuenta que un fallo de red anterior podría haber entregado
+          el mensaje sin que se recibiera la confirmación. Esto podría
+          ocasionar un correo duplicado.
+        </p>
+      </ConfirmDialog>
     </section>
   );
 }

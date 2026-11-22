@@ -90,13 +90,6 @@ export function useMaterialDetalle(id: number | null) {
         async (autorizado: boolean) => {
             if (!materialActual || accion) return;
 
-            if (!autorizado) {
-                const confirmar = window.confirm(
-                    `¿Revocar la autorización de "${materialActual.titulo}" para IA? Dejará de usarse en nuevas generaciones de preguntas.`,
-                );
-
-                if (!confirmar) return;
-            }
 
             try {
                 setAccion(autorizado ? 'autorizando' : 'revocando');
@@ -157,11 +150,6 @@ export function useMaterialDetalle(id: number | null) {
     const eliminar = useCallback(async (): Promise<boolean> => {
         if (!materialActual || accion) return false;
 
-        const confirmar = window.confirm(
-            `¿Eliminar el material "${materialActual.titulo}"? Esta acción no se puede deshacer.`,
-        );
-
-        if (!confirmar) return false;
 
         try {
             setAccion('eliminando');
