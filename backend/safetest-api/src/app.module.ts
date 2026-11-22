@@ -6,12 +6,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
-import { CategoriaModule } from './categoria/categoria.module';
 import { AuthModule } from './auth/auth.module';
 import { ParaleloModule } from './paralelo/paralelo.module';
 
 import { AsignacionPregunta } from './asignacionpregunta/entity/asignacionpregunta.entity';
-import { Categoria } from './categoria/entity/categoria.entity';
 import { Docente } from './docente/entity/docente.entity';
 import { EnvioCalificacion } from './enviocalificacion/entity/enviocalificacion.entity';
 import { Estudiante } from './estudiante/entity/estudiante.entity';
@@ -89,7 +87,6 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
         entities: [
           AsignacionPregunta,
-          Categoria,
           Docente,
           EnvioCalificacion,
           Estudiante,
@@ -136,7 +133,6 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
       }),
     }),
 
-    CategoriaModule,
     AuthModule,
     MateriaModule,
     SemestreModule,
