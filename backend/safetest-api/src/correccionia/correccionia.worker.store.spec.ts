@@ -25,7 +25,7 @@ describe('CorreccionIaWorkerStore', () => {
 
   it('cuenta filas reales (no el tamaño de la tupla) al recuperar abandonadas', async () => {
     const query = jest
-      .fn()
+      .fn<(sql: string, params?: unknown[]) => Promise<unknown>>()
       .mockResolvedValueOnce([[{ propuesta_id: 1 }], 1])
       .mockResolvedValueOnce([[], 0])
       .mockResolvedValueOnce([[{ propuesta_id: 2 }, { propuesta_id: 3 }], 2]);

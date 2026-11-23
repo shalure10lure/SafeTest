@@ -17,7 +17,7 @@ import {
   MENSAJE_TIEMPO_AGOTADO,
   sanitizarMensajeError,
 } from './correccionia.errores';
-import { criterioPredeterminado } from './correccionia.criterio-predeterminado';
+import { resolverCriterio } from './correccionia.criterio';
 import { CorreccionIa } from './entity/correccionia.entity';
 import type {
   AlmacenCorreccionIa,
@@ -463,43 +463,16 @@ function construirCriterio(
   criterio: CriterioCorreccionIa;
   fuente: FuenteCriterioCorreccionIa;
 } {
-  const valorCorrecto = convertirNumero(solucion?.valor_correcto);
-  const rubrica = solucion?.rubrica?.trim() ?? '';
+  const resuelto = resolverCriterio(tipoRespuesta, solucion, referencia);
 
-  if (valorCorrecto !== null) {
-    const criterio: CriterioCorreccionIa = {
-      valor_correcto: valorCorrecto,
-      tolerancia: convertirNumero(solucion?.tolerancia) ?? 0,
-    };
-
-    if (rubrica) {
-      criterio.rubrica = rubrica;
-    }
-
-    return { criterio, fuente: 'solucion_inciso' };
+  if (!resuelto) {
+    throw new ErrorProcesamientoCorreccionIa(
+      'SIN_CRITERIOS',
+      'La propuesta ya no tiene criterios utilizables para corregir la respuesta.',
+    );
   }
 
-  if (rubrica) {
-    return { criterio: { rubrica }, fuente: 'rubrica' };
-  }
-
-  const textoReferencia = textoDesdeContenido(referencia?.contenido);
-  if (textoReferencia) {
-    return {
-      criterio: { solucion_referencia: textoReferencia },
-      fuente: 'solucion_referencia',
-    };
-  }
-
-  const predeterminado = criterioPredeterminado(tipoRespuesta);
-  if (predeterminado) {
-    return { criterio: predeterminado, fuente: 'predeterminado' };
-  }
-
-  throw new ErrorProcesamientoCorreccionIa(
-    'SIN_CRITERIOS',
-    'La propuesta ya no tiene criterios utilizables para corregir la respuesta.',
-  );
+  return resuelto;
 }
 
 function textoDesdeContenido(contenido: unknown): string {

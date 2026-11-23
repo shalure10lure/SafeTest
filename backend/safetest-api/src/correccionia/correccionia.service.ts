@@ -728,7 +728,15 @@ export class CorreccionIaService {
           },
           order: { revisada_en: 'DESC' },
         });
+      const incisoActual = await manager.getRepository(Inciso).findOne({
+        where: {
+          pregunta_id: propuesta.pregunta_id,
+          letra: propuesta.letra,
+        },
+        select: { pregunta_id: true, letra: true, tipo_respuesta: true },
+      });
       const hashCriterioActual = crearHashCriterioActual(
+        incisoActual?.tipo_respuesta ?? '',
         solucionActual,
         referenciaActual,
       );

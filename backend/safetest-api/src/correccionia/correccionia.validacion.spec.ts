@@ -161,7 +161,7 @@ describe('validarSolicitudCorreccionIa', () => {
       validarSolicitudCorreccionIa({
         ...solicitudValida,
         tipo_respuesta: 'desarrollo',
-        solucion_inciso: { valor_correcto: null, rubrica: '  ' },
+        solucion_inciso: { valor_correcto: '0', rubrica: '  ' },
         solucion_referencia: null,
       }),
     ).not.toThrow();

@@ -49,6 +49,18 @@ interface ConfiguracionAutomatica {
 
 const REDONDEO_POR_DEFECTO = 2;
 
+/**
+ * Configuración que se aplica a los incisos objetivos cuando el docente NO ha
+ * registrado ninguna regla para ese tipo: todo o nada, sin penalización. Una
+ * regla existente (activa o no) siempre manda: si el docente la desactivó o la
+ * configuró como manual, el inciso sigue pendiente de revisión.
+ */
+const CONFIGURACION_PREDETERMINADA: ConfiguracionAutomatica = {
+  puntajeParcial: false,
+  penalizarIncorrectas: false,
+  redondeoDecimales: REDONDEO_POR_DEFECTO,
+};
+
 function esTipoValido(tipo: string): tipo is TipoRespuesta {
   return (TIPOS_RESPUESTA as readonly string[]).includes(tipo);
 }
@@ -259,13 +271,19 @@ export class CorreccionRendicionService {
 
       const puntajeMax = Number(inciso.puntaje_max);
       const docenteId = inciso.pregunta?.tema?.materia?.docente_id ?? null;
-      const regla =
-        docenteId === null
-          ? undefined
-          : this.buscarRegla(reglasPorDocenteTipo, docenteId, tipo);
-      const configuracion = regla
-        ? this.configuracionAutomatica(regla, tipo)
-        : null;
+      let configuracion: ConfiguracionAutomatica | null = null;
+
+      if (docenteId !== null) {
+        const hayReglaRegistrada =
+          (reglasPorDocenteTipo.get(`${docenteId}:${tipo}`) ?? []).length > 0;
+
+        if (!hayReglaRegistrada) {
+          configuracion = CONFIGURACION_PREDETERMINADA;
+        } else {
+          const regla = this.buscarRegla(reglasPorDocenteTipo, docenteId, tipo);
+          configuracion = regla ? this.configuracionAutomatica(regla, tipo) : null;
+        }
+      }
 
       if (
         !configuracion ||
@@ -400,7 +418,6 @@ export class CorreccionRendicionService {
       where: {
         docente_id: In(docentes),
         tipo_respuesta: In(tipos),
-        activo: true,
       },
     });
   }
@@ -542,3 +559,5 @@ export class CorreccionRendicionService {
     cambios.push(respuesta);
   }
 }
+
+

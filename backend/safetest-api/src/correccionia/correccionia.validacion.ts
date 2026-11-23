@@ -135,7 +135,9 @@ function validarCriteriosSuficientes(
   >,
 ): void {
   const valorCorrecto = entrada.solucion_inciso?.valor_correcto;
+  // En incisos que no son numéricos `valor_correcto` es solo un 0 de relleno.
   const tieneValorCorrectoFinito =
+    entrada.tipo_respuesta === 'numerica' &&
     convertirNumeroFinito(valorCorrecto) !== null;
   const rubrica = entrada.solucion_inciso?.rubrica;
   const tieneRubrica = typeof rubrica === 'string' && rubrica.trim().length > 0;
@@ -150,9 +152,15 @@ function validarCriteriosSuficientes(
       return;
     }
 
+    const esObjetivo = ['opcion_unica', 'opcion_multiple', 'verdadero_falso'].includes(
+      entrada.tipo_respuesta,
+    );
+
     throw new ErrorValidacionCorreccionIa(
       'SIN_CRITERIOS',
-      'No hay un valor correcto finito, una rúbrica no vacía ni una solución de referencia revisada.',
+      esObjetivo
+        ? 'Las preguntas de selección y verdadero/falso se corrigen automáticamente con la respuesta correcta del banco; no se envían a la IA. Si siguen pendientes, revisa su regla de corrección o su solución.'
+        : 'No hay un valor correcto finito, una rúbrica no vacía ni una solución de referencia revisada.',
     );
   }
 }

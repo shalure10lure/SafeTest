@@ -347,6 +347,8 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             examenId={examenId}
             seguimientoLote={seguimientoLote}
             onSeguimientoFinalizado={finalizarSeguimientoLote}
+            soloLectura={confirmadas || publicados}
+            onPropuestasAceptadas={() => void cargar()}
           />
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" aria-label="Resultados de los estudiantes">

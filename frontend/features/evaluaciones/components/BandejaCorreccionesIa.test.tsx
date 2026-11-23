@@ -10,6 +10,7 @@ import BandejaCorreccionesIa from './BandejaCorreccionesIa';
 
 const mocks = vi.hoisted(() => ({
   listarPorExamen: vi.fn(),
+  aceptar: vi.fn(),
 }));
 
 vi.mock('next/link', () => ({
@@ -23,7 +24,10 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('../services/correccion-ia.service', () => ({
-  correccionIaService: { listarPorExamen: mocks.listarPorExamen },
+  correccionIaService: {
+    listarPorExamen: mocks.listarPorExamen,
+    aceptar: mocks.aceptar,
+  },
   mensajeErrorCorreccionIa: (error: unknown) =>
     error instanceof Error ? error.message : 'Error al cargar propuestas.',
 }));
@@ -72,6 +76,7 @@ function respuesta(
 }
 
 beforeEach(() => {
+  mocks.aceptar.mockReset().mockResolvedValue({ propuesta: { estado: 'aceptada' }, advertencias: [] });
   mocks.listarPorExamen.mockReset().mockResolvedValue(respuesta());
 });
 
@@ -244,5 +249,117 @@ describe('BandejaCorreccionesIa', () => {
     expect(mocks.listarPorExamen).toHaveBeenCalledTimes(2);
     expect(alFinalizar).toHaveBeenCalledOnce();
     expect(screen.getAllByText('Generada').length).toBeGreaterThan(0);
+  });
+});
+
+
+
+
+describe('aceptación desde la bandeja', () => {
+  it('acepta solo las propuestas seleccionadas con su versión y puntaje', async () => {
+    const lista = [
+      propuesta({ propuesta_id: 1, version: 2 }),
+      propuesta({ propuesta_id: 2, pregunta_id: 32, puntaje_sugerido: '3.00' }),
+    ];
+    mocks.listarPorExamen.mockResolvedValue(respuesta(lista));
+    const alAceptar = vi.fn();
+    render(<BandejaCorreccionesIa examenId={12} onPropuestasAceptadas={alAceptar} />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Seleccionar propuesta 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aceptar seleccionadas (1)' }));
+
+    await waitFor(() => expect(mocks.aceptar).toHaveBeenCalledTimes(1));
+    expect(mocks.aceptar).toHaveBeenCalledWith(1, { version: 2, puntaje_confirmado: '4.25' });
+    const resultado = await screen.findByRole('status', { name: 'Resultado de la aceptación' });
+    expect(resultado.textContent).toContain('Aceptadas: 1');
+    expect(alAceptar).toHaveBeenCalledTimes(1);
+  });
+
+  it('el botón de seleccionadas está deshabilitado sin selección', async () => {
+    render(<BandejaCorreccionesIa examenId={12} />);
+    const boton = await screen.findByRole('button', { name: 'Aceptar seleccionadas (0)' });
+    expect((boton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('acepta una propuesta con su botón individual', async () => {
+    render(<BandejaCorreccionesIa examenId={12} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Aceptar propuesta 7' }));
+    await waitFor(() => expect(mocks.aceptar).toHaveBeenCalledWith(7, { version: 1, puntaje_confirmado: '4.25' }));
+  });
+
+  it('no ofrece selección de propuestas con error, pendientes ni sin puntaje', async () => {
+    mocks.listarPorExamen.mockResolvedValue(
+      respuesta([
+        propuesta({ propuesta_id: 1, estado: 'error', puntaje_sugerido: null, error_mensaje: 'fallo' }),
+        propuesta({ propuesta_id: 2, estado: 'procesando', puntaje_sugerido: null }),
+        propuesta({ propuesta_id: 3, estado: 'aceptada' }),
+      ]),
+    );
+    render(<BandejaCorreccionesIa examenId={12} />);
+
+    await screen.findByText('fallo');
+    expect(screen.queryAllByRole('checkbox', { name: /Seleccionar propuesta/ })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /^Aceptar propuesta/ })).toBeNull();
+  });
+
+  it('«Aceptar todas» pide confirmación, excluye criterio predeterminado y no toca errores', async () => {
+    mocks.listarPorExamen.mockImplementation(async (_examen: number, filtros: { estado?: string }) => {
+      if (filtros.estado === 'generada') {
+        return respuesta([
+          propuesta({ propuesta_id: 1 }),
+          propuesta({ propuesta_id: 2, criterio_fuente: 'predeterminado' }),
+        ]);
+      }
+      if (filtros.estado === 'modificada') {
+        return respuesta([propuesta({ propuesta_id: 3, estado: 'modificada', puntaje_sugerido: '2.00' })]);
+      }
+      return respuesta([propuesta()]);
+    });
+    render(<BandejaCorreccionesIa examenId={12} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Aceptar todas las listas' }));
+    const confirmacion = await screen.findByRole('region', { name: 'Confirmar aceptación de todas las propuestas' });
+    expect(confirmacion.textContent).toContain('2');
+    expect(confirmacion.textContent).toContain('criterio predeterminado');
+    expect(mocks.aceptar).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar y aceptar 2' }));
+
+    await waitFor(() => expect(mocks.aceptar).toHaveBeenCalledTimes(2));
+    expect(mocks.aceptar.mock.calls.map((llamada) => llamada[0]).sort()).toEqual([1, 3]);
+  });
+
+  it('cancelar la confirmación no acepta nada', async () => {
+    render(<BandejaCorreccionesIa examenId={12} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Aceptar todas las listas' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar' }));
+    expect(mocks.aceptar).not.toHaveBeenCalled();
+    expect(screen.queryByRole('region', { name: /Confirmar aceptación/ })).toBeNull();
+  });
+
+  it('informa las que fallan sin detener las demás', async () => {
+    mocks.listarPorExamen.mockResolvedValue(
+      respuesta([propuesta({ propuesta_id: 1 }), propuesta({ propuesta_id: 2, pregunta_id: 32 })]),
+    );
+    mocks.aceptar
+      .mockRejectedValueOnce(new Error('La propuesta cambió; recárgala.'))
+      .mockResolvedValueOnce({ propuesta: { estado: 'aceptada' }, advertencias: [] });
+    render(<BandejaCorreccionesIa examenId={12} />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Seleccionar propuesta 1' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar propuesta 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aceptar seleccionadas (2)' }));
+
+    const resultado = await screen.findByRole('status', { name: 'Resultado de la aceptación' });
+    expect(resultado.textContent).toContain('Aceptadas: 1');
+    expect(resultado.textContent).toContain('No aceptadas: 1');
+    expect(resultado.textContent).toContain('La propuesta cambió; recárgala.');
+  });
+
+  it('en solo lectura no muestra ninguna acción de aceptación', async () => {
+    render(<BandejaCorreccionesIa examenId={12} soloLectura />);
+    await screen.findByText(/Estudiante #45/);
+    expect(screen.queryByRole('button', { name: /Aceptar/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox', { name: /Seleccionar propuesta/ })).toHaveLength(0);
   });
 });
