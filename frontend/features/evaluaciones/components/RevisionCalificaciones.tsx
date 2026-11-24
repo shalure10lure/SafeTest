@@ -10,6 +10,9 @@ import {
   correccionIaService,
   mensajeErrorCorreccionIa,
 } from '../services/correccion-ia.service';
+import Alerta from '@/components/ui/Alerta';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/ToastProvider';
 import BandejaCorreccionesIa from './BandejaCorreccionesIa';
 import CorreoResultadosPanel from './CorreoResultadosPanel';
 
@@ -34,13 +37,73 @@ function resumenEstado(datos: ResumenCalificaciones) {
   return 'En revisión';
 }
 
+interface MensajeEstado {
+  tono: 'info' | 'exito' | 'aviso';
+  titulo: string;
+  texto: string;
+}
+
+/**
+ * UN solo mensaje que resume en qué punto está la revisión y cuál es el
+ * siguiente paso (antes eran varios banners de colores distintos).
+ */
+function mensajeDeEstado(p: {
+  confirmadas: boolean;
+  publicados: boolean;
+  totalRendiciones: number;
+  pendientes: EstudianteCalificacion[];
+  finalizado: boolean;
+}): MensajeEstado {
+  if (p.confirmadas) {
+    return p.publicados
+      ? {
+          tono: 'exito',
+          titulo: 'Revisión confirmada y resultados publicados',
+          texto: 'Los estudiantes ya pueden consultar sus notas. Las calificaciones quedaron bloqueadas y no se pueden modificar.',
+        }
+      : {
+          tono: 'exito',
+          titulo: 'Revisión confirmada',
+          texto: 'Las calificaciones quedaron bloqueadas, pero los estudiantes todavía no las ven. Pulsa «Publicar resultados» cuando quieras entregarlas.',
+        };
+  }
+  if (p.totalRendiciones === 0) {
+    return {
+      tono: 'info',
+      titulo: 'Aún no hay entregas',
+      texto: 'Cuando los estudiantes envíen la evaluación, sus rendiciones aparecerán aquí para que las revises.',
+    };
+  }
+  if (p.pendientes.length > 0) {
+    const nombres = p.pendientes.slice(0, 4).map((e) => e.nombre_completo).join(', ');
+    const resto = p.pendientes.length > 4 ? ` y ${p.pendientes.length - 4} más` : '';
+    return {
+      tono: 'aviso',
+      titulo: `Faltan ${p.pendientes.length} ${p.pendientes.length === 1 ? 'estudiante' : 'estudiantes'} por revisar`,
+      texto: `Completa la revisión de ${nombres}${resto} para poder confirmar las calificaciones.`,
+    };
+  }
+  if (!p.finalizado) {
+    return {
+      tono: 'aviso',
+      titulo: 'La evaluación todavía está abierta',
+      texto: 'Todas las notas actuales están listas, pero podrás confirmar la revisión recién cuando termine el periodo de la evaluación.',
+    };
+  }
+  return {
+    tono: 'exito',
+    titulo: 'Todo listo para confirmar',
+    texto: 'Todas las rendiciones están corregidas. Pulsa «Confirmar revisión»: esto bloquea las notas, pero aún no las publica.',
+  };
+}
+
 export default function RevisionCalificaciones({ examenId }: { examenId: number }) {
   const router = useRouter();
+  const toast = useToast();
   const [revisandoEstudiante, setRevisandoEstudiante] = useState<number | null>(null);
   const [datos, setDatos] = useState<ResumenCalificaciones | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notificacion, setNotificacion] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState<Filtro>('todos');
   const [preguntarConfirmacion, setPreguntarConfirmacion] = useState(false);
@@ -106,16 +169,18 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     if (!puedeConfirmar) return;
     setConfirmando(true);
     setError(null);
-    setNotificacion(null);
     try {
       await calificacionesService.confirmar(examenId);
       await cargar();
-      setNotificacion('Las calificaciones están listas para publicar. No se han publicado todavía.');
-      setPreguntarConfirmacion(false);
+      toast.exito(
+        'Revisión confirmada',
+        'Las calificaciones quedaron listas para publicar. Los estudiantes todavía no las ven.',
+      );
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
       setConfirmando(false);
+      setPreguntarConfirmacion(false);
     }
   }
 
@@ -123,18 +188,22 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     if (!puedePublicar) return;
     setPublicando(true);
     setError(null);
-    setNotificacion(null);
     try {
       const publicacion = await calificacionesService.publicarResultados(examenId);
       await cargar();
-      setNotificacion(publicacion.ya_publicados
-        ? 'Los resultados ya estaban publicados.'
-        : 'Resultados publicados. Ahora los estudiantes pueden consultar sus notas oficiales. Revisa el estado de envío de correos debajo.');
-      setPreguntarPublicacion(false);
+      if (publicacion.ya_publicados) {
+        toast.info('Los resultados ya estaban publicados', 'No se hizo ningún cambio.');
+      } else {
+        toast.exito(
+          'Resultados publicados',
+          'Los estudiantes ya pueden consultar sus notas oficiales. Si activaste el envío por correo, revisa su estado en el panel de correo.',
+        );
+      }
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
       setPublicando(false);
+      setPreguntarPublicacion(false);
     }
   }
 
@@ -142,18 +211,22 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     if (!publicados || solucionesPublicadas) return;
     setPublicandoSoluciones(true);
     setError(null);
-    setNotificacion(null);
     try {
       const respuesta = await calificacionesService.publicarRespuestas(examenId);
       await cargar();
-      setPreguntarSoluciones(false);
-      setNotificacion(respuesta.ya_publicadas
-        ? 'Las soluciones correctas ya estaban autorizadas.'
-        : 'Respuestas correctas publicadas. Ahora los estudiantes pueden ver las soluciones.');
+      if (respuesta.ya_publicadas) {
+        toast.info('Las respuestas ya estaban publicadas', 'No se hizo ningún cambio.');
+      } else {
+        toast.exito(
+          'Respuestas correctas publicadas',
+          'Los estudiantes ya pueden ver las soluciones de esta evaluación.',
+        );
+      }
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
       setPublicandoSoluciones(false);
+      setPreguntarSoluciones(false);
     }
   }
 
@@ -162,7 +235,6 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     setSolicitandoLote(true);
     setResultadoLote(null);
     setError(null);
-    setNotificacion(null);
     try {
       const resultado = await correccionIaService.revisarTodo(examenId);
       setResultadoLote(resultado);
@@ -178,7 +250,6 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     if (confirmadas || publicados || revisandoEstudiante !== null) return;
     setRevisandoEstudiante(estudianteId);
     setError(null);
-    setNotificacion(null);
     try {
       const resultado = await correccionIaService.revisarEstudiante(examenId, estudianteId);
       // Si no se pudo solicitar nada por un motivo distinto a «ya hay propuesta
@@ -216,7 +287,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             onClick={() => setPreguntarConfirmacion(true)}
             disabled={!puedeConfirmar || confirmando}
             className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Confirmar las notas, sin publicarlas"
+            title="Bloquea las notas, pero todavía no las publica"
           >
             {confirmadas ? 'Revisión confirmada' : 'Confirmar revisión'}
           </button>
@@ -224,7 +295,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             type="button"
             onClick={() => setPreguntarPublicacion(true)}
             disabled={!puedePublicar || publicando}
-            title={confirmadas ? 'Publicar notas oficiales para estudiantes' : 'Primero confirma la revisión HU-31'}
+            title={confirmadas ? 'Publicar las notas oficiales para los estudiantes' : 'Primero debes confirmar la revisión'}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {publicados ? 'Resultados publicados' : 'Publicar resultados'}
@@ -241,8 +312,11 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
         </div>
       </div>
 
-      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">{error}</div>}
-      {notificacion && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">{notificacion}</div>}
+      {error && (
+        <Alerta tono="error" titulo="No se pudo completar la acción" onCerrar={() => setError(null)}>
+          {error}
+        </Alerta>
+      )}
 
       {cargando ? (
         <div role="status" className="rounded-xl border border-slate-200 bg-white p-10 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando las calificaciones de la evaluación…</div>
@@ -270,22 +344,16 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             </div>
           </div>
 
-          {confirmadas ? (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-              ✓ Revisión confirmada. Las notas ya no pueden modificarse desde esta HU. {publicados ? 'Los resultados también están publicados.' : 'Todavía no se han publicado los resultados.'}
-            </div>
-          ) : datos.total_rendiciones === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">Todavía no se registraron rendiciones de estudiantes para esta evaluación.</div>
-          ) : pendientes.length ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-              Debes completar la revisión de {pendientes.length} {pendientes.length === 1 ? 'estudiante' : 'estudiantes'} antes de confirmar: {' '}
-              {pendientes.slice(0, 4).map((e) => e.nombre_completo).join(', ')}{pendientes.length > 4 ? ` y ${pendientes.length - 4} más` : ''}.
-            </div>
-          ) : !finalizado ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Todas las notas están listas, pero el periodo de la evaluación todavía no terminó.</div>
-          ) : (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">Todas las rendiciones están corregidas. Ya puedes confirmar la revisión.</div>
-          )}
+          {(() => {
+            const estado = mensajeDeEstado({
+              confirmadas,
+              publicados,
+              totalRendiciones: datos.total_rendiciones,
+              pendientes,
+              finalizado,
+            });
+            return <Alerta tono={estado.tono} titulo={estado.titulo}>{estado.texto}</Alerta>;
+          })()}
 
           <CorreoResultadosPanel examenId={examenId} publicados={publicados} />
 
@@ -393,46 +461,41 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             <div className="border-t border-slate-100 px-4 py-3 text-right text-xs text-slate-400 dark:border-slate-800">{visibles.length} de {estudiantes.length} rendiciones</div>
           </section>
 
-          {preguntarConfirmacion && puedeConfirmar && (
-            <section role="group" aria-label="Confirmar revisión" className="rounded-xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
-              <h2 className="font-semibold text-violet-950 dark:text-violet-100">¿Confirmar todas las calificaciones?</h2>
-              <p className="mt-2 text-sm text-violet-900/80 dark:text-violet-200">Esta acción bloqueará los ajustes de puntajes. <strong>No publicará los resultados</strong> a los estudiantes.</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" disabled={confirmando} onClick={() => void confirmar()} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50">{confirmando ? 'Confirmando…' : 'Sí, confirmar revisión'}</button>
-                <button type="button" disabled={confirmando} onClick={() => setPreguntarConfirmacion(false)} className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 dark:bg-slate-900 dark:text-slate-200">Cancelar</button>
-              </div>
-            </section>
-          )}
-          {preguntarPublicacion && puedePublicar && (
-            <section role="group" aria-label="Publicación de resultados" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-              <h2 className="font-semibold text-emerald-950">¿Publicar resultados oficiales?</h2>
-              <p className="mt-2 text-sm text-emerald-900">
-                Las notas y la retroalimentación serán visibles para los estudiantes.
-                Las soluciones correctas no se liberarán automáticamente.
-              </p>
-              <div className="mt-4 flex gap-2">
-                <button type="button" onClick={() => void publicar()} disabled={publicando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                  {publicando ? 'Publicando…' : 'Sí, publicar resultados'}
-                </button>
-                <button type="button" disabled={publicando} onClick={() => setPreguntarPublicacion(false)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm">Cancelar</button>
-              </div>
-            </section>
-          )}
-          {preguntarSoluciones && publicados && !solucionesPublicadas && (
-            <section role="group" aria-label="Publicación de respuestas correctas" className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-              <h2 className="font-semibold text-blue-950">¿Publicar las respuestas correctas?</h2>
-              <p className="mt-2 text-sm text-blue-900">
-                Los estudiantes que rindieron la evaluación podrán consultar las opciones correctas,
-                soluciones numéricas y rúbricas disponibles. Esta autorización no se puede deshacer desde la interfaz.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void publicarSoluciones()} disabled={publicandoSoluciones} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                  {publicandoSoluciones ? 'Publicando…' : 'Sí, publicar respuestas'}
-                </button>
-                <button type="button" onClick={() => setPreguntarSoluciones(false)} disabled={publicandoSoluciones} className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm">Cancelar</button>
-              </div>
-            </section>
-          )}
+          <ConfirmDialog
+            abierto={preguntarConfirmacion && puedeConfirmar}
+            titulo="¿Confirmar todas las calificaciones?"
+            textoConfirmar="Sí, confirmar revisión"
+            procesando={confirmando}
+            onCancelar={() => setPreguntarConfirmacion(false)}
+            onConfirmar={() => void confirmar()}
+          >
+            <p>Las notas quedarán bloqueadas y ya no podrás ajustar puntajes.</p>
+            <p><strong>Esto no publica los resultados:</strong> los estudiantes todavía no verán sus notas.</p>
+          </ConfirmDialog>
+
+          <ConfirmDialog
+            abierto={preguntarPublicacion && puedePublicar}
+            titulo="¿Publicar los resultados oficiales?"
+            textoConfirmar="Sí, publicar resultados"
+            procesando={publicando}
+            onCancelar={() => setPreguntarPublicacion(false)}
+            onConfirmar={() => void publicar()}
+          >
+            <p>Los estudiantes verán sus notas y la retroalimentación.</p>
+            <p>Las respuestas correctas no se publican automáticamente: eso se autoriza aparte.</p>
+          </ConfirmDialog>
+
+          <ConfirmDialog
+            abierto={preguntarSoluciones && publicados && !solucionesPublicadas}
+            titulo="¿Publicar las respuestas correctas?"
+            textoConfirmar="Sí, publicar respuestas"
+            procesando={publicandoSoluciones}
+            onCancelar={() => setPreguntarSoluciones(false)}
+            onConfirmar={() => void publicarSoluciones()}
+          >
+            <p>Quienes rindieron la evaluación podrán ver las opciones correctas, las soluciones numéricas y las rúbricas disponibles.</p>
+            <p>Esta autorización no se puede deshacer desde la plataforma.</p>
+          </ConfirmDialog>
           {publicados && datos.resultados_publicados_en && (
             <p className="text-sm text-emerald-700">
               Publicados el {new Date(datos.resultados_publicados_en).toLocaleString('es-BO')}.
@@ -448,5 +511,3 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     </main>
   );
 }
-
-

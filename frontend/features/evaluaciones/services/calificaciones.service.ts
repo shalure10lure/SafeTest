@@ -93,10 +93,11 @@ export function mensajeErrorCalificaciones(error: unknown): string {
     const datos = error.response?.data as { message?: string | string[] } | undefined;
     if (Array.isArray(datos?.message)) return datos.message.join('. ');
     if (typeof datos?.message === 'string') return datos.message;
-    if (error.response?.status === 401) return 'Tu sesión expiró. Vuelve a iniciar sesión.';
-    if (error.response?.status === 403) return 'No tienes permiso para revisar estas calificaciones.';
-    if (error.response?.status === 404) return 'No se encontró la evaluación o la rendición.';
-    if (!error.response) return 'No se pudo conectar con el backend. Verifica que esté encendido.';
+    if (error.response?.status === 401) return 'Tu sesión expiró por seguridad. Vuelve a iniciar sesión para continuar.';
+    if (error.response?.status === 403) return 'No tienes permiso para revisar estas calificaciones: pertenecen a otro docente.';
+    if (error.response?.status === 404) return 'No encontramos la evaluación o la rendición. Puede haberse eliminado; vuelve a Mis evaluaciones y ábrela de nuevo.';
+    if (error.response && error.response.status >= 500) return 'Ocurrió un problema en el servidor. Inténtalo de nuevo en un momento; si se repite, avisa al administrador.';
+    if (!error.response) return 'No pudimos comunicarnos con SafeTest. Revisa tu conexión a internet; si continúa, avisa al administrador.';
   }
-  return error instanceof Error ? error.message : 'Ocurrió un error inesperado.';
+  return error instanceof Error ? error.message : 'Ocurrió un error inesperado. Inténtalo de nuevo.';
 }

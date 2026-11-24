@@ -98,7 +98,8 @@ export default function AppShell({
     );
 
     return (
-        <div className="flex h-screen overflow-hidden bg-slate-50">
+        // h-dvh (en vez de h-screen): en el celular respeta la barra del navegador.
+        <div className="flex h-dvh overflow-hidden bg-slate-50">
             {/* Sidebar fijo en escritorio */}
             <div className="hidden w-60 shrink-0 lg:block">{sidebar}</div>
 

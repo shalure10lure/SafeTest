@@ -147,7 +147,7 @@ export const NAV_DOCENTE: NavSection[] = [
                     acciones: [
                         {
                             label: 'Gestión académica',
-                            href: ROUTES.docente.materias,
+                            href: ROUTES.docente.resumen,
                             variante: 'secundaria',
                             disponible: true,
                         },
@@ -160,6 +160,16 @@ export const NAV_DOCENTE: NavSection[] = [
                         },
                     ],
                 },
+                rutasExtra: [
+                    {
+                        // Pantalla 403: el sidebar sigue marcando "Inicio".
+                        patron: /^\/docente\/acceso-no-autorizado\/?$/,
+                        topbar: {
+                            migaFinal: 'Acceso no autorizado',
+                            titulo: 'Acceso no autorizado',
+                        },
+                    },
+                ],
             },
         ],
     },
@@ -170,7 +180,14 @@ export const NAV_DOCENTE: NavSection[] = [
                 label: 'Resumen',
                 href: ROUTES.docente.resumen,
                 icono: LayoutGrid,
-                disponible: false,
+                disponible: true,
+                topbar: {
+                    seccion: 'Gestión académica',
+                    migaFinal: 'Resumen',
+                    titulo: 'Gestión académica',
+                    subtitulo:
+                        'Tus materias, periodos, paralelos y estudiantes',
+                },
             },
             {
                 label: 'Mis materias',
@@ -476,6 +493,11 @@ export const NAV_DOCENTE: NavSection[] = [
                 href: ROUTES.docente.estadisticas,
                 icono: ChartColumn,
                 disponible: true,
+                topbar: {
+                    seccion: 'Resultados',
+                    titulo: 'Estadísticas',
+                    subtitulo: 'Análisis de rendimiento de tus materias',
+                },
             },
         ],
     },

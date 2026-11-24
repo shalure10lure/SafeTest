@@ -3,7 +3,9 @@ import { BaseService } from '@/services/api/base.service';
 import type {
     ComparacionPeriodos,
     EstadisticasMateria,
+    FiltrosPanel,
     MateriaEstadistica,
+    PanelEstadisticas,
 } from '../types';
 
 class EstadisticasService extends BaseService {
@@ -13,6 +15,18 @@ class EstadisticasService extends BaseService {
 
     getMaterias() {
         return this.get<MateriaEstadistica[]>('/materias');
+    }
+
+    /** Panel completo (KPIs, percentiles, distribución y comparaciones). */
+    getPanel(filtros: FiltrosPanel) {
+        // Solo enviamos los filtros que tienen valor.
+        const params = Object.fromEntries(
+            Object.entries(filtros).filter(
+                ([, valor]) => valor !== undefined && valor !== null,
+            ),
+        );
+
+        return this.get<PanelEstadisticas>('/panel', { params });
     }
 
     getPorMateria(materiaId: number) {
