@@ -10,10 +10,10 @@ const TONOS: Record<
     { valor: string; icono: string; badge: string; tile: string }
 > = {
     violet: {
-        valor: 'text-violet-600',
-        icono: 'bg-violet-100 text-violet-600',
-        badge: 'border-violet-200 bg-violet-50 text-violet-700',
-        tile: 'bg-violet-100 text-violet-700',
+        valor: 'text-brand',
+        icono: 'bg-secondary text-brand',
+        badge: 'border-border bg-secondary text-secondary-foreground',
+        tile: 'bg-secondary text-brand',
     },
     blue: {
         valor: 'text-blue-600',
@@ -22,22 +22,22 @@ const TONOS: Record<
         tile: 'bg-blue-100 text-blue-700',
     },
     indigo: {
-        valor: 'text-indigo-600',
-        icono: 'bg-indigo-100 text-indigo-600',
-        badge: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-        tile: 'bg-indigo-100 text-indigo-700',
+        valor: 'text-sky-700',
+        icono: 'bg-sky-100 text-sky-700',
+        badge: 'border-sky-200 bg-sky-50 text-sky-700',
+        tile: 'bg-sky-100 text-sky-700',
     },
     amber: {
-        valor: 'text-amber-600',
-        icono: 'bg-amber-100 text-amber-600',
-        badge: 'border-amber-200 bg-amber-50 text-amber-700',
-        tile: 'bg-amber-100 text-amber-700',
+        valor: 'text-warning',
+        icono: 'bg-warning-background text-warning',
+        badge: 'border-warning/20 bg-warning-background text-warning',
+        tile: 'bg-warning-background text-warning',
     },
     emerald: {
-        valor: 'text-emerald-600',
-        icono: 'bg-emerald-100 text-emerald-600',
-        badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-        tile: 'bg-emerald-100 text-emerald-700',
+        valor: 'text-success',
+        icono: 'bg-success-background text-success',
+        badge: 'border-success/20 bg-success-background text-success',
+        tile: 'bg-success-background text-success',
     },
     slate: {
         valor: 'text-slate-600',
@@ -50,7 +50,7 @@ const TONOS: Record<
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
     return (
         <div
-            className={cn('rounded-xl border border-slate-200 bg-white shadow-sm', className)}
+            className={cn('rounded-xl border border-border bg-card text-card-foreground shadow-sm', className)}
             {...props}
         />
     );
@@ -66,9 +66,9 @@ export function CardHeader({ titulo, descripcion, accion }: CardHeaderProps) {
     return (
         <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-slate-900">{titulo}</h2>
+                <h2 className="text-sm font-semibold text-card-foreground">{titulo}</h2>
                 {descripcion && (
-                    <p className="mt-0.5 text-xs text-slate-500">{descripcion}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{descripcion}</p>
                 )}
             </div>
             {accion}
@@ -87,16 +87,16 @@ export function StatCard({ etiqueta, valor, icono: Icono, tono }: StatCardProps)
     const estilos = TONOS[tono];
 
     return (
-        <Card className="flex items-start justify-between p-5">
+        <Card className="flex items-start justify-between gap-3 p-5">
             <div>
-                <p className="text-xs font-medium text-slate-500">{etiqueta}</p>
-                <p className={cn('mt-1 text-3xl font-bold tabular-nums', estilos.valor)}>
+                <p className="text-xs font-medium text-muted-foreground">{etiqueta}</p>
+                <p className={cn('mt-1 text-3xl font-semibold tracking-tight tabular-nums', estilos.valor)}>
                     {valor}
                 </p>
             </div>
 
             <span
-                className={cn('flex size-8 items-center justify-center rounded-lg', estilos.icono)}
+                className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', estilos.icono)}
                 aria-hidden="true"
             >
                 <Icono className="size-4" />

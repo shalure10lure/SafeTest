@@ -17,12 +17,12 @@ interface LinkButtonProps {
 }
 
 const BASE =
-    'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-medium whitespace-nowrap transition-colors';
+    'inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium whitespace-nowrap transition-colors duration-200';
 
 const VARIANTES = {
-    primaria: 'bg-violet-600 text-white hover:bg-violet-700',
-    secundaria: 'border border-slate-200 bg-white text-slate-800 hover:bg-slate-50',
-    suave: 'bg-violet-100 text-violet-700 hover:bg-violet-200',
+    primaria: 'bg-primary text-primary-foreground hover:bg-primary/90',
+    secundaria: 'border border-border bg-card text-foreground hover:bg-accent',
+    suave: 'bg-secondary text-secondary-foreground hover:bg-accent',
 } as const;
 
 export default function LinkButton({
@@ -50,9 +50,9 @@ export default function LinkButton({
                     BASE,
                     VARIANTES[variante],
                     'cursor-not-allowed opacity-50',
-                    variante === 'primaria' && 'hover:bg-violet-600',
-                    variante === 'secundaria' && 'hover:bg-white',
-                    variante === 'suave' && 'hover:bg-violet-100',
+                    variante === 'primaria' && 'hover:bg-primary',
+                    variante === 'secundaria' && 'hover:bg-card',
+                    variante === 'suave' && 'hover:bg-secondary',
                     className,
                 )}
             >
@@ -67,7 +67,7 @@ export default function LinkButton({
             className={cn(
                 BASE,
                 VARIANTES[variante],
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
                 className,
             )}
         >

@@ -30,13 +30,13 @@ export default function Topbar({
     onAbrirMenu,
 }: TopbarProps) {
     return (
-        <header className="flex min-h-15 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-2 sm:px-6">
+        <header className="flex min-h-15 shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2 sm:px-6">
             {/* Botón de menú (solo móvil / tablet) */}
             <button
                 type="button"
                 onClick={onAbrirMenu}
                 aria-label="Abrir menú"
-                className="rounded-md p-2 text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-blue-600 lg:hidden"
+                className="rounded-md p-2 text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring lg:hidden"
             >
                 <Menu className="size-5" aria-hidden="true" />
             </button>
@@ -44,7 +44,7 @@ export default function Topbar({
             {/* Breadcrumb + título */}
             <div className="min-w-0 flex-1">
                 <nav aria-label="Ruta de navegación">
-                    <ol className="flex items-center gap-1 text-xs text-slate-500">
+                    <ol className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                         {migas.map((miga, indice) => {
                             const esUltima = indice === migas.length - 1;
 
@@ -54,14 +54,14 @@ export default function Topbar({
                                     className="flex items-center gap-1"
                                 >
                                     {miga.href && !esUltima ? (
-                                        <Link href={miga.href} className="hover:text-slate-700">
+                                        <Link href={miga.href} className="hover:text-primary">
                                             {miga.label}
                                         </Link>
                                     ) : (
                                         <span
                                             aria-current={esUltima ? 'page' : undefined}
                                             className={
-                                                esUltima ? 'font-medium text-slate-700' : undefined
+                                                esUltima ? 'font-medium text-foreground' : undefined
                                             }
                                         >
                                             {miga.label}
@@ -70,7 +70,7 @@ export default function Topbar({
 
                                     {!esUltima && (
                                         <ChevronRight
-                                            className="size-3 text-slate-300"
+                                            className="size-3 text-muted-foreground/60"
                                             aria-hidden="true"
                                         />
                                     )}
@@ -82,11 +82,11 @@ export default function Topbar({
 
                 {titulo && (
                     <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
-                        <h1 className="text-base font-semibold text-slate-900">
+                        <h1 className="text-lg font-semibold tracking-tight text-foreground">
                             {titulo}
                         </h1>
                         {subtitulo && (
-                            <span className="text-xs text-blue-700">{subtitulo}</span>
+                            <span className="text-xs text-muted-foreground">{subtitulo}</span>
                         )}
                     </div>
                 )}
@@ -101,11 +101,11 @@ export default function Topbar({
                             ? `Notificaciones (${notificaciones} sin leer)`
                             : 'Notificaciones'
                     }
-                    className="relative rounded-md p-2 text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-blue-600"
+                    className="relative rounded-md p-2 text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                 >
                     <Bell className="size-5" aria-hidden="true" />
                     {notificaciones > 0 && (
-                        <span className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-semibold text-white">
+                        <span className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-white">
                             {notificaciones > 9 ? '9+' : notificaciones}
                         </span>
                     )}

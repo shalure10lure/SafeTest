@@ -23,7 +23,7 @@ interface ConfirmDialogProps {
 }
 
 const BOTON_BASE =
-    'inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto';
+    'inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto';
 
 export default function ConfirmDialog({
     abierto,
@@ -127,7 +127,7 @@ export default function ConfirmDialog({
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-                className="absolute inset-0 bg-black/50"
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
                 aria-hidden="true"
                 onClick={(evento) => {
                     if (
@@ -147,7 +147,7 @@ export default function ConfirmDialog({
                 aria-labelledby={tituloId}
                 aria-describedby={descripcionId}
                 tabIndex={-1}
-                className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-2xl sm:p-6"
+                className="relative w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-border bg-card p-5 text-card-foreground shadow-xl sm:p-6"
             >
                 <h2
                     id={tituloId}
@@ -163,7 +163,7 @@ export default function ConfirmDialog({
                     {children}
                 </div>
 
-                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <div className="mt-6 flex flex-col-reverse border-t border-border pt-4 gap-2 sm:flex-row sm:justify-end">
                     <button
                         ref={cancelarRef}
                         type="button"
@@ -171,7 +171,7 @@ export default function ConfirmDialog({
                         disabled={procesando}
                         className={cn(
                             BOTON_BASE,
-                            'border border-border bg-background text-foreground hover:bg-muted focus-visible:outline-ring',
+                            'border border-border bg-card text-foreground hover:bg-accent focus-visible:outline-ring',
                         )}
                     >
                         {textoCancelar}

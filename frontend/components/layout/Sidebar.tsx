@@ -49,7 +49,7 @@ function ItemNav({
             <Icono className="size-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
             {badge !== undefined && badge > 0 && (
-                <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-sidebar-primary px-1 text-[10px] font-semibold text-sidebar-primary-foreground">
                     {badge}
                 </span>
             )}
@@ -61,7 +61,7 @@ function ItemNav({
             <span
                 aria-disabled="true"
                 title="Próximamente"
-                className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-400"
+                className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground"
             >
                 {contenido}
             </span>
@@ -75,10 +75,10 @@ function ItemNav({
             aria-current={activo ? 'page' : undefined}
             className={cn(
                 'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600',
+                'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring',
                 activo
-                    ? 'bg-blue-100 font-medium text-blue-700 before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-blue-700'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    ? 'bg-sidebar-accent font-semibold text-sidebar-accent-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-primary'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             )}
         >
             {contenido}
@@ -98,18 +98,18 @@ export default function Sidebar({
 }: SidebarProps) {
     return (
 
-        <aside className="flex h-full w-full flex-col border-r border-slate-200 bg-white">
+        <aside className="flex h-full w-full flex-col border-r border-sidebar-border bg-sidebar">
             {/* Marca */}
             <Link
                 href={inicioHref}
                 onClick={onNavigate}
-                className="flex h-15 shrink-0 items-center gap-2.5 border-b border-slate-200 px-5"
+                className="flex h-15 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5"
             >
-                <span className="flex size-8 items-center justify-center rounded-lg bg-[#203D89] text-white">
+                <span className="flex size-8 items-center justify-center rounded-lg bg-brand-dark text-white">
                     <ShieldCheck className="size-4.5" aria-hidden="true" />
                 </span>
-                <span className="text-sm font-bold text-slate-900">SafeTest</span>
-                <span className="rounded bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                <span className="text-base font-semibold tracking-tight text-foreground">SafeTest</span>
+                <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground">
                     {etiquetaRol}
                 </span>
             </Link>
@@ -124,12 +124,12 @@ export default function Sidebar({
                 {secciones.map((seccion, indice) => (
                     <div key={seccion.titulo ?? `seccion-${indice}`}>
                         {seccion.titulo && (
-                            <p className="mb-1.5 px-3 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                            <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
                                 {seccion.titulo}
                             </p>
                         )}
 
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
                             {seccion.items.map((item) => (
                                 <ItemNav
                                     key={item.href}
@@ -145,14 +145,14 @@ export default function Sidebar({
 
                 {/* Sesión: es una acción, no una ruta */}
                 <div>
-                    <p className="mb-1.5 px-3 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                    <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
                         Sesión
                     </p>
 
                     <button
                         type="button"
                         onClick={onLogout}
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring"
                     >
                         <LogOut className="size-4 shrink-0" aria-hidden="true" />
                         Cerrar sesión
@@ -161,19 +161,19 @@ export default function Sidebar({
             </nav>
 
             {/* Usuario */}
-            <div className="flex shrink-0 items-center gap-3 border-t border-slate-200 p-4">
+            <div className="flex shrink-0 items-center gap-3 border-t border-sidebar-border p-4">
                 <span
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-semibold text-white"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground"
                     aria-hidden="true"
                 >
                     {usuario ? iniciales(usuario.nombre) : '?'}
                 </span>
 
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-medium text-foreground">
                         {usuario?.nombre ?? 'Usuario'}
                     </p>
-                    <p className="truncate text-xs text-slate-500">
+                    <p className="truncate text-xs text-muted-foreground">
                         {usuario?.correo ?? ''}
                     </p>
                 </div>
@@ -183,7 +183,7 @@ export default function Sidebar({
                     onClick={onLogout}
                     aria-label="Cerrar sesión"
                     title="Cerrar sesión"
-                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-blue-600"
+                    className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring"
                 >
                     <LogOut className="size-4" aria-hidden="true" />
                 </button>
