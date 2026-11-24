@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     Param,
     ParseIntPipe,
@@ -48,5 +49,10 @@ export class SemestreController {
         @Req() req: Request,
     ) {
         return this.semestreService.update(id, dto, this.docenteId(req));
+    }
+
+    @Delete(':id')
+    remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+        return this.semestreService.remove(id, this.docenteId(req));
     }
 }

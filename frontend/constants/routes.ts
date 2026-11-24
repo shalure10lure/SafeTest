@@ -1,6 +1,7 @@
 import {
     AlignLeft,
     CalendarDays,
+    CalendarPlus,
     ChartColumn,
     ClipboardCheck,
     ClipboardList,
@@ -28,6 +29,7 @@ export const ROUTES = {
     docente: {
         inicio: '/docente',
         resumen: '/docente/resumen',
+        configurarPeriodo: '/docente/configurar-periodo',
         materias: '/docente/materias',
         periodos: '/docente/periodos',
         paralelos: '/docente/paralelos',
@@ -187,6 +189,18 @@ export const NAV_DOCENTE: NavSection[] = [
                     titulo: 'Gestión académica',
                     subtitulo:
                         'Tus materias, periodos, paralelos y estudiantes',
+                },
+            },
+            {
+                label: 'Configurar periodo',
+                href: ROUTES.docente.configurarPeriodo,
+                icono: CalendarPlus,
+                disponible: true,
+                topbar: {
+                    seccion: 'Gestión académica',
+                    titulo: 'Configurar periodo',
+                    subtitulo:
+                        'Crea el periodo, sus materias y paralelos en 3 pasos',
                 },
             },
             {

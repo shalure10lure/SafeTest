@@ -1,8 +1,9 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import axios from 'axios';
 
+import Alerta from '@/components/ui/Alerta';
+import { describirError } from '@/lib/mensajes';
 import { materiasService } from '../services/materias.service';
 import type { Materia } from '../types';
 
@@ -53,12 +54,8 @@ export function MateriaForm({
 
             onGuardado();
         } catch (err) {
-            if (axios.isAxiosError(err)) {
-                const m = err.response?.data?.message;
-                setMensaje(Array.isArray(m) ? m.join(', ') : (m ?? 'Error al guardar'));
-            } else {
-                setMensaje('Error al guardar');
-            }
+            const { titulo, detalle } = describirError(err, 'No se pudo guardar la materia');
+            setMensaje(`${titulo}. ${detalle}`);
         } finally {
             setGuardando(false);
         }
@@ -70,7 +67,7 @@ export function MateriaForm({
     return (
         <form
             onSubmit={guardar}
-            className="max-w-xl space-y-4 rounded-lg border bg-white p-6"
+            className="max-w-xl space-y-4 rounded-lg border bg-white p-4 sm:p-6"
         >
             <div>
                 <h2 className="font-semibold">Datos de la materia</h2>
@@ -79,8 +76,8 @@ export function MateriaForm({
                 </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
+            <div className="grid gap-4 sm:grid-cols-3">
+                <div className="sm:col-span-2">
                     <label className="mb-1 block text-sm font-medium">Nombre</label>
                     <input
                         className={input}
@@ -128,9 +125,13 @@ export function MateriaForm({
                 </label>
             )}
 
-            {mensaje && <p className="text-sm text-red-600">{mensaje}</p>}
+            {mensaje && (
+                <Alerta tono="error" onCerrar={() => setMensaje('')}>
+                    {mensaje}
+                </Alerta>
+            )}
 
-            <div className="flex justify-end gap-2 border-t pt-4">
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
                 <button
                     type="button"
                     onClick={onCancelar}

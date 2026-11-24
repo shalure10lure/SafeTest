@@ -5,12 +5,13 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 
 import { Semestre } from './entity/semestre.entity';
 import { Materia } from '../materia/entity/materia.entity';
 import { CreatePeriodoDto } from './dto/create-periodo.dto';
 import { UpdatePeriodoDto } from './dto/update-periodo.dto';
+import { mensajeBloqueoEliminacion } from '../configuracion-academica/gestion-academica.utils';
 
 @Injectable()
 export class SemestreService {
@@ -19,6 +20,8 @@ export class SemestreService {
         private readonly semestreRepository: Repository<Semestre>,
         @InjectRepository(Materia)
         private readonly materiaRepository: Repository<Materia>,
+        // Para contar los datos que dependen de un periodo antes de eliminarlo
+        private readonly dataSource: DataSource,
     ) { }
 
     findAll(docenteId: number) {
@@ -99,6 +102,35 @@ export class SemestreService {
         }
 
         return this.semestreRepository.save(periodo);
+    }
+
+    /**
+     * Elimina un periodo propio SOLO si no tiene paralelos ni evaluaciones.
+     * Las materias asociadas (tabla periodo_materia) se quitan solas.
+     */
+    async remove(id: number, docenteId: number) {
+        await this.findOne(id, docenteId); // 404 si no existe o es de otro docente
+
+        const [fila] = await this.dataSource.query(
+            `SELECT
+                (SELECT COUNT(*)::int FROM paralelo WHERE semestre_id = $1) AS paralelos,
+                (SELECT COUNT(*)::int FROM examen WHERE semestre_id = $1) AS evaluaciones`,
+            [id],
+        );
+
+        const bloqueo = mensajeBloqueoEliminacion('periodo', {
+            paralelos: Number(fila.paralelos),
+            evaluaciones: Number(fila.evaluaciones),
+        });
+
+        if (bloqueo) throw new ConflictException(bloqueo);
+
+        await this.semestreRepository.delete({
+            semestre_id: id,
+            docente_id: docenteId,
+        });
+
+        return { eliminado: true };
     }
 
     private validarFechas(inicio: string, fin: string) {

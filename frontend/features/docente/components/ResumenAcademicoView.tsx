@@ -109,6 +109,26 @@ export default function ResumenAcademicoView() {
                 Solo se muestra información perteneciente a tu cuenta docente.
             </Alerta>
 
+            {/* Acceso directo al asistente de configuración */}
+            <Link
+                href={ROUTES.docente.configurarPeriodo}
+                className="flex flex-col gap-1 rounded-xl border border-violet-200 bg-violet-50/60 p-4 transition-colors hover:border-violet-300 focus-visible:outline-2 focus-visible:outline-violet-600 sm:flex-row sm:items-center sm:justify-between"
+            >
+                <span>
+                    <span className="block text-sm font-semibold text-violet-900">
+                        ¿Empieza un nuevo periodo?
+                    </span>
+                    <span className="block text-xs text-slate-600">
+                        Crea el periodo, sus materias y los paralelos en 3 pasos, sin cambiar
+                        de pantalla.
+                    </span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-violet-700">
+                    Configurar periodo
+                    <ArrowRight className="size-4" aria-hidden="true" />
+                </span>
+            </Link>
+
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <TarjetaGestion
                     href={ROUTES.docente.materias}

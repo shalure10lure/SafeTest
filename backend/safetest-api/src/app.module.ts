@@ -61,6 +61,7 @@ import { ReglaCorreccionModule } from './reglacorreccion/reglacorreccion.module'
 import { CorreccionIaModule } from './correccionia/correccionia.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
 import { PanelDocenteModule } from './panel-docente/panel-docente.module';
+import { ConfiguracionAcademicaModule } from './configuracion-academica/configuracion-academica.module';
 import { IaModule } from './ia/ia.module';
 import { IaGeneracionModule } from './iageneracion/iageneracion.module';
 import { MaterialAcademicoModule } from './materialacademico/materialacademico.module';
@@ -151,6 +152,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     CorreccionIaModule,
     EstadisticasModule,
     PanelDocenteModule,
+    ConfiguracionAcademicaModule,
   ],
 
   controllers: [AppController],

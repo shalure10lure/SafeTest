@@ -134,3 +134,22 @@ export function mensajeComoTexto(error: unknown, contexto: string): string {
 export function esAccesoDenegado(error: unknown): boolean {
     return axios.isAxiosError(error) && error.response?.status === 403;
 }
+
+/** Error de una fila concreta que devuelve el servidor (ej. código de materia repetido). */
+export interface ErrorFilaApi {
+    /** Posición de la fila, empezando en 0. */
+    indice: number;
+    campo: 'nombre' | 'codigo';
+    mensaje: string;
+}
+
+/**
+ * Saca la lista de errores por fila que el servidor envía cuando se
+ * crean varias materias a la vez. Devuelve [] si el error no es de ese tipo.
+ */
+export function erroresPorFila(error: unknown): ErrorFilaApi[] {
+    if (!axios.isAxiosError<{ errores?: ErrorFilaApi[] }>(error)) return [];
+
+    const errores = error.response?.data?.errores;
+    return Array.isArray(errores) ? errores : [];
+}
