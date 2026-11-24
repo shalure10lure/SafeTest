@@ -80,7 +80,7 @@ export default function CorreoResultadosPanel({
     <section aria-label="Envío de resultados por correo" className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold text-slate-900 dark:text-slate-100">Correo institucional · HU-34</h2>
+          <h2 className="font-semibold text-slate-900 dark:text-slate-100">Correo institucional</h2>
           <p className="mt-1 text-xs text-slate-500">Enviar una notificación al publicar las notas oficiales. El resultado seguirá disponible en SafeTest.</p>
         </div>
         {datos?.resultados_publicados_en && (

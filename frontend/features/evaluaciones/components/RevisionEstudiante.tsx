@@ -9,6 +9,7 @@ import type {
 } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
 import FormularioValoracion from './FormularioValoracion';
+import EventosSeguridadEstudiante from './EventosSeguridadEstudiante';
 
 type FilaInciso = { pregunta: PreguntaCalificacion; inciso: IncisoCalificacion };
 const clave = (fila: FilaInciso) => `${fila.pregunta.pregunta_id}-${fila.inciso.letra}`;
@@ -248,11 +249,11 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                   />
                 ))}
               </section>
+              <EventosSeguridadEstudiante
+                examenId={examenId}
+                estudianteId={estudianteId}
+              />
 
-              <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <h2 className="text-sm font-semibold">Eventos de seguridad</h2>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Los endpoints de la HU-31 todavía no proporcionan eventos de seguridad. No podemos afirmar que no hubo eventos sin consultar el registro correspondiente.</p>
-              </section>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Link href={rutaGeneral} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700">← Revisión general</Link>
                 {siguiente && <Link href={`${rutaGeneral}/${siguiente.estudiante_id}`} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">Siguiente estudiante →</Link>}

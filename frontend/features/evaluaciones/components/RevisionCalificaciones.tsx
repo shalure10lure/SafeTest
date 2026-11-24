@@ -34,11 +34,8 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
   const [notificacion, setNotificacion] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState<Filtro>('todos');
-  const [preguntarConfirmacion, setPreguntarConfirmacion] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
-  const [preguntarPublicacion, setPreguntarPublicacion] = useState(false);
   const [publicando, setPublicando] = useState(false);
-  const [preguntarSoluciones, setPreguntarSoluciones] = useState(false);
   const [publicandoSoluciones, setPublicandoSoluciones] = useState(false);
 
   const cargar = useCallback(async () => {
@@ -86,7 +83,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
   }), [estudiantes, busqueda, filtro]);
 
   async function confirmar() {
-    if (!puedeConfirmar) return;
+    if (!puedeConfirmar || confirmando) return;
     setConfirmando(true);
     setError(null);
     setNotificacion(null);
@@ -94,7 +91,6 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
       await calificacionesService.confirmar(examenId);
       await cargar();
       setNotificacion('Las calificaciones están listas para publicar. No se han publicado todavía.');
-      setPreguntarConfirmacion(false);
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
@@ -103,7 +99,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
   }
 
   async function publicar() {
-    if (!puedePublicar) return;
+    if (!puedePublicar || publicando) return;
     setPublicando(true);
     setError(null);
     setNotificacion(null);
@@ -113,7 +109,6 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
       setNotificacion(publicacion.ya_publicados
         ? 'Los resultados ya estaban publicados.'
         : 'Resultados publicados. Ahora los estudiantes pueden consultar sus notas oficiales. Revisa el estado de envío de correos debajo.');
-      setPreguntarPublicacion(false);
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
@@ -122,14 +117,13 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
   }
 
   async function publicarSoluciones() {
-    if (!publicados || solucionesPublicadas) return;
+    if (!publicados || solucionesPublicadas || publicandoSoluciones) return;
     setPublicandoSoluciones(true);
     setError(null);
     setNotificacion(null);
     try {
       const respuesta = await calificacionesService.publicarRespuestas(examenId);
       await cargar();
-      setPreguntarSoluciones(false);
       setNotificacion(respuesta.ya_publicadas
         ? 'Las soluciones correctas ya estaban autorizadas.'
         : 'Respuestas correctas publicadas. Ahora los estudiantes pueden ver las soluciones.');
@@ -147,48 +141,45 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
           <nav aria-label="Ruta de navegación" className="flex flex-wrap items-center gap-1 text-xs text-slate-400">
             <Link href="/docente/evaluaciones" className="hover:text-violet-600">Mis evaluaciones</Link>
             <span aria-hidden="true">›</span>
-            
             <span>Resultados</span>
           </nav>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Revisión general de resultados</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{datos?.titulo ?? `Evaluación #${examenId}`}</p>
         </div>
-      
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/docente/evaluaciones" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">← Mis evaluaciones</Link>
           <Link
-              href={`/docente/evaluaciones/${examenId}/seguridad`}
-              className="inline-flex items-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
-            >
-              Ver seguridad y bloqueos
-            </Link>
+            href={`/docente/evaluaciones/${examenId}/seguridad`}
+            className="inline-flex items-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+          >
+            Ver seguridad y bloqueos
+          </Link>
           <button
             type="button"
-            onClick={() => setPreguntarConfirmacion(true)}
+            onClick={() => void confirmar()}
             disabled={!puedeConfirmar || confirmando}
             className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
             title="Confirmar las notas, sin publicarlas"
           >
-            {confirmadas ? 'Revisión confirmada' : 'Confirmar revisión'}
+            {confirmando ? 'Confirmando…' : confirmadas ? 'Revisión confirmada' : 'Confirmar revisión'}
           </button>
-          
           <button
             type="button"
-            onClick={() => setPreguntarPublicacion(true)}
+            onClick={() => void publicar()}
             disabled={!puedePublicar || publicando}
             title={confirmadas ? 'Publicar notas oficiales para estudiantes' : 'Primero confirma la revisión HU-31'}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {publicados ? 'Resultados publicados' : 'Publicar resultados'}
+            {publicando ? 'Publicando…' : publicados ? 'Resultados publicados' : 'Publicar resultados'}
           </button>
           <button
             type="button"
-            onClick={() => setPreguntarSoluciones(true)}
+            onClick={() => void publicarSoluciones()}
             disabled={!publicados || solucionesPublicadas || publicandoSoluciones}
             title={!publicados ? 'Primero publica las calificaciones' : 'Autorizar respuestas correctas para los estudiantes'}
             className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {solucionesPublicadas ? 'Respuestas publicadas' : 'Publicar respuestas correctas'}
+            {publicandoSoluciones ? 'Publicando…' : solucionesPublicadas ? 'Respuestas publicadas' : 'Publicar respuestas correctas'}
           </button>
         </div>
       </div>
@@ -224,7 +215,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
 
           {confirmadas ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-              ✓ Revisión confirmada. Las notas ya no pueden modificarse desde esta HU. {publicados ? 'Los resultados también están publicados.' : 'Todavía no se han publicado los resultados.'}
+              ✓ Revisión confirmada. Las notas ya no pueden modificarse. {publicados ? 'Los resultados también están publicados.' : 'Todavía no se han publicado los resultados.'}
             </div>
           ) : datos.total_rendiciones === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">Todavía no se registraron rendiciones de estudiantes para esta evaluación.</div>
@@ -282,47 +273,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             </div>
             <div className="border-t border-slate-100 px-4 py-3 text-right text-xs text-slate-400 dark:border-slate-800">{visibles.length} de {estudiantes.length} rendiciones</div>
           </section>
-          
-          {preguntarConfirmacion && puedeConfirmar && (
-            <section role="group" aria-label="Confirmar revisión" className="rounded-xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-900 dark:bg-violet-950/30">
-              <h2 className="font-semibold text-violet-950 dark:text-violet-100">¿Confirmar todas las calificaciones?</h2>
-              <p className="mt-2 text-sm text-violet-900/80 dark:text-violet-200">Esta acción bloqueará los ajustes de puntajes. <strong>No publicará los resultados</strong> a los estudiantes.</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" disabled={confirmando} onClick={() => void confirmar()} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50">{confirmando ? 'Confirmando…' : 'Sí, confirmar revisión'}</button>
-                <button type="button" disabled={confirmando} onClick={() => setPreguntarConfirmacion(false)} className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 dark:bg-slate-900 dark:text-slate-200">Cancelar</button>
-              </div>
-            </section>
-          )}
-          {preguntarPublicacion && puedePublicar && (
-            <section role="group" aria-label="Publicación de resultados" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-              <h2 className="font-semibold text-emerald-950">¿Publicar resultados oficiales?</h2>
-              <p className="mt-2 text-sm text-emerald-900">
-                Las notas y la retroalimentación serán visibles para los estudiantes.
-                Las soluciones correctas no se liberarán automáticamente.
-              </p>
-              <div className="mt-4 flex gap-2">
-                <button type="button" onClick={() => void publicar()} disabled={publicando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                  {publicando ? 'Publicando…' : 'Sí, publicar resultados'}
-                </button>
-                <button type="button" disabled={publicando} onClick={() => setPreguntarPublicacion(false)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm">Cancelar</button>
-              </div>
-            </section>
-          )}
-          {preguntarSoluciones && publicados && !solucionesPublicadas && (
-            <section role="group" aria-label="Publicación de respuestas correctas" className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-              <h2 className="font-semibold text-blue-950">¿Publicar las respuestas correctas?</h2>
-              <p className="mt-2 text-sm text-blue-900">
-                Los estudiantes que rindieron la evaluación podrán consultar las opciones correctas,
-                soluciones numéricas y rúbricas disponibles. Esta autorización no se puede deshacer desde la interfaz.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void publicarSoluciones()} disabled={publicandoSoluciones} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                  {publicandoSoluciones ? 'Publicando…' : 'Sí, publicar respuestas'}
-                </button>
-                <button type="button" onClick={() => setPreguntarSoluciones(false)} disabled={publicandoSoluciones} className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm">Cancelar</button>
-              </div>
-            </section>
-          )}
+
           {publicados && datos.resultados_publicados_en && (
             <p className="text-sm text-emerald-700">
               Publicados el {new Date(datos.resultados_publicados_en).toLocaleString('es-BO')}.
