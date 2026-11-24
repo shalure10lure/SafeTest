@@ -18,6 +18,8 @@ const MENSAJES: Record<MotivoErrorIa, string> = {
     'El proveedor de IA devolvió un error. Intenta de nuevo más tarde.',
   respuesta_invalida:
     'La IA no devolvió propuestas válidas para el tipo de pregunta solicitado.',
+  contenido_bloqueado:
+    'La solicitud fue bloqueada por los filtros de seguridad del proveedor de IA.',
   material_insuficiente:
     'Los documentos seleccionados no contienen información suficiente para generar la cantidad de preguntas solicitada.',
   modelo_no_disponible:

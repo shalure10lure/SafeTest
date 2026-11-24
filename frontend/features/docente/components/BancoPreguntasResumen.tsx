@@ -9,6 +9,7 @@ const TIPOS: { clave: TipoPregunta; label: string; tono: Tono }[] = [
     { clave: 'verdadero_falso', label: 'Verdadero / Falso', tono: 'violet' },
     { clave: 'respuesta_abierta', label: 'Respuesta abierta', tono: 'emerald' },
     { clave: 'respuesta_numerica', label: 'Respuesta numérica', tono: 'amber' },
+    { clave: 'varios_incisos', label: 'Varios incisos', tono: 'slate' },
 ];
 
 export default function BancoPreguntasResumen({
@@ -24,7 +25,6 @@ export default function BancoPreguntasResumen({
                 accion={
                     <LinkButton
                         href={ROUTES.docente.preguntas}
-                        disponible={false}
                         className="h-8 px-3 text-xs"
                     >
                         Ver banco
@@ -33,7 +33,12 @@ export default function BancoPreguntasResumen({
             />
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {TIPOS.map((tipo) => (
+                {/* "Varios incisos" solo aparece si hay preguntas de ese tipo */}
+                {TIPOS.filter(
+                    (tipo) =>
+                        tipo.clave !== 'varios_incisos' ||
+                        preguntasPorTipo.varios_incisos > 0,
+                ).map((tipo) => (
                     <div
                         key={tipo.clave}
                         className={cn(
@@ -52,7 +57,6 @@ export default function BancoPreguntasResumen({
             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4">
                 <LinkButton
                     href={ROUTES.docente.preguntas}
-                    disponible={false}
                     className="h-8 w-full text-xs"
                 >
                     Ver todas
@@ -60,7 +64,6 @@ export default function BancoPreguntasResumen({
                 <LinkButton
                     href={ROUTES.docente.preguntaNueva}
                     variante="primaria"
-                    disponible={false}
                     className="h-8 w-full text-xs"
                 >
                     + Agregar

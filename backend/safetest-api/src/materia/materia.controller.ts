@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     Param,
     ParseIntPipe,
@@ -15,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocenteGuard } from '../auth/guards/docente.guard';
 import { MateriaService } from './materia.service';
 import { CreateMateriaDto } from './dto/create-materia.dto';
+import { CreateMateriasLoteDto } from './dto/create-materias-lote.dto';
 import { UpdateMateriaDto } from './dto/update-materia.dto';
 
 @Controller('materias')
@@ -41,6 +43,12 @@ export class MateriaController {
         return this.materiaService.create(dto, this.docenteId(req));
     }
 
+    // Crear varias materias a la vez (debe ir antes de las rutas con :id)
+    @Post('lote')
+    createLote(@Body() dto: CreateMateriasLoteDto, @Req() req: Request) {
+        return this.materiaService.createLote(dto, this.docenteId(req));
+    }
+
     @Put(':id')
     update(
         @Param('id', ParseIntPipe) id: number,
@@ -48,5 +56,10 @@ export class MateriaController {
         @Req() req: Request,
     ) {
         return this.materiaService.update(id, dto, this.docenteId(req));
+    }
+
+    @Delete(':id')
+    remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+        return this.materiaService.remove(id, this.docenteId(req));
     }
 }

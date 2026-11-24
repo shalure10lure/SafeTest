@@ -26,6 +26,11 @@ class PeriodosService extends BaseService {
     update(id: number, data: UpdatePeriodoDto) {
         return this.put<Periodo, UpdatePeriodoDto>(`/${id}`, data);
     }
+
+    /** Falla con 409 si el periodo tiene paralelos o evaluaciones. */
+    remove(id: number) {
+        return this.delete<{ eliminado: boolean }>(`/${id}`);
+    }
 }
 
 export const periodosService = new PeriodosService();

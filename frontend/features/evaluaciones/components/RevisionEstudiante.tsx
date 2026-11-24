@@ -3,19 +3,43 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+// RESOLUCIÓN: se quitó RespuestaValoracion porque ya no se usa (el guardado es por lote)
 import type {
   DetalleCalificacion, IncisoCalificacion, PreguntaCalificacion,
-  RespuestaValoracion, ResumenCalificaciones,
+  ResumenCalificaciones,
 } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
+import type {
+  AceptarCorreccionIaResponse,
+  CorreccionIa,
+} from '../correccion-ia.types';
+import {
+  correccionIaService,
+  mensajeErrorCorreccionIa,
+} from '../services/correccion-ia.service';
 import FormularioValoracion from './FormularioValoracion';
-import type { BorradorValoracion } from './FormularioValoracion';
-import EventosSeguridadEstudiante from './EventosSeguridadEstudiante';
+// RESOLUCIÓN: se conservan los imports de AMBAS ramas
+import PropuestaCorreccionIa from './PropuestaCorreccionIa'; // propio (IA)
+import type { BorradorValoracion } from './FormularioValoracion'; // de main (lote)
+import EventosSeguridadEstudiante from './EventosSeguridadEstudiante'; // de main (seguridad)
 
+// Un inciso junto con su pregunta
 type FilaInciso = { pregunta: PreguntaCalificacion; inciso: IncisoCalificacion };
+type PropuestaIaVista = CorreccionIa;
+// Clave única "preguntaId-letra" de cada inciso
 const clave = (fila: FilaInciso) => `${fila.pregunta.pregunta_id}-${fila.inciso.letra}`;
+// Redondea a 2 decimales
 const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+// Formatea puntos en formato boliviano
 const puntos = (n: number) => n.toLocaleString('es-BO', { maximumFractionDigits: 2 });
+// Estados de propuesta de IA que se pueden volver a mostrar al recargar
+const estadosConPropuestaReutilizable = new Set([
+  'pendiente',
+  'procesando',
+  'generada',
+  'modificada',
+  'error',
+]);
 
 /**
  * Cálculo solamente visual para rendiciones con incisos pendientes.
@@ -46,6 +70,7 @@ function puntajeProvisional(detalle: DetalleCalificacion) {
   };
 }
 
+// Resumen corto de lo que respondió el estudiante
 function respuestaCorta(i: IncisoCalificacion): string {
   const marcadas = i.opciones.filter((o) => o.seleccionada).map((o) => o.texto_opcion);
   if (marcadas.length) return marcadas.join(', ');
@@ -53,6 +78,7 @@ function respuestaCorta(i: IncisoCalificacion): string {
   if (i.procedimiento?.resultado_final) return i.procedimiento.resultado_final;
   return 'Sin respuesta';
 }
+// Resumen corto de la solución esperada
 function solucionCorta(i: IncisoCalificacion): string {
   const correctas = i.opciones.filter((o) => o.correcta).map((o) => o.texto_opcion);
   if (correctas.length) return correctas.join(', ');
@@ -66,15 +92,25 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const [detalle, setDetalle] = useState<DetalleCalificacion | null>(null);
   const [resumen, setResumen] = useState<ResumenCalificaciones | null>(null);
   const [cargando, setCargando] = useState(true);
+  // Identifica qué examen:estudiante ya se cargó (evita mostrar datos viejos al cambiar de estudiante)
+  const [claveCargada, setClaveCargada] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  // RESOLUCIÓN: ahora es boolean (guardado por lote de main), ya no un identificador
   const [guardando, setGuardando] = useState(false);
   // Un solo estado mantiene los borradores aunque se abra/cierre Ajustar automático.
   const [borradores, setBorradores] = useState<Record<string, BorradorValoracion>>({});
+  // Errores de validación por inciso
   const [erroresCampo, setErroresCampo] = useState<Record<string, string>>({});
+  // Inciso automático que se está ajustando
   const [editandoAuto, setEditandoAuto] = useState<string | null>(null);
+  // Propuestas de la IA por inciso (mejora propia)
+  const [propuestasIa, setPropuestasIa] = useState<
+    Record<string, PropuestaIaVista>
+  >({});
 
   const rutaGeneral = `/docente/evaluaciones/${examenId}/calificaciones`;
+  // Recarga detalle y resumen desde el backend
   const cargar = useCallback(async () => {
     const [respuestas, lista] = await Promise.all([
       calificacionesService.detalle(examenId, estudianteId),
@@ -84,28 +120,85 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     setResumen(lista);
   }, [examenId, estudianteId]);
 
+  // Carga inicial: detalle + resumen + propuestas de IA existentes
   useEffect(() => {
     let activo = true;
-    setCargando(true);
-    setError(null);
-    setMensaje(null);
-    setDetalle(null);
-    setResumen(null);
-    setBorradores({});
-    setErroresCampo({});
-    Promise.all([
-      calificacionesService.detalle(examenId, estudianteId),
-      calificacionesService.resumen(examenId),
-    ]).then(([respuestas, lista]) => {
-      if (!activo) return;
-      setDetalle(respuestas);
-      setResumen(lista);
-    }).catch((fallo: unknown) => {
-      if (activo) setError(mensajeErrorCalificaciones(fallo));
-    }).finally(() => { if (activo) setCargando(false); });
+    async function cargarInicial() {
+      // De main: al cambiar de estudiante se descartan borradores y errores viejos
+      setBorradores({});
+      setErroresCampo({});
+      setEditandoAuto(null);
+      try {
+        const [respuestas, lista] = await Promise.all([
+          calificacionesService.detalle(examenId, estudianteId),
+          calificacionesService.resumen(examenId),
+        ]);
+        if (!activo) return;
+        setError(null);
+        setMensaje(null);
+        setDetalle(respuestas);
+        setResumen(lista);
+        setPropuestasIa({});
+        // Incisos que siguen pendientes de revisión
+        const pendientesIniciales = respuestas.preguntas.flatMap((pregunta) =>
+          pregunta.incisos
+            .filter((inciso) => inciso.pendiente_revision)
+            .map((inciso) => ({ pregunta, inciso })),
+        );
+        const clavesPendientes = new Set(pendientesIniciales.map(clave));
+        try {
+          // Recupera propuestas de IA ya generadas para este estudiante
+          const bandeja = await correccionIaService.listarPorExamen(
+            examenId,
+            {
+              estudiante_id: estudianteId,
+              limite: 200,
+              desplazamiento: 0,
+            },
+          );
+          if (!activo) return;
+          const recuperadas: Record<string, PropuestaIaVista> = {};
+          // Primero las más recientes (por intento y fecha)
+          const propuestasOrdenadas = [...bandeja.propuestas].sort(
+            (a, b) =>
+              b.intento - a.intento ||
+              Date.parse(b.actualizada_en) - Date.parse(a.actualizada_en),
+          );
+          for (const propuesta of propuestasOrdenadas) {
+            const identificador = `${propuesta.pregunta_id}-${propuesta.letra}`;
+            if (
+              clavesPendientes.has(identificador) &&
+              estadosConPropuestaReutilizable.has(propuesta.estado) &&
+              !recuperadas[identificador]
+            ) {
+              recuperadas[identificador] = propuesta;
+            }
+          }
+          setPropuestasIa((actuales) => ({ ...recuperadas, ...actuales }));
+        } catch (fallo: unknown) {
+          if (activo) setError(mensajeErrorCorreccionIa(fallo));
+        }
+      } catch (fallo: unknown) {
+        if (activo) {
+          setMensaje(null);
+          setError(mensajeErrorCalificaciones(fallo));
+          setDetalle(null);
+          setResumen(null);
+          setPropuestasIa({});
+        }
+      } finally {
+        if (activo) {
+          setClaveCargada(`${examenId}:${estudianteId}`);
+          setCargando(false);
+        }
+      }
+    }
+
+    void cargarInicial();
     return () => { activo = false; };
   }, [examenId, estudianteId]);
 
+  // Todos los incisos en una lista plana
   const filas: FilaInciso[] = useMemo(() => detalle?.preguntas.flatMap((pregunta) =>
     pregunta.incisos.map((inciso) => ({ pregunta, inciso }))) ?? [], [detalle]);
   const automaticas = filas.filter((f) => f.inciso.estado_correccion === 'automatica' && !f.inciso.pendiente_revision);
@@ -118,11 +211,28 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const siguiente = candidatos[indice + 1];
   const confirmadas = !!detalle?.calificaciones_revisadas_en;
   const publicados = !!detalle?.resultados_publicados_en;
+  // true hasta que termine de cargar el estudiante actual
+  const cargandoPantalla =
+    cargando || claveCargada !== `${examenId}:${estudianteId}`;
+  // `guardando` ahora es boolean
   const bloqueado = confirmadas || publicados || detalle?.estado_rendicion === 'en_curso' || guardando;
   const completadas = filas.length - pendientes.length;
   const progreso = filas.length > 0 ? Math.round(completadas * 100 / filas.length) : 0;
 
-  // El borrador conserva los cambios del docente hasta el guardado conjunto.
+  // Propio: si la URL trae #revision-..., hace scroll hasta ese inciso al terminar de cargar
+  useEffect(() => {
+    if (cargandoPantalla || !window.location.hash) return;
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [cargandoPantalla]);
+
+  // De main: el borrador conserva los cambios del docente hasta el guardado conjunto.
   function obtenerBorrador(fila: FilaInciso): BorradorValoracion {
     return borradores[clave(fila)] ?? {
       puntaje: fila.inciso.puntaje_obtenido ?? '',
@@ -130,6 +240,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     };
   }
 
+  // Guarda un cambio del formulario en el borrador y limpia su error
   function cambiarBorrador(fila: FilaInciso, borrador: BorradorValoracion) {
     const id = clave(fila);
     setBorradores((actuales) => ({ ...actuales, [id]: borrador }));
@@ -142,6 +253,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     setMensaje(null);
   }
 
+  // true si el borrador difiere de lo guardado
   function tieneCambios(fila: FilaInciso): boolean {
     const borrador = obtenerBorrador(fila);
     const original = fila.inciso;
@@ -151,6 +263,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
 
   const cambiosPendientes = filas.filter((fila) => fila.inciso.pendiente_revision || tieneCambios(fila)).length;
 
+  // Valida y guarda TODAS las revisiones en una sola operación
   async function guardarTodas() {
     if (!detalle || bloqueado) return;
     setError(null);
@@ -159,6 +272,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     const errores: Record<string, string> = {};
     const revisiones: Array<{ pregunta_id: number; letra: string; puntaje: number; retroalimentacion: string | null }> = [];
     for (const fila of filas) {
+      // Solo se procesan incisos pendientes o con cambios
       if (!fila.inciso.pendiente_revision && !tieneCambios(fila)) continue;
       const borrador = obtenerBorrador(fila);
       const puntaje = Number(borrador.puntaje.replace(',', '.'));
@@ -210,6 +324,14 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
       // Solo se descartan los borradores después de confirmar que la API los guardó.
       setBorradores({});
       setErroresCampo({});
+      // Propio: los incisos guardados manualmente ya no necesitan su propuesta de IA
+      setPropuestasIa((actuales) => {
+        const restantes = { ...actuales };
+        for (const revision of revisiones) {
+          delete restantes[`${revision.pregunta_id}-${revision.letra}`];
+        }
+        return restantes;
+      });
       try {
         await cargar();
         setMensaje(resultado.pendientes_revision === 0
@@ -225,9 +347,66 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     }
   }
 
+  // Propio: aplica en pantalla el resultado de aceptar una propuesta de IA
+  function aplicarAceptacion(
+    propuesta: CorreccionIa,
+    resultado: AceptarCorreccionIaResponse,
+  ) {
+    const calificacion = resultado.calificacion;
+    const identificador = `${propuesta.pregunta_id}-${propuesta.letra}`;
+    setError(null);
+    setMensaje('Propuesta aceptada y calificación oficial actualizada.');
+    // Integración: se descarta cualquier borrador de ese inciso para que no
+    // tape el puntaje que acaba de aceptarse
+    setBorradores((actuales) => {
+      if (!(identificador in actuales)) return actuales;
+      const restantes = { ...actuales };
+      delete restantes[identificador];
+      return restantes;
+    });
+    setErroresCampo((actuales) => {
+      if (!(identificador in actuales)) return actuales;
+      const restantes = { ...actuales };
+      delete restantes[identificador];
+      return restantes;
+    });
+    // Actualiza el detalle localmente con la calificación aceptada
+    setDetalle((actual) => {
+      if (!actual) return actual;
+      return {
+        ...actual,
+        nota_final: calificacion.nota_final,
+        estado_rendicion: calificacion.estado_rendicion,
+        preguntas: actual.preguntas.map((pregunta) =>
+          pregunta.pregunta_id !== propuesta.pregunta_id
+            ? pregunta
+            : {
+                ...pregunta,
+                incisos: pregunta.incisos.map((inciso) =>
+                  inciso.letra !== propuesta.letra
+                    ? inciso
+                    : {
+                        ...inciso,
+                        puntaje_obtenido: calificacion.puntaje_obtenido,
+                        estado_correccion: calificacion.estado_correccion,
+                        pendiente_revision: false,
+                      },
+                ),
+              },
+        ),
+      };
+    });
+    // Confirma con el servidor
+    void cargar().catch((fallo: unknown) => {
+      setError(mensajeErrorCalificaciones(fallo));
+    });
+  }
+
+  // Hace scroll hasta un inciso
   function irA(fila: FilaInciso) {
     document.getElementById(`revision-${clave(fila)}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
+  // Salta al siguiente inciso pendiente (o vuelve al resumen si no quedan)
   function irAlSiguiente(actual: FilaInciso) {
     const posicion = pendientes.findIndex((f) => clave(f) === clave(actual));
     const siguientePendiente = pendientes[posicion + 1] ?? pendientes.find((f) => clave(f) !== clave(actual));
@@ -268,9 +447,9 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
 
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       {mensaje && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">{mensaje}</p>}
-      {cargando && <p role="status" className="rounded-xl border border-slate-200 bg-white p-10 text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando las respuestas y puntajes…</p>}
+      {cargandoPantalla && <p role="status" className="rounded-xl border border-slate-200 bg-white p-10 text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando las respuestas y puntajes…</p>}
 
-      {!cargando && detalle && parciales && (
+      {!cargandoPantalla && detalle && parciales && (
         <>
           {confirmadas && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">✓ Esta evaluación ya fue confirmada por el docente. Las valoraciones son de solo lectura.</div>}
           {pendientes.length === 0 && detalle.estado_rendicion === 'corregida' && (
@@ -281,6 +460,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
           )}
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_250px]">
             <div className="min-w-0 space-y-5">
+              {/* Tabla de corrección automática */}
               <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
                   <div className="flex items-center gap-2">
@@ -313,6 +493,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                 )}
               </section>
 
+              {/* Formulario para ajustar un inciso automático */}
               {automaticas.filter((fila) => clave(fila) === editandoAuto).map((fila) => (
                 <FormularioValoracion
                   key={`${clave(fila)}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
@@ -327,6 +508,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                 />
               ))}
 
+              {/* Revisión manual: formulario + propuesta de IA de cada inciso */}
               <section className="space-y-4" aria-label="Revisión manual de incisos">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div><h2 className="text-base font-bold">Revisión manual</h2><p className="text-xs text-slate-500 dark:text-slate-400">Valora los incisos pendientes y ajusta los que ya revisaste.</p></div>
@@ -334,20 +516,37 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                 </div>
                 {manuales.length === 0 ? (
                   <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Todas las respuestas de esta rendición fueron calificadas automáticamente. Si necesitas ajustar alguna, utiliza el botón <strong>Ajustar</strong> en la tabla anterior.</div>
-                ) : manuales.map((fila) => (
-                  <FormularioValoracion
-                    key={`${clave(fila)}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
-                    id={`revision-${clave(fila)}`} numeroPregunta={fila.pregunta.orden}
-                    preguntaId={fila.pregunta.pregunta_id} enunciadoPregunta={fila.pregunta.enunciado}
-                    inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando}
-                    borrador={obtenerBorrador(fila)}
-                    onCambiar={(valoracion) => cambiarBorrador(fila, valoracion)}
-                    errorValidacion={erroresCampo[clave(fila)]}
-                    onSiguiente={pendientes.length > 1 && fila.inciso.pendiente_revision ? () => irAlSiguiente(fila) : undefined}
-                  />
-                ))}
+                ) : manuales.map((fila) => {
+                  const identificador = clave(fila);
+                  const propuestaIa = propuestasIa[identificador];
+                  return (
+                    <div key={identificador} className="space-y-3">
+                      {/* RESOLUCIÓN: formulario con props de main (borrador/lote) */}
+                      <FormularioValoracion
+                        key={`${identificador}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
+                        id={`revision-${identificador}`} numeroPregunta={fila.pregunta.orden}
+                        preguntaId={fila.pregunta.pregunta_id} enunciadoPregunta={fila.pregunta.enunciado}
+                        inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando}
+                        borrador={obtenerBorrador(fila)}
+                        onCambiar={(valoracion) => cambiarBorrador(fila, valoracion)}
+                        errorValidacion={erroresCampo[identificador]}
+                        onSiguiente={pendientes.length > 1 && fila.inciso.pendiente_revision ? () => irAlSiguiente(fila) : undefined}
+                      />
+                      {/* Propio: propuesta de la IA debajo del formulario */}
+                      {propuestaIa && (
+                        <PropuestaCorreccionIa
+                          key={propuestaIa.propuesta_id}
+                          propuesta={propuestaIa}
+                          bloqueado={bloqueado}
+                          onAceptada={aplicarAceptacion}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </section>
 
+              {/* De main: eventos de seguridad del estudiante */}
               <EventosSeguridadEstudiante examenId={examenId} estudianteId={estudianteId} />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Link href={rutaGeneral} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700">← Revisión general</Link>
@@ -355,6 +554,7 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
               </div>
             </div>
 
+            {/* Panel lateral: guardado por lote y progreso */}
             <aside className="space-y-3 lg:sticky lg:top-5" aria-label="Progreso de corrección">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
                 <div>

@@ -98,7 +98,8 @@ export default function AppShell({
     );
 
     return (
-        <div className="flex h-screen overflow-hidden bg-background text-foreground">
+        // h-dvh permite adaptar la altura a la pantalla visible del dispositivo.
+        <div className="flex h-dvh overflow-hidden bg-background text-foreground">
             {/* Sidebar fijo en escritorio */}
             <div className="hidden w-60 shrink-0 lg:block">{sidebar}</div>
 

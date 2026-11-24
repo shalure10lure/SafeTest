@@ -96,5 +96,6 @@ import { SeguridadRendicionEstudianteController, SeguridadRendicionDocenteContro
         EnvioResultadosCorreoService,
         SeguridadRendicionService,
     ],
+    exports: [RevisionCalificacionesService],
 })
 export class ExamenModule { }

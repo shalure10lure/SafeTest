@@ -1,8 +1,12 @@
 # HU-45 · T2 — Diagnóstico de migraciones y plan de implementación
 
-**Estado:** diagnóstico y planificación. Nada ejecutado.
-**Escrituras en PostgreSQL:** ninguna.
-**Migraciones aplicadas:** ninguna.
+**Estado actualizado (2026-11-19):** T2-01 a T2-03 están aplicadas según sus
+registros de ejecución. La migración T2-04 existe y fue revisada estáticamente,
+pero sigue sin aplicarse porque la configuración de conexión no está disponible.
+La entidad T2-05 ya existía; su módulo y registro en `AppModule` se completan en
+[`T2-05-ejecucion.md`](./T2-05-ejecucion.md). T2-06 está implementada y cubierta
+por `revision-calificaciones.service.spec.ts`.
+**PostgreSQL en esta actualización:** no se accedió ni se modificaron datos.
 
 ---
 
@@ -13,16 +17,16 @@ por el contenedor `safetest-postgres` y que se mapea al `5432` interno. Es
 decir: **`safetest` en el puerto 5432 del contenedor = 5433 en el host**. No es
 una segunda base.
 
-Estado verificado (solo lectura):
+Instantánea del diagnóstico inicial (antes de T2-01):
 
-| Comprobación | Resultado |
-|---|---|
-| Filas en `migrations` | 12, hasta `1794300000000` |
-| Tablas `modelo`, `pregunta_modelo`, `modelo_formula`, `respuesta_modelo` | **0 de 4 existen** |
-| `examen.calificaciones_revisadas_en` | **No existe** |
-| `examen.respuestas_publicadas_en` | **No existe** |
-| `synchronize` | `false` (no hay autosincronización) |
-| Migraciones | Se cargan por `readdirSync` desde `src/migrations` |
+| Comprobación                                                             | Resultado                                          |
+| ------------------------------------------------------------------------ | -------------------------------------------------- |
+| Filas en `migrations`                                                    | 12, hasta `1794300000000`                          |
+| Tablas `modelo`, `pregunta_modelo`, `modelo_formula`, `respuesta_modelo` | **0 de 4 existen**                                 |
+| `examen.calificaciones_revisadas_en`                                     | **No existe**                                      |
+| `examen.respuestas_publicadas_en`                                        | **No existe**                                      |
+| `synchronize`                                                            | `false` (no hay autosincronización)                |
+| Migraciones                                                              | Se cargan por `readdirSync` desde `src/migrations` |
 
 ---
 
@@ -30,23 +34,23 @@ Estado verificado (solo lectura):
 
 ### 1.1 `1794400000000-ModelosFormulaRendicion.ts`
 
-| Dato | Valor |
-|---|---|
-| Clase | `ModelosFormulaRendicion1794400000000` |
-| Archivo | `backend/safetest-api/src/migrations/1794400000000-ModelosFormulaRendicion.ts` |
-| Registrada en la base | **No** |
+| Dato                  | Valor                                                                          |
+| --------------------- | ------------------------------------------------------------------------------ |
+| Clase                 | `ModelosFormulaRendicion1794400000000`                                         |
+| Archivo               | `backend/safetest-api/src/migrations/1794400000000-ModelosFormulaRendicion.ts` |
+| Registrada en la base | **No**                                                                         |
 
 **Cambios de esquema**
 
 Crea cuatro tablas y cuatro índices. No altera tablas existentes.
 
-| Objeto | Definición |
-|---|---|
-| `modelo` | PK `modelo_id` serial; `nombre varchar(150)`, `descripcion`, `variables jsonb`, `activo boolean`; `CHECK jsonb_typeof(variables) = 'object'` |
-| `pregunta_modelo` | PK `(pregunta_id, modelo_id)`; FK a `pregunta` `RESTRICT`, FK a `modelo` `CASCADE` |
-| `modelo_formula` | PK `(modelo_id, formula_id)`; FK a `modelo` `CASCADE`, FK a `formula` `RESTRICT` |
+| Objeto             | Definición                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `modelo`           | PK `modelo_id` serial; `nombre varchar(150)`, `descripcion`, `variables jsonb`, `activo boolean`; `CHECK jsonb_typeof(variables) = 'object'`                                                                            |
+| `pregunta_modelo`  | PK `(pregunta_id, modelo_id)`; FK a `pregunta` `RESTRICT`, FK a `modelo` `CASCADE`                                                                                                                                      |
+| `modelo_formula`   | PK `(modelo_id, formula_id)`; FK a `modelo` `CASCADE`, FK a `formula` `RESTRICT`                                                                                                                                        |
 | `respuesta_modelo` | PK `(estudiante_id, examen_id, pregunta_id, letra)`; FK compuesta a `respuesta_inciso` `RESTRICT`; FK a `pregunta_modelo` `RESTRICT`; `valores jsonb` con `CHECK`; `resultado_final text`; `actualizado_en timestamptz` |
-| Índices | `IDX_modelo_activo_nombre`, `IDX_pregunta_modelo_modelo`, `IDX_modelo_formula_formula`, `IDX_respuesta_modelo_modelo` |
+| Índices            | `IDX_modelo_activo_nombre`, `IDX_pregunta_modelo_modelo`, `IDX_modelo_formula_formula`, `IDX_respuesta_modelo_modelo`                                                                                                   |
 
 **Cambios de datos**
 
@@ -85,11 +89,11 @@ flujo completo de revisión y aceptación.
 
 ### 1.2 `1794500000000-RevisionCalificaciones.ts`
 
-| Dato | Valor |
-|---|---|
-| Clase | `RevisionCalificaciones1794500000000` |
-| Archivo | `backend/safetest-api/src/migrations/1794500000000-RevisionCalificaciones.ts` |
-| Registrada en la base | **No** |
+| Dato                  | Valor                                                                         |
+| --------------------- | ----------------------------------------------------------------------------- |
+| Clase                 | `RevisionCalificaciones1794500000000`                                         |
+| Archivo               | `backend/safetest-api/src/migrations/1794500000000-RevisionCalificaciones.ts` |
+| Registrada en la base | **No**                                                                        |
 
 **Cambios de esquema**
 
@@ -123,6 +127,7 @@ Ninguno. La columna queda `NULL` en todas las filas.
 **¿Necesaria para HU-45?**
 
 **Sí, bloqueante.** Sin esta columna:
+
 - `asegurarEdicionPermitida` produce un `SELECT` con columna inexistente.
 - No se puede garantizar el invariante "no aceptar si la revisión está
   cerrada".
@@ -132,11 +137,11 @@ Ninguno. La columna queda `NULL` en todas las filas.
 
 ### 1.3 `1794600000000-SepararPublicacionRespuestas.ts`
 
-| Dato | Valor |
-|---|---|
-| Clase | `SepararPublicacionRespuestas1794600000000` |
-| Archivo | `backend/safetest-api/src/migrations/1794600000000-SepararPublicacionRespuestas.ts` |
-| Registrada en la base | **No** |
+| Dato                  | Valor                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| Clase                 | `SepararPublicacionRespuestas1794600000000`                                         |
+| Archivo               | `backend/safetest-api/src/migrations/1794600000000-SepararPublicacionRespuestas.ts` |
+| Registrada en la base | **No**                                                                              |
 
 **Cambios de esquema**
 
@@ -281,6 +286,7 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
 - **Objetivo:** crear la tabla con columnas, FKs, `CHECK`, índice único parcial
   e índices secundarios, incluida `version`.
 - **Entregable:** nueva migración `1794700000000-CorreccionIa.ts` y su `down`.
+- **Estado actual:** archivo creado y revisado estáticamente; aplicación pendiente.
 - **Criterio de aceptación:** el esquema coincide con el diseño aprobado;
   `UPDATE`/`DELETE` no rompen FKs; insertar dos propuestas activas del mismo
   inciso falla por el índice único.
@@ -289,12 +295,14 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
 
 ### T2-05 · Entidad y módulo
 
-- **Objetivo:** `CorreccionIa` entity + `IaCorreccionModule` + registro en
+- **Objetivo:** entidad `CorreccionIa` + `CorreccionIaModule` + registro en
   `app.module.ts`.
 - **Entregable:** entidad tipada con enums de estado y relaciones.
 - **Criterio de aceptación:** la app arranca; `autoLoadEntities` reconoce la
   entidad; no se tocan columnas `ia_*`.
 - **Dependencia:** T2-04.
+- **Avance:** entidad existente; módulo y registro implementados. El arranque
+  conectado queda sin verificar hasta aplicar T2-04.
 
 ### T2-06 · Extraer `aplicarValoracionOficial`
 
@@ -307,22 +315,32 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
   `dataSource.transaction`.
 - **Riesgo:** medio (refactor). Se hace antes de HU-45 y con pruebas de
   regresión.
+- **Estado:** completado; ver método y pruebas en
+  `revision-calificaciones.service.ts` y `revision-calificaciones.service.spec.ts`.
 
 ### T2-07 · Reglas de negocio y validación de criterios
 
 - **Objetivo:** implementar el universo asistible.
-- **Reglas:**
+- **Validación de solicitud, antes de crear `pendiente`:**
   - Inciso `estado_correccion = 'pendiente'`.
   - Respuesta no vacía según tipo (`texto`/`desarrollo`/`numerica` vs.
     opciones marcadas).
   - Criterio válido: `solucion_inciso.valor_correcto` finito, `rubrica` no
     vacía, o solución de referencia revisada.
+  - `puntaje_max` finito y positivo; comparte la regla con la validación del
+    resultado IA para respetar el contrato HTTP.
+- **Validación de resultado IA, antes de persistir la salida:**
   - `puntaje_max` finito y > 0.
   - `0 ≤ puntaje_sugerido ≤ puntaje_max`.
-  - Confianza en `[0, 1]`.
-- **Entregable:** `iacorreccion.validacion.ts` con funciones puras y pruebas.
+  - Confianza en `[0, 1]` o nula, como permite el esquema.
+- **Entregable:** `validarSolicitudCorreccionIa` y
+  `validarResultadoCorreccionIa`, funciones puras con pruebas.
 - **Criterio de aceptación:** cada regla tiene prueba; los motivos de rechazo
   son códigos estables.
+- **Estado:** completado; validaciones y pruebas registradas en
+  `T2-07-ejecucion.md`.
+- **Nota contractual:** `PUNTAJE_MAX_INVALIDO` se valida tanto en la solicitud
+  como en el resultado IA mediante la misma regla pura.
 
 ### T2-08 · Ciclo de vida (sin worker)
 
@@ -333,10 +351,29 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
   - `PATCH` solo en `generada` y solo los cuatro campos editables.
   - `version` se incrementa en cada mutación.
   - Regenerar marca `reemplazada` y enlaza `reemplazada_por_id`.
-- **Entregable:** `iacorreccion.service.ts` + pruebas.
+- **Entregable:** `correccionia.service.ts` + pruebas.
 - **Criterio de aceptación:** invariantes I1–I3, I8, I9, I14 verificados.
+- **Estado:** en progreso; implementada la solicitud transaccional de propuestas
+  pendientes y su registro en el módulo. Permanecen pendientes el resto de
+  operaciones de ciclo de vida (consultar, modificar, descartar y regenerar),
+  así como la validación completa de criterios de aceptación T2-08. Ver
+  `T2-08-bloqueo.md`.
 
-### T2-09 · Aceptación transaccional
+### T2-09 · Consultas de propuestas IA
+
+- **Objetivo:** permitir que el docente consulte las propuestas de sus propios
+  exámenes.
+- **Métodos de servicio:** bandeja por examen con filtros, detalle por
+  propuesta e historial por inciso.
+- **Autorización:** verificar primero que el examen pertenezca al docente
+  actual. El detalle no devuelve propuestas de exámenes ajenos y responde
+  `404 PROPUESTA_NO_ENCONTRADA`.
+- **Contratos:** filtros de la bandeja e historial según §4.2.2 y §4.2.8;
+  el DTO público excluye `reintentos_worker`.
+- **Estado:** implementado parcialmente; consultas completadas y pendientes
+  controladores/DTO HTTP. Ver `T2-09-consultas-ejecucion.md`.
+
+### T2-09.1 · Aceptación transaccional
 
 - **Objetivo:** aceptar una propuesta en una única transacción.
 - **Secuencia obligatoria:**
@@ -362,10 +399,15 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
   - `pendiente → procesando → generada | error`.
   - Recuperación por lease.
   - Verificación de publicación antes de persistir.
-- **Entregable:** `iacorreccion.worker.ts` + extensión de `AiProvider` +
-  `fake-ai.provider.ts`.
+- **Entregable:** `correccionia.worker.ts` + store atómico, extensión de
+  `AiProvider`, `fake-ai.provider.ts` y token independiente
+  `AI_CORRECCION_PROVIDER`.
 - **Criterio de aceptación:** I10 e I11; dos workers no procesan la misma fila.
 - **Fuera de alcance:** Gemini.
+- **Estado:** implementación enfocada lista; aceptación pendiente porque build y
+  lint no pudieron validarse con la versión instalada de Node. `intento`
+  permanece inmutable durante los reclamos y solo aumenta
+  `reintentos_worker`. Ver `T2-10-ejecucion.md`.
 
 ### T2-11 · Controladores y DTO
 
@@ -395,20 +437,20 @@ Cada tarea es independiente y verificable. Ninguna se inicia sin autorización.
 
 ```
 backend/safetest-api/src/migrations/1794700000000-CorreccionIa.ts
-backend/safetest-api/src/iacorreccion/entity/correccionia.entity.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.module.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.service.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.controller.ts
-backend/safetest-api/src/iacorreccion/iacorreccion-propuesta.controller.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.worker.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.types.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.errores.ts
-backend/safetest-api/src/iacorreccion/iacorreccion.validacion.ts
-backend/safetest-api/src/iacorreccion/dto/crear-correccion-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/listar-correcciones-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/actualizar-correccion-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/aceptar-correccion-ia.dto.ts
-backend/safetest-api/src/iacorreccion/dto/descartar-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/entity/correccionia.entity.ts   (implementado)
+backend/safetest-api/src/correccionia/correccionia.module.ts           (implementado)
+backend/safetest-api/src/correccionia/correccionia.service.ts
+backend/safetest-api/src/correccionia/correccionia.controller.ts
+backend/safetest-api/src/correccionia/correccionia-propuesta.controller.ts
+backend/safetest-api/src/correccionia/correccionia.worker.ts
+backend/safetest-api/src/correccionia/correccionia.types.ts
+backend/safetest-api/src/correccionia/correccionia.errores.ts
+backend/safetest-api/src/correccionia/correccionia.validacion.ts
+backend/safetest-api/src/correccionia/dto/crear-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/listar-correcciones-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/actualizar-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/aceptar-correccion-ia.dto.ts
+backend/safetest-api/src/correccionia/dto/descartar-correccion-ia.dto.ts
 scripts/ejecutar-migracion-puntual.ts        (solo si se aprueba la opción A)
 ```
 
@@ -440,61 +482,61 @@ backend/safetest-api/src/examen/revision-calificaciones.service.spec.ts
 
 ### Aceptación y atomicidad
 
-| Prueba | Verifica |
-|---|---|
-| `aceptar_aplica_puntaje_y_recalcula_nota` | Flujo feliz; delega en la valoración oficial |
-| `aceptar_con_version_antigua_devuelve_409` | Control optimista |
-| `aceptar_con_puntaje_no_confirmado_devuelve_409` | Confirmación explícita |
-| `aceptar_sin_puntaje_sugerido_devuelve_409` | Propuesta sin valoración |
-| `aceptar_publicado_devuelve_409` | `resultados_publicados_en` |
-| `aceptar_revision_cerrada_devuelve_409` | `calificaciones_revisadas_en` |
-| `fallo_en_valoracion_no_cambia_estado_ni_nota` | Atomicidad |
-| `fallo_al_marcar_aceptada_no_confirma_nota` | Atomicidad inversa |
+| Prueba                                           | Verifica                                     |
+| ------------------------------------------------ | -------------------------------------------- |
+| `aceptar_aplica_puntaje_y_recalcula_nota`        | Flujo feliz; delega en la valoración oficial |
+| `aceptar_con_version_antigua_devuelve_409`       | Control optimista                            |
+| `aceptar_con_puntaje_no_confirmado_devuelve_409` | Confirmación explícita                       |
+| `aceptar_sin_puntaje_sugerido_devuelve_409`      | Propuesta sin valoración                     |
+| `aceptar_publicado_devuelve_409`                 | `resultados_publicados_en`                   |
+| `aceptar_revision_cerrada_devuelve_409`          | `calificaciones_revisadas_en`                |
+| `fallo_en_valoracion_no_cambia_estado_ni_nota`   | Atomicidad                                   |
+| `fallo_al_marcar_aceptada_no_confirma_nota`      | Atomicidad inversa                           |
 
 ### Aislamiento y propiedad
 
-| Prueba | Verifica |
-|---|---|
-| `docente_b_no_ve_propuesta_de_a` | 404, no 403 |
-| `docente_b_no_puede_aceptar_ni_descartar` | 404 |
+| Prueba                                               | Verifica           |
+| ---------------------------------------------------- | ------------------ |
+| `docente_b_no_ve_propuesta_de_a`                     | 404, no 403        |
+| `docente_b_no_puede_aceptar_ni_descartar`            | 404                |
 | `bandeja_solo_devuelve_propuestas_del_examen_propio` | Filtro por docente |
 
 ### Estados e historial
 
-| Prueba | Verifica |
-|---|---|
-| `crear_dos_veces_solo_genera_una_activa` | Índice único + 409 |
-| `patch_solo_en_generada` | 409 en otros estados |
-| `patch_rechaza_confianza_y_metadatos` | Lista cerrada |
+| Prueba                                            | Verifica             |
+| ------------------------------------------------- | -------------------- |
+| `crear_dos_veces_solo_genera_una_activa`          | Índice único + 409   |
+| `patch_solo_en_generada`                          | 409 en otros estados |
+| `patch_rechaza_confianza_y_metadatos`             | Lista cerrada        |
 | `regenerar_conserva_historial_y_enlaza_reemplazo` | `reemplazada_por_id` |
-| `regenerar_tras_aceptada_no_altera_nota` | Decisión aprobada 1 |
-| `propuesta_aceptada_conserva_su_puntaje` | Historial inmutable |
+| `regenerar_tras_aceptada_no_altera_nota`          | Decisión aprobada 1  |
+| `propuesta_aceptada_conserva_su_puntaje`          | Historial inmutable  |
 
 ### Worker
 
-| Prueba | Verifica |
-|---|---|
-| `dos_workers_no_reclaman_la_misma_fila` | `SKIP LOCKED` |
-| `lease_vencido_vuelve_a_pendiente` | Recuperación |
-| `lease_agotado_pasa_a_error` | Límite de intentos |
-| `worker_nunca_produce_aceptada` | Intervención humana |
+| Prueba                                  | Verifica            |
+| --------------------------------------- | ------------------- |
+| `dos_workers_no_reclaman_la_misma_fila` | `SKIP LOCKED`       |
+| `lease_vencido_vuelve_a_pendiente`      | Recuperación        |
+| `lease_agotado_pasa_a_error`            | Límite de intentos  |
+| `worker_nunca_produce_aceptada`         | Intervención humana |
 
 ### Reglas de negocio
 
-| Prueba | Verifica |
-|---|---|
-| `respuesta_vacia_devuelve_400_sin_fila` | Universo asistible |
-| `sin_criterios_devuelve_400_con_motivo` | No inventar criterios |
-| `puntaje_sugerido_nunca_supera_el_maximo` | Clamp + `CHECK` |
-| `confianza_fuera_de_rango_rechazada` | `CHECK` |
+| Prueba                                    | Verifica              |
+| ----------------------------------------- | --------------------- |
+| `respuesta_vacia_devuelve_400_sin_fila`   | Universo asistible    |
+| `sin_criterios_devuelve_400_con_motivo`   | No inventar criterios |
+| `puntaje_sugerido_nunca_supera_el_maximo` | Clamp + `CHECK`       |
+| `confianza_fuera_de_rango_rechazada`      | `CHECK`               |
 
 ### No regresión
 
-| Prueba | Verifica |
-|---|---|
-| `valorar_inciso_mantiene_contrato` | Refactor T2-06 |
-| `obtener_detalle_no_incluye_ia_star` | Columnas deprecadas sin uso |
-| `publicar_resultados_no_muta_propuestas` | Independencia HU-32 |
+| Prueba                                   | Verifica                    |
+| ---------------------------------------- | --------------------------- |
+| `valorar_inciso_mantiene_contrato`       | Refactor T2-06              |
+| `obtener_detalle_no_incluye_ia_star`     | Columnas deprecadas sin uso |
+| `publicar_resultados_no_muta_propuestas` | Independencia HU-32         |
 
 ---
 
@@ -512,10 +554,10 @@ backend/safetest-api/src/examen/revision-calificaciones.service.spec.ts
 
 ## 7. Riesgos abiertos
 
-| Riesgo | Mitigación |
-|---|---|
-| Aplicar migraciones sobre datos reales | Solo base de desarrollo, con autorización explícita |
-| Efecto de visibilidad de 179460 | Revisar el examen 19 antes de aplicar |
-| Refactor de `valorarInciso` | Pruebas de regresión antes de T2-09 |
+| Riesgo                                                          | Mitigación                                                     |
+| --------------------------------------------------------------- | -------------------------------------------------------------- |
+| Aplicar migraciones sobre datos reales                          | Solo base de desarrollo, con autorización explícita            |
+| Efecto de visibilidad de 179460                                 | Revisar el examen 19 antes de aplicar                          |
+| Refactor de `valorarInciso`                                     | Pruebas de regresión antes de T2-09                            |
 | API de ejecución puntual no disponible en la versión de TypeORM | Validar en el paso 0; si no, pedir waiver para `migration:run` |
-| Worker y app compitiendo por locks | Orden fijo examen → rendición → propuesta |
+| Worker y app compitiendo por locks                              | Orden fijo examen → rendición → propuesta                      |

@@ -1,26 +1,30 @@
 'use client';
 
+// Tipo del inciso que viene del backend
 import type { IncisoCalificacion } from '../calificaciones.types';
 
+// Borrador que el docente va escribiendo; vive en el componente padre
+// (RevisionEstudiante) para poder guardar todos los incisos de una sola vez
 export interface BorradorValoracion {
   puntaje: string;
   retroalimentacion: string;
 }
 
 interface Props {
-  id?: string;
+  id?: string; // id HTML para poder hacer scroll hasta este formulario
   numeroPregunta: number;
   preguntaId: number;
   enunciadoPregunta: string;
   inciso: IncisoCalificacion;
-  bloqueado: boolean;
-  guardando: boolean;
-  borrador: BorradorValoracion;
-  onCambiar: (valoracion: BorradorValoracion) => void;
-  errorValidacion?: string;
-  onSiguiente?: () => void;
+  bloqueado: boolean; // true si la revisión ya está confirmada/publicada o en curso
+  guardando: boolean; // true mientras se guarda el lote
+  borrador: BorradorValoracion; // valores actuales de los campos
+  onCambiar: (valoracion: BorradorValoracion) => void; // avisa al padre de cada cambio
+  errorValidacion?: string; // error del campo calculado por el padre
+  onSiguiente?: () => void; // salta al siguiente inciso pendiente
 }
 
+// Etiquetas legibles para el estado de corrección del inciso
 const etiquetas: Record<string, string> = {
   automatica: 'Automática',
   pendiente: 'Revisión necesaria',
@@ -32,15 +36,20 @@ export default function FormularioValoracion({
   id, numeroPregunta, preguntaId, enunciadoPregunta, inciso, bloqueado, guardando,
   borrador, onCambiar, errorValidacion, onSiguiente,
 }: Props) {
+  // Valores actuales del borrador
   const { puntaje, retroalimentacion } = borrador;
 
+  // true si el estudiante no escribió texto
   const sinTexto = !(inciso.respuesta_texto ?? '').trim();
+  // Opciones que el estudiante marcó
   const opcionesElegidas = inciso.opciones.filter((o) => o.seleccionada);
+  // true si existe alguna solución de referencia para mostrar
   const contieneReferencia = inciso.solucion_referencia != null || inciso.solucion_numerica != null ||
     inciso.opciones.some((o) => o.correcta);
 
   return (
     <article id={id} className="scroll-mt-24 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      {/* Cabecera: pregunta, inciso y estado */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-violet-700 dark:text-violet-300">Pregunta {numeroPregunta} · inciso {inciso.letra}</span>
@@ -51,12 +60,14 @@ export default function FormularioValoracion({
         </span>
       </div>
       <div className="space-y-4 p-4 sm:p-5">
+        {/* Enunciado de la pregunta y del inciso */}
         <div>
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Pregunta</p>
           <p className="whitespace-pre-wrap text-sm font-semibold">{enunciadoPregunta}</p>
           {inciso.enunciado_inciso && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{inciso.enunciado_inciso}</p>}
         </div>
 
+        {/* Respuesta del estudiante (texto, opciones y/o procedimiento) */}
         <div>
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Respuesta del estudiante</p>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950/40">
@@ -80,6 +91,7 @@ export default function FormularioValoracion({
           </div>
         </div>
 
+        {/* Solución esperada / rúbrica (desplegable) */}
         {contieneReferencia && (
           <details className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
             <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-600 hover:text-violet-700 dark:text-slate-300">Ver solución esperada / rúbrica</summary>
@@ -91,6 +103,7 @@ export default function FormularioValoracion({
           </details>
         )}
 
+        {/* Campos de puntaje y retroalimentación */}
         <div className="grid gap-4 sm:grid-cols-[minmax(130px,145px)_1fr]">
           <div>
             <label htmlFor={`nota-${preguntaId}-${inciso.letra}`} className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Puntaje asignado</label>
@@ -117,6 +130,8 @@ export default function FormularioValoracion({
               className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-800"
             />
           </div>
+          {/* RESOLUCIÓN: se usa la versión de main. Ya no hay botón "Guardar revisión"
+              por inciso: el guardado se hace en lote desde RevisionEstudiante. */}
           {onSiguiente && (
             <div className="flex justify-end border-t border-slate-100 pt-3 sm:col-span-2 dark:border-slate-800">
               <button type="button" onClick={onSiguiente} disabled={bloqueado || guardando} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200">

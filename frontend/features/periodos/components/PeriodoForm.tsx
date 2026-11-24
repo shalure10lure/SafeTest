@@ -1,8 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import axios from 'axios';
 
+import Alerta from '@/components/ui/Alerta';
+import { describirError } from '@/lib/mensajes';
 import { materiasService } from '@/features/materias/services/materias.service';
 import type { Materia } from '@/features/materias/types';
 
@@ -39,8 +40,9 @@ export function PeriodoForm({
     const [guardando, setGuardando] = useState(false);
 
     useEffect(() => {
-        materiasService.getAll().then(setMaterias).catch(() => {
-            setMensaje('No se pudieron cargar tus materias');
+        materiasService.getAll().then(setMaterias).catch((fallo) => {
+            const { titulo, detalle } = describirError(fallo, 'No se pudieron cargar tus materias');
+            setMensaje(`${titulo}. ${detalle}`);
         });
     }, []);
 
@@ -91,12 +93,8 @@ export function PeriodoForm({
 
             onGuardado();
         } catch (err) {
-            if (axios.isAxiosError(err)) {
-                const m = err.response?.data?.message;
-                setMensaje(Array.isArray(m) ? m.join(', ') : (m ?? 'Error al guardar'));
-            } else {
-                setMensaje('Error al guardar');
-            }
+            const { titulo, detalle } = describirError(err, 'No se pudo guardar el periodo');
+            setMensaje(`${titulo}. ${detalle}`);
         } finally {
             setGuardando(false);
         }
@@ -109,7 +107,7 @@ export function PeriodoForm({
     return (
         <form
             onSubmit={guardar}
-            className="max-w-xl space-y-4 rounded-lg border bg-white p-6"
+            className="max-w-xl space-y-4 rounded-lg border bg-white p-4 sm:p-6"
         >
             <div>
                 <h2 className="font-semibold">Datos del periodo</h2>
@@ -118,8 +116,8 @@ export function PeriodoForm({
                 </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
+            <div className="grid gap-4 sm:grid-cols-3">
+                <div className="sm:col-span-2">
                     <label className="mb-1 block text-sm font-medium">Gestión</label>
                     <input
                         className={input}
@@ -143,7 +141,7 @@ export function PeriodoForm({
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label className="mb-1 block text-sm font-medium">Inicio</label>
                     <input
@@ -168,10 +166,30 @@ export function PeriodoForm({
             </div>
 
             <div>
-                <label className="mb-2 block text-sm font-medium">
-                    Materias del periodo{' '}
-                    <span className="text-slate-400">(opcional)</span>
-                </label>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="block text-sm font-medium">
+                        Materias del periodo{' '}
+                        <span className="text-slate-400">(opcional)</span>
+                    </span>
+                    {materias.length > 0 && (
+                        <span className="flex gap-3 text-xs">
+                            <button
+                                type="button"
+                                onClick={() => setMateriaIds(materias.map((m) => m.materia_id))}
+                                className="text-violet-600 hover:underline"
+                            >
+                                Seleccionar todas
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMateriaIds([])}
+                                className="text-slate-500 hover:underline"
+                            >
+                                Quitar todas
+                            </button>
+                        </span>
+                    )}
+                </div>
 
                 {materias.length === 0 ? (
                     <p className="text-sm text-slate-500">
@@ -207,9 +225,13 @@ export function PeriodoForm({
                 </label>
             )}
 
-            {mensaje && <p className="text-sm text-red-600">{mensaje}</p>}
+            {mensaje && (
+                <Alerta tono="error" onCerrar={() => setMensaje('')}>
+                    {mensaje}
+                </Alerta>
+            )}
 
-            <div className="flex justify-end gap-2 border-t pt-4">
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
                 <button
                     type="button"
                     onClick={onCancelar}

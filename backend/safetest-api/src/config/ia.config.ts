@@ -17,6 +17,10 @@ export interface IaConfig {
   maxConcurrentes: number;
   /** Cada cuánto revisa el worker si hay generaciones pendientes. */
   intervaloWorkerMs: number;
+  /** Antigüedad máxima de una propuesta en 'procesando' antes de recuperarla. */
+  correccionLeaseSegundos: number;
+  /** Reclamos técnicos permitidos por propuesta antes de marcarla con error. */
+  correccionMaxIntentos: number;
 }
 
 export class ErrorConfiguracionIa extends Error {
@@ -36,6 +40,8 @@ const DEFAULTS = {
   maxCaracteresTotales: 60_000,
   maxConcurrentes: 2,
   intervaloWorkerMs: 2_000,
+  correccionLeaseSegundos: 120,
+  correccionMaxIntentos: 3,
 };
 
 /**
@@ -94,6 +100,18 @@ export function cargarConfiguracionIa(
     DEFAULTS.intervaloWorkerMs,
     errores,
   );
+  const correccionLeaseSegundos = leerEnteroPositivo(
+    env,
+    'IA_CORRECCION_LEASE_SEGUNDOS',
+    DEFAULTS.correccionLeaseSegundos,
+    errores,
+  );
+  const correccionMaxIntentos = leerEnteroPositivo(
+    env,
+    'IA_CORRECCION_MAX_INTENTOS',
+    DEFAULTS.correccionMaxIntentos,
+    errores,
+  );
 
   if (proveedor === 'gemini') {
     if (!apiKey) {
@@ -123,6 +141,8 @@ export function cargarConfiguracionIa(
     maxCaracteresTotales,
     maxConcurrentes,
     intervaloWorkerMs,
+    correccionLeaseSegundos,
+    correccionMaxIntentos,
   };
 }
 

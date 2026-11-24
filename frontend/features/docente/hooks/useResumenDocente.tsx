@@ -9,13 +9,15 @@ import {
     type ReactNode,
 } from 'react';
 
+import { describirError } from '@/lib/mensajes';
 import { docenteDashboardService } from '../services/docente-dashboard.service';
 import type { ResumenDocente } from '../types';
 
 interface ResumenDocenteContextType {
     resumen: ResumenDocente | null;
     cargando: boolean;
-    error: string;
+    /** Mensaje ya explicado para el docente (qué falló y qué hacer). */
+    error: { titulo: string; detalle: string } | null;
     recargar: () => Promise<void>;
 }
 
@@ -34,16 +36,16 @@ export function ResumenDocenteProvider({
 }) {
     const [resumen, setResumen] = useState<ResumenDocente | null>(null);
     const [cargando, setCargando] = useState(true);
-    const [error, setError] = useState('');
+    const [error, setError] = useState<{ titulo: string; detalle: string } | null>(null);
 
     const recargar = useCallback(async () => {
         setCargando(true);
-        setError('');
+        setError(null);
 
         try {
             setResumen(await docenteDashboardService.getResumen());
-        } catch {
-            setError('No se pudo cargar el resumen.');
+        } catch (fallo) {
+            setError(describirError(fallo, 'No se pudo cargar tu resumen'));
         } finally {
             setCargando(false);
         }

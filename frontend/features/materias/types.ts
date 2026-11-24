@@ -18,3 +18,8 @@ export interface UpdateMateriaDto {
     descripcion?: string;
     activo?: boolean;
 }
+
+/** Una materia dentro de la creación en lote (descripción opcional). */
+export interface CreateMateriasLoteDto {
+    materias: CreateMateriaDto[];
+}
