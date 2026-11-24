@@ -12,11 +12,11 @@ interface Acceso {
 }
 
 const ACCESOS: Acceso[] = [
-    { label: 'Gestión académica', href: ROUTES.docente.materias, disponible: true },
-    { label: 'Crear pregunta', href: ROUTES.docente.preguntaNueva, disponible: false },
-    { label: 'Ver banco', href: ROUTES.docente.preguntas, disponible: false },
-    { label: 'Crear evaluación', href: ROUTES.docente.evaluacionNueva, disponible: false },
-    { label: 'Pendientes de nota', href: ROUTES.docente.correccion, disponible: false },
+    { label: 'Gestión académica', href: ROUTES.docente.resumen, disponible: true },
+    { label: 'Crear pregunta', href: ROUTES.docente.preguntaNueva, disponible: true },
+    { label: 'Ver banco', href: ROUTES.docente.preguntas, disponible: true },
+    { label: 'Crear evaluación', href: ROUTES.docente.evaluacionNueva, disponible: true },
+    { label: 'Pendientes de nota', href: ROUTES.docente.correccion, disponible: true },
 ];
 
 const BASE =

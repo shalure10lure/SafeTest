@@ -7,6 +7,7 @@ const ESTADOS: Record<EstadoEvaluacion, { label: string; tono: Tono }> = {
     disponible: { label: 'Disponible', tono: 'blue' },
     borrador: { label: 'Borrador', tono: 'slate' },
     pendiente: { label: 'Pendiente', tono: 'amber' },
+    finalizada: { label: 'Finalizada', tono: 'emerald' },
 };
 
 const MESES = [
@@ -15,7 +16,9 @@ const MESES = [
 ];
 
 /** "2026-09-20" -> "20 sep" (sin pasar por Date para evitar desfases de zona horaria). */
-function formatearFecha(iso: string): string {
+function formatearFecha(iso: string | null): string {
+    if (!iso) return 'Sin fecha';
+
     const [, mes, dia] = iso.split('-').map(Number);
     return `${dia} ${MESES[mes - 1] ?? ''}`.trim();
 }
@@ -33,7 +36,6 @@ export default function EvaluacionesRecientes({
                 accion={
                     <LinkButton
                         href={ROUTES.docente.evaluaciones}
-                        disponible={false}
                         className="h-8 px-3 text-xs"
                     >
                         Ver todas
@@ -43,7 +45,8 @@ export default function EvaluacionesRecientes({
 
             {evaluaciones.length === 0 ? (
                 <p className="mt-4 text-sm text-slate-500">
-                    Aún no tienes evaluaciones. Crea la primera para empezar.
+                    Aún no tienes evaluaciones activas ni en preparación. Pulsa{' '}
+                    <strong>Crear evaluación</strong> en el menú para empezar.
                 </p>
             ) : (
                 <ul className="mt-3 divide-y divide-slate-100">
@@ -61,7 +64,10 @@ export default function EvaluacionesRecientes({
                                     </p>
                                     <p className="mt-0.5 text-xs text-slate-500">
                                         {formatearFecha(evaluacion.fecha)} ·{' '}
-                                        {evaluacion.estudiantes} estudiantes
+                                        {evaluacion.estudiantes}{' '}
+                                        {evaluacion.estudiantes === 1
+                                            ? 'estudiante'
+                                            : 'estudiantes'}
                                     </p>
                                 </div>
 

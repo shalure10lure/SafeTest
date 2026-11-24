@@ -1,13 +1,22 @@
 'use client';
 
+// Hooks de React para estado y efectos secundarios
 import { useEffect, useState } from 'react';
+// Componente de alerta visual (mejora propia)
+import Alerta from '@/components/ui/Alerta';
+// Diálogo de confirmación reutilizable (mejora propia)
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+// Hook para mostrar notificaciones tipo toast (mejora propia)
+import { useToast } from '@/components/ui/ToastProvider';
+// Función que convierte errores de la API en un mensaje legible
 import { mensajeErrorCalificaciones } from '../services/calificaciones.service';
+// Servicio y tipo para el estado del envío de correos
 import {
   correoResultadosService,
   type EstadoCorreoResultados,
 } from '../services/correo-resultados.service';
 
+// Etiquetas legibles para cada estado de envío
 const etiquetas: Record<string, string> = {
   pendiente: 'Pendiente',
   enviando: 'Enviando',
@@ -22,16 +31,24 @@ export default function CorreoResultadosPanel({
   examenId: number;
   publicados: boolean;
 }) {
+  // Estado del envío de correos devuelto por el backend
   const [datos, setDatos] = useState<EstadoCorreoResultados | null>(null);
+  // Indica si se está consultando la configuración inicial
   const [cargando, setCargando] = useState(true);
+  // Indica si se está guardando el cambio del checkbox
   const [guardando, setGuardando] = useState(false);
+  // Indica si se está reintentando el envío de fallidos
   const [reintentando, setReintentando] = useState(false);
+  // Controla si el diálogo de confirmación de reintento está abierto
   const [confirmacionAbierta, setConfirmacionAbierta] = useState(false);
+  // Mensaje de error a mostrar (o null)
   const [error, setError] = useState<string | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  // Toasts para avisar al docente
+  const toast = useToast();
 
+  // Carga el estado al montar y cada vez que cambia el examen o se publican resultados
   useEffect(() => {
-    let activo = true;
+    let activo = true; // evita actualizar estado si el componente se desmontó
     correoResultadosService.estado(examenId)
       .then((resultado) => {
         if (activo) {
@@ -44,16 +61,24 @@ export default function CorreoResultadosPanel({
     return () => { activo = false; };
   }, [examenId, publicados]);
 
+  // Activa o desactiva el envío de correos al publicar
   async function configurar(habilitado: boolean) {
     setGuardando(true);
     setError(null);
-    setMensaje(null);
     try {
       const respuesta = await correoResultadosService.configurar(examenId, habilitado);
       setDatos(respuesta);
-      setMensaje(habilitado
-        ? 'Se enviará un correo institucional cuando publiques las calificaciones.'
-        : 'Se desactivó el envío por correo. Las notas seguirán disponibles en la plataforma.');
+      if (habilitado) {
+        toast.exito(
+          'Envío por correo activado',
+          'Cuando publiques las calificaciones, cada estudiante recibirá un correo institucional.',
+        );
+      } else {
+        toast.info(
+          'Envío por correo desactivado',
+          'Las notas seguirán disponibles en la plataforma.',
+        );
+      }
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
@@ -61,14 +86,19 @@ export default function CorreoResultadosPanel({
     }
   }
 
+  // Reintenta los correos pendientes o con error
   async function reintentar() {
     setReintentando(true);
     setError(null);
-    setMensaje(null);
     try {
       const respuesta = await correoResultadosService.reintentar(examenId);
       setDatos(respuesta);
-      setMensaje(`Estado actualizado: ${respuesta.enviados} enviados, ${respuesta.errores} con error.`);
+      const resumen = `${respuesta.enviados} enviados, ${respuesta.errores} con error.`;
+      if (respuesta.errores > 0) {
+        toast.aviso('Algunos correos no se pudieron enviar', `${resumen} Puedes volver a reintentar los fallidos.`);
+      } else {
+        toast.exito('Correos actualizados', resumen);
+      }
     } catch (fallo: unknown) {
       setError(mensajeErrorCalificaciones(fallo));
     } finally {
@@ -80,6 +110,7 @@ export default function CorreoResultadosPanel({
     <section aria-label="Envío de resultados por correo" className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
+          {/* RESOLUCIÓN: se usa el título de main ("Correo institucional") */}
           <h2 className="font-semibold text-slate-900 dark:text-slate-100">Correo institucional</h2>
           <p className="mt-1 text-xs text-slate-500">Enviar una notificación al publicar las notas oficiales. El resultado seguirá disponible en SafeTest.</p>
         </div>
@@ -89,8 +120,11 @@ export default function CorreoResultadosPanel({
       </div>
 
       {cargando ? <p className="mt-4 text-sm text-slate-500">Consultando configuración de correo…</p> : null}
-      {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      {mensaje && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{mensaje}</p>}
+      {error && (
+        <Alerta tono="error" titulo="No se pudo actualizar el envío por correo" className="mt-3" onCerrar={() => setError(null)}>
+          {error}
+        </Alerta>
+      )}
 
       {datos && (
         <>
@@ -105,10 +139,11 @@ export default function CorreoResultadosPanel({
             Enviar resultados por correo institucional cuando se publiquen
           </label>
           <p className="mt-2 text-xs text-slate-500">
-            Gmail docente: {datos.gmail_conectado ? `Conectado (${datos.correo_remitente ?? 'cuenta autorizada'})` : 'No conectado. Conéctalo desde el menú del docente.'}
+            Gmail docente: {datos.gmail_conectado ? `Conectado (${datos.correo_remitente ?? 'cuenta autorizada'})` : 'No conectado. Conéctalo desde el botón de Google en el menú lateral para poder enviar correos.'}
             {datos.resultados_publicados_en ? ' · La configuración ya no se puede cambiar.' : ''}
           </p>
           {datos.enviar_resultados_correo && !datos.resultados_publicados_en && (
+            // RESOLUCIÓN: se usa el recuadro violeta de main
             <p className="mt-3 rounded-lg bg-violet-50 p-3 text-xs text-violet-800">
               Los correos se enviarán cuando pulses <strong>Publicar resultados</strong>, después de completar y confirmar la revisión.
             </p>
@@ -155,6 +190,7 @@ export default function CorreoResultadosPanel({
           )}
         </>
       )}
+      {/* Diálogo de confirmación antes de reintentar (mejora propia) */}
       <ConfirmDialog
         abierto={confirmacionAbierta}
         titulo="¿Reintentar el envío de correos?"

@@ -1,5 +1,6 @@
 import type {
   DificultadIa,
+  SolicitudCorreccionRespuesta,
   SolicitudGeneracionIa,
 } from '../ai.types';
 import { FakeAiProvider } from './fake-ai.provider';
@@ -21,6 +22,20 @@ function solicitud(
 
 describe('FakeAiProvider', () => {
   const proveedor = new FakeAiProvider({ modelo: 'fake-test' });
+
+  it('produce una corrección determinista para la misma solicitud', async () => {
+    const solicitud: SolicitudCorreccionRespuesta = {
+      enunciado: '¿Cuánto es 2 + 2?',
+      tipo_respuesta: 'numerica',
+      respuesta_estudiante: '4',
+      criterio: { valor_correcto: 4, tolerancia: 0 },
+      puntaje_max: 5,
+    };
+
+    await expect(proveedor.corregirRespuesta(solicitud)).resolves.toEqual(
+      await proveedor.corregirRespuesta(solicitud),
+    );
+  });
 
   it('diferencia el tipo de tarea según la dificultad, no solo la etiqueta', async () => {
     const facil = await proveedor.generarPreguntas(solicitud('facil'));

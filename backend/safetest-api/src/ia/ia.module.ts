@@ -5,14 +5,17 @@ import {
   IA_CONFIG,
   type IaConfig,
 } from '../config/ia.config';
-import { AI_PROVIDER } from './providers/ai.provider';
-import { crearProveedorIa } from './providers/provider.factory';
+import { AI_CORRECCION_PROVIDER, AI_PROVIDER } from './providers/ai.provider';
+import {
+  crearProveedorCorreccionIa,
+  crearProveedorIa,
+} from './providers/provider.factory';
 
 /**
  * Expone la configuración de IA y el proveedor seleccionado.
  *
- * El worker de generación (IaGeneracionModule) consume ambos tokens; los
- * servicios de generación dependen de AI_PROVIDER, nunca de Gemini.
+ * Generación y corrección usan tokens separados para poder habilitar el fake
+ * de HU-45 sin alterar el proveedor configurado para generar preguntas.
  */
 @Module({
   providers: [
@@ -25,7 +28,12 @@ import { crearProveedorIa } from './providers/provider.factory';
       useFactory: (config: IaConfig) => crearProveedorIa(config),
       inject: [IA_CONFIG],
     },
+    {
+      provide: AI_CORRECCION_PROVIDER,
+      useFactory: (config: IaConfig) => crearProveedorCorreccionIa(config),
+      inject: [IA_CONFIG],
+    },
   ],
-  exports: [AI_PROVIDER, IA_CONFIG],
+  exports: [AI_PROVIDER, AI_CORRECCION_PROVIDER, IA_CONFIG],
 })
 export class IaModule {}

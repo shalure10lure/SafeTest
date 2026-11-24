@@ -22,6 +22,10 @@ import type {
 
 const TOKENS: TokensIa = { entrada: 10, salida: 5, total: 15 };
 
+const CORRECCION_NO_USADA = async (): Promise<never> => {
+  throw new Error('No usado en esta prueba de generación.');
+};
+
 class AlmacenEnMemoria implements AlmacenGeneraciones {
   readonly estados = new Map<number, EstadoGeneracion>();
   readonly contextos = new Map<number, GeneracionContexto>();
@@ -106,6 +110,10 @@ class ProveedorContador implements AiProvider {
     this.llamadas.push(solicitud);
     return this.interno.generarPreguntas(solicitud);
   }
+
+  async corregirRespuesta(): Promise<never> {
+    throw new Error('No usado en esta prueba de generación.');
+  }
 }
 
 class ProveedorControlado implements AiProvider {
@@ -135,6 +143,10 @@ class ProveedorControlado implements AiProvider {
 
   liberar(cantidad: number): void {
     this.liberadores.splice(0, cantidad).forEach((liberar) => liberar());
+  }
+
+  async corregirRespuesta(): Promise<never> {
+    throw new Error('No usado en esta prueba de generación.');
   }
 }
 
@@ -243,6 +255,7 @@ describe('IaGeneracionWorker', () => {
           tokens: TOKENS,
         };
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 
@@ -261,6 +274,7 @@ describe('IaGeneracionWorker', () => {
         const resultado = await interno.generarPreguntas(solicitud);
         return { ...resultado, preguntas: resultado.preguntas.slice(0, 1) };
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 
@@ -277,6 +291,7 @@ describe('IaGeneracionWorker', () => {
       async generarPreguntas() {
         return { preguntas: [], proveedor: 'fake', modelo: null, tokens: TOKENS };
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 
@@ -309,6 +324,7 @@ describe('IaGeneracionWorker', () => {
           tokens: TOKENS,
         };
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 
@@ -333,6 +349,7 @@ describe('IaGeneracionWorker', () => {
 
         return interno.generarPreguntas(solicitud);
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 
@@ -358,6 +375,7 @@ describe('IaGeneracionWorker', () => {
         llamadas += 1;
         throw new ErrorGeneracionIa('timeout', 'timeout simulado');
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 
@@ -380,6 +398,7 @@ describe('IaGeneracionWorker', () => {
         llamadas += 1;
         throw new ErrorGeneracionIa('respuesta_invalida', 'respuesta rota');
       },
+      corregirRespuesta: CORRECCION_NO_USADA,
     };
     const worker = new IaGeneracionWorker(almacen, proveedor, configuracion());
 

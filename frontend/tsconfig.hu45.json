@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "files": [
+    "features/evaluaciones/components/RevisionCalificaciones.tsx",
+    "features/evaluaciones/components/RevisionCalificaciones.test.tsx",
+    "features/evaluaciones/components/BandejaCorreccionesIa.tsx",
+    "features/evaluaciones/components/BandejaCorreccionesIa.test.tsx",
+    "features/evaluaciones/components/RevisionEstudiante.tsx",
+    "features/evaluaciones/components/RevisionEstudiante.test.tsx",
+    "features/evaluaciones/components/PropuestaCorreccionIa.tsx",
+    "features/evaluaciones/components/FormularioValoracion.tsx",
+    "features/evaluaciones/services/correccion-ia.service.ts",
+    "features/evaluaciones/services/correccion-ia.service.test.tsx",
+    "features/evaluaciones/correccion-ia.types.ts"
+  ],
+  "include": []
+}

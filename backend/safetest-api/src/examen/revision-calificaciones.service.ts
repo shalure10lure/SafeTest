@@ -298,65 +298,115 @@ export class RevisionCalificacionesService {
   ) {
     const entrada = this.validarEntrada(datos);
     return this.dataSource.transaction(async (manager) => {
-      // El mismo bloqueo que utiliza la publicación de respuestas evita
-      // modificaciones simultáneas a la confirmación/publicación.
-      const examen = await this.verificarExamen(manager, examenId, docenteId, true);
-      this.asegurarEdicionPermitida(examen);
-      const rendicion = await manager.getRepository(Rendicion).findOne({
-        where: { examen_id: examenId, estudiante_id: estudianteId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!rendicion) throw new NotFoundException('La rendición no existe.');
-      if (!['enviada', 'corregida'].includes(rendicion.estado)) {
-        throw new ConflictException('Solo se pueden corregir rendiciones enviadas.');
-      }
-
-      const asignacion = await manager.getRepository(AsignacionPregunta).findOne({
-        where: { examen_id: examenId, estudiante_id: estudianteId, pregunta_id: preguntaId },
-      });
-      if (!asignacion) throw new NotFoundException('La pregunta no fue asignada al estudiante.');
-      const inciso = await manager.getRepository(Inciso).findOne({
-        where: { pregunta_id: preguntaId, letra },
-      });
-      if (!inciso) throw new NotFoundException('El inciso no existe.');
-
-      const maximo = Number(inciso.puntaje_max);
-      if (!Number.isFinite(maximo) || maximo <= 0 || entrada.puntaje > maximo) {
-        throw new BadRequestException(`El puntaje debe estar entre 0 y ${inciso.puntaje_max}.`);
-      }
-
-      const repositorio = manager.getRepository(RespuestaInciso);
-      const clave = {
-        examen_id: examenId,
-        estudiante_id: estudianteId,
-        pregunta_id: preguntaId,
+      return this.aplicarValoracionOficial(
+        manager,
+        examenId,
+        estudianteId,
+        preguntaId,
         letra,
-      };
-      const respuesta = (await repositorio.findOne({ where: clave })) ??
-        repositorio.create({ ...clave, respuesta_texto: null });
-      respuesta.estado_correccion =
+        docenteId,
+        entrada,
+      );
+    });
+  }
+
+  /** Aplica una valoración en la transacción asociada al manager recibido. */
+  async aplicarValoracionOficial(
+    manager: EntityManager,
+    examenId: number,
+    estudianteId: number,
+    preguntaId: number,
+    letra: string,
+    docenteId: number,
+    datos: unknown,
+  ) {
+    const entrada = this.validarEntrada(datos);
+    return this.aplicarValoracionValidada(
+      manager,
+      examenId,
+      estudianteId,
+      preguntaId,
+      letra,
+      docenteId,
+      entrada,
+    );
+  }
+
+  private async aplicarValoracionValidada(
+    manager: EntityManager,
+    examenId: number,
+    estudianteId: number,
+    preguntaId: number,
+    letra: string,
+    docenteId: number,
+    entrada: EntradaValoracion,
+  ) {
+    // El mismo bloqueo que utiliza la publicación de respuestas evita
+    // modificaciones simultáneas a la confirmación/publicación.
+    const examen = await this.verificarExamen(manager, examenId, docenteId, true);
+    this.asegurarEdicionPermitida(examen);
+    const rendicion = await manager.getRepository(Rendicion).findOne({
+      where: { examen_id: examenId, estudiante_id: estudianteId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!rendicion) throw new NotFoundException('La rendición no existe.');
+    if (!['enviada', 'corregida'].includes(rendicion.estado)) {
+      throw new ConflictException('Solo se pueden corregir rendiciones enviadas.');
+    }
+
+    const asignacion = await manager.getRepository(AsignacionPregunta).findOne({
+      where: { examen_id: examenId, estudiante_id: estudianteId, pregunta_id: preguntaId },
+    });
+    if (!asignacion) throw new NotFoundException('La pregunta no fue asignada al estudiante.');
+    const inciso = await manager.getRepository(Inciso).findOne({
+      where: { pregunta_id: preguntaId, letra },
+    });
+    if (!inciso) throw new NotFoundException('El inciso no existe.');
+
+    const maximo = Number(inciso.puntaje_max);
+    if (!Number.isFinite(maximo) || maximo <= 0 || entrada.puntaje > maximo) {
+      throw new BadRequestException(`El puntaje debe estar entre 0 y ${inciso.puntaje_max}.`);
+    }
+
+    const repositorio = manager.getRepository(RespuestaInciso);
+    const clave = {
+      examen_id: examenId,
+      estudiante_id: estudianteId,
+      pregunta_id: preguntaId,
+      letra,
+    };
+    const existente = await repositorio.findOne({ where: clave });
+    const respuesta = existente ?? repositorio.create({ ...clave, respuesta_texto: null });
+    const actualizacion = {
+      estado_correccion:
         respuesta.estado_correccion === 'automatica' || respuesta.estado_correccion === 'revisada'
           ? 'revisada'
-          : 'manual';
-      respuesta.puntaje_obtenido = formatearPuntaje(entrada.puntaje);
-      if (entrada.retroalimentacion !== undefined) {
-        respuesta.retroalimentacion = entrada.retroalimentacion;
-      }
+          : 'manual',
+      puntaje_obtenido: formatearPuntaje(entrada.puntaje),
+      ...(entrada.retroalimentacion !== undefined
+        ? { retroalimentacion: entrada.retroalimentacion }
+        : {}),
+    };
+    Object.assign(respuesta, actualizacion);
+    if (existente) {
+      // Solo se escriben los campos oficiales; ia_* pertenece al flujo de propuestas.
+      await repositorio.update(clave, actualizacion);
+    } else {
       await repositorio.save(respuesta);
+    }
 
-      const recalculo = await this.recalcularRendicion(manager, rendicion);
-      return {
-        examen_id: examenId,
-        estudiante_id: estudianteId,
-        pregunta_id: preguntaId,
-        letra,
-        estado_correccion: respuesta.estado_correccion,
-        puntaje_obtenido: respuesta.puntaje_obtenido,
-        nota_final: recalculo.nota_final,
-        estado_rendicion: recalculo.estado,
-        pendientes_revision: recalculo.pendientes,
-      };
-    });
+    const recalculo = await this.recalcularRendicion(manager, rendicion);
+    return {
+      examen_id: examenId,
+      estudiante_id: estudianteId,
+      pregunta_id: preguntaId,
+      letra,
+      estado_correccion: respuesta.estado_correccion,
+      puntaje_obtenido: respuesta.puntaje_obtenido,
+      nota_final: recalculo.nota_final,
+      estado_rendicion: recalculo.estado,
+      pendientes_revision: recalculo.pendientes,
+    };
   }
 
   /**

@@ -1,7 +1,10 @@
 import type {
   DificultadIa,
+  ErrorCorreccionRespuesta,
   PreguntaIa,
+  ResultadoCorreccionRespuesta,
   ResultadoGeneracionIa,
+  SolicitudCorreccionRespuesta,
   SolicitudGeneracionIa,
 } from '../ai.types';
 import type { AiProvider } from './ai.provider';
@@ -111,6 +114,154 @@ export class FakeAiProvider implements AiProvider {
     };
   }
 
+  /**
+   * Corrección determinista para probar el flujo completo sin red ni coste.
+   *
+   * Con un `valor_correcto` numérico compara el valor con la tolerancia. Si no
+   * lo hay, usa la rúbrica o la solución de referencia y calcula una
+   * coincidencia léxica estable. Nunca usa azar ni fechas, así que la misma
+   * solicitud produce siempre el mismo resultado.
+   */
+  async corregirRespuesta(
+    solicitud: SolicitudCorreccionRespuesta,
+  ): Promise<ResultadoCorreccionRespuesta> {
+    const maximo = puntajeMaximoValido(solicitud.puntaje_max);
+    const respuesta = solicitud.respuesta_estudiante.trim();
+    const referencia = textoDeReferencia(solicitud);
+
+    if (respuesta.length === 0) {
+      return this.construirResultado(
+        solicitud,
+        0,
+        'Incorrecta',
+        'La respuesta del estudiante está vacía.',
+        [
+          {
+            tipo: 'respuesta_vacia',
+            descripcion: 'No se recibió una respuesta para corregir.',
+          },
+        ],
+        1,
+      );
+    }
+
+    const valorCorrecto = solicitud.criterio.valor_correcto;
+    if (typeof valorCorrecto === 'number' && Number.isFinite(valorCorrecto)) {
+      const tolerancia = toleranciaValida(solicitud.criterio.tolerancia);
+      const valorEstudiante = leerNumero(respuesta);
+
+      if (valorEstudiante !== null) {
+        if (Math.abs(valorEstudiante - valorCorrecto) <= tolerancia + 1e-9) {
+          return this.construirResultado(
+            solicitud,
+            maximo,
+            'Correcta',
+            `El valor coincide con la solución esperada dentro de la tolerancia de ${tolerancia}.`,
+            [],
+            1,
+          );
+        }
+
+        return this.construirResultado(
+          solicitud,
+          0,
+          'Incorrecta',
+          `El valor difiere de la solución esperada en más de la tolerancia de ${tolerancia}.`,
+          [
+            {
+              tipo: 'calculo',
+              descripcion:
+                'El valor no coincide con la solución esperada dentro de la tolerancia.',
+            },
+          ],
+          0.9,
+        );
+      }
+
+      if (referencia.length === 0) {
+        return this.construirResultado(
+          solicitud,
+          0,
+          'Incorrecta',
+          'Se esperaba una respuesta numérica y el criterio no incluye rúbrica.',
+          [
+            {
+              tipo: 'formato',
+              descripcion: 'La respuesta no es un valor numérico.',
+            },
+          ],
+          0.95,
+        );
+      }
+    }
+
+    if (referencia.length === 0) {
+      return this.construirResultado(
+        solicitud,
+        0,
+        'Incorrecta',
+        'El criterio no contiene texto suficiente para comparar la respuesta.',
+        [
+          {
+            tipo: 'criterio',
+            descripcion: 'No hay rúbrica ni solución de referencia utilizable.',
+          },
+        ],
+        0.5,
+      );
+    }
+
+    const coincidencia = calcularCoincidencia(respuesta, referencia);
+    const puntaje = maximo * coincidencia;
+    const valoracion =
+      coincidencia >= 0.85
+        ? 'Correcta'
+        : coincidencia >= 0.4
+          ? 'Parcialmente correcta'
+          : 'Incorrecta';
+    const errores: ErrorCorreccionRespuesta[] =
+      coincidencia >= 0.85
+        ? []
+        : [
+            {
+              tipo: 'contenido',
+              descripcion:
+                'La respuesta no cubre todos los elementos esperados por el criterio.',
+            },
+          ];
+
+    return this.construirResultado(
+      solicitud,
+      puntaje,
+      valoracion,
+      `La coincidencia con el criterio es del ${Math.round(coincidencia * 100)} %.`,
+      errores,
+      0.5 + coincidencia * 0.5,
+    );
+  }
+
+  private construirResultado(
+    solicitud: SolicitudCorreccionRespuesta,
+    puntaje: number,
+    valoracion: string,
+    explicacion: string,
+    errores: ErrorCorreccionRespuesta[],
+    confianza: number,
+  ): ResultadoCorreccionRespuesta {
+    const maximo = puntajeMaximoValido(solicitud.puntaje_max);
+    const puntajeRecortado = Math.min(Math.max(puntaje, 0), maximo);
+
+    return {
+      puntaje_sugerido: redondearDosDecimales(puntajeRecortado),
+      valoracion,
+      explicacion: `${explicacion} El proveedor fake solo prueba el flujo, no la calidad pedagógica real.`,
+      errores,
+      confianza: redondearDosDecimales(Math.min(Math.max(confianza, 0), 1)),
+      proveedor: 'fake',
+      modelo: this.options.modelo ?? 'fake',
+    };
+  }
+
   private crearPregunta(
     solicitud: SolicitudGeneracionIa,
     numero: number,
@@ -191,4 +342,96 @@ export class FakeAiProvider implements AiProvider {
       `Tipo de pregunta no soportado por el proveedor fake: ${solicitud.tipo_respuesta}`,
     );
   }
+}
+
+function puntajeMaximoValido(puntajeMaximo: number): number {
+  return Number.isFinite(puntajeMaximo) && puntajeMaximo > 0
+    ? puntajeMaximo
+    : 0;
+}
+
+function toleranciaValida(tolerancia: number | undefined): number {
+  return typeof tolerancia === 'number' &&
+    Number.isFinite(tolerancia) &&
+    tolerancia >= 0
+    ? tolerancia
+    : 0;
+}
+
+function redondearDosDecimales(valor: number): number {
+  return Math.round(valor * 100) / 100;
+}
+
+function leerNumero(texto: string): number | null {
+  const normalizado = texto.trim().replace(',', '.');
+  if (normalizado.length === 0) {
+    return null;
+  }
+
+  const numero = Number(normalizado);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function textoDeReferencia(solicitud: SolicitudCorreccionRespuesta): string {
+  const partes = [
+    solicitud.criterio.rubrica,
+    solicitud.criterio.solucion_referencia,
+  ]
+    .filter((parte): parte is string => typeof parte === 'string')
+    .map((parte) => parte.trim())
+    .filter((parte) => parte.length > 0);
+
+  if (partes.length > 0) {
+    return partes.join('\n');
+  }
+
+  const valorCorrecto = solicitud.criterio.valor_correcto;
+  return typeof valorCorrecto === 'number' && Number.isFinite(valorCorrecto)
+    ? String(valorCorrecto)
+    : '';
+}
+
+function calcularCoincidencia(respuesta: string, referencia: string): number {
+  const palabrasRespuesta = palabrasSignificativas(respuesta);
+  const palabrasReferencia = palabrasSignificativas(referencia);
+
+  if (palabrasReferencia.size === 0) {
+    return 0;
+  }
+
+  const respuestaNormalizada = normalizarTexto(respuesta);
+  const referenciaNormalizada = normalizarTexto(referencia);
+  if (
+    referenciaNormalizada.length > 0 &&
+    (respuestaNormalizada.includes(referenciaNormalizada) ||
+      referenciaNormalizada.includes(respuestaNormalizada))
+  ) {
+    return 1;
+  }
+
+  let coincidencias = 0;
+  for (const palabra of palabrasReferencia) {
+    if (palabrasRespuesta.has(palabra)) {
+      coincidencias += 1;
+    }
+  }
+
+  return Math.min(Math.max(coincidencias / palabrasReferencia.size, 0), 1);
+}
+
+function palabrasSignificativas(texto: string): Set<string> {
+  return new Set(
+    normalizarTexto(texto)
+      .split(' ')
+      .filter((palabra) => palabra.length >= 4),
+  );
+}
+
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }

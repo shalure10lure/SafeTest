@@ -5,6 +5,7 @@ export type MotivoErrorIa =
   | 'autenticacion'
   | 'proveedor'
   | 'respuesta_invalida'
+  | 'contenido_bloqueado'
   | 'material_insuficiente'
   | 'modelo_no_disponible'
   | 'datos_invalidos'

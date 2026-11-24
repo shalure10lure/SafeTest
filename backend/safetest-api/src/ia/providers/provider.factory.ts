@@ -1,11 +1,13 @@
-import {
-  ErrorConfiguracionIa,
-  type IaConfig,
-} from '../../config/ia.config';
+import { ErrorConfiguracionIa, type IaConfig } from '../../config/ia.config';
 import type { AiProvider } from './ai.provider';
 import { FakeAiProvider } from './fake-ai.provider';
 import { GeminiAiProvider } from './gemini-ai.provider';
 import { crearClienteGeminiSdk } from './gemini-client';
+
+/** Selecciona el proveedor de corrección según IA_PROVIDER. */
+export function crearProveedorCorreccionIa(config: IaConfig): AiProvider {
+  return crearProveedorIa(config);
+}
 
 /**
  * Construye el proveedor seleccionado por configuración. Para incorporar un

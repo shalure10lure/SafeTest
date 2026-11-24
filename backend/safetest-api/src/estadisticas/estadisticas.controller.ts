@@ -5,11 +5,14 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 
 import { EstadisticasService } from './estadisticas.service';
+import { EstadisticasPanelService } from './estadisticas-panel.service';
+import { PanelEstadisticasQueryDto } from './dto/panel-estadisticas.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DocenteGuard } from '../auth/guards/docente.guard';
 
@@ -18,7 +21,21 @@ import { DocenteGuard } from '../auth/guards/docente.guard';
 export class EstadisticasController {
   constructor(
     private readonly estadisticasService: EstadisticasService,
+    private readonly panelService: EstadisticasPanelService,
   ) {}
+
+  /**
+   * Panel completo de estadísticas (KPIs, percentiles, distribución y
+   * comparaciones). Todos los filtros son opcionales.
+   * Ejemplo: GET /estadisticas/panel?materia_id=3&semestre_id=2
+   */
+  @Get('panel')
+  obtenerPanel(
+    @Query() filtros: PanelEstadisticasQueryDto,
+    @Req() request: any,
+  ) {
+    return this.panelService.obtenerPanel(request.user.id, filtros);
+  }
 
   @Get('materias')
   obtenerMaterias(@Req() request: any) {
