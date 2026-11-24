@@ -98,7 +98,7 @@ export default function AppShell({
     );
 
     return (
-        <div className="flex h-screen overflow-hidden bg-slate-50">
+        <div className="flex h-screen overflow-hidden bg-background text-foreground">
             {/* Sidebar fijo en escritorio */}
             <div className="hidden w-60 shrink-0 lg:block">{sidebar}</div>
 
@@ -109,7 +109,7 @@ export default function AppShell({
                         type="button"
                         aria-label="Cerrar menú"
                         onClick={() => setMenuAbierto(false)}
-                        className="absolute inset-0 bg-slate-900/40"
+                        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
                     />
                     <div className="relative h-full w-64 max-w-[85vw] shadow-xl">
                         {sidebar}
