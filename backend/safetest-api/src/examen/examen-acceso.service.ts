@@ -193,7 +193,7 @@ export class ExamenAccesoService {
           estudianteId,
         },
       )
-      .orderBy('examen.disponible_desde', 'ASC')
+      .orderBy('examen.disponible_desde', 'DESC')
       .addOrderBy('examen.examen_id', 'DESC')
       .getRawMany<{
         examen_id: number | string;
