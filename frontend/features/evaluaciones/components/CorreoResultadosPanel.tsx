@@ -110,7 +110,7 @@ export default function CorreoResultadosPanel({
           </p>
           {datos.enviar_resultados_correo && !datos.resultados_publicados_en && (
             <p className="mt-3 rounded-lg bg-violet-50 p-3 text-xs text-violet-800">
-              Los correos se enviarán cuando pulses <strong>Publicar resultados</strong>, después de completar y confirmar la revisión HU-31.
+              Los correos se enviarán cuando pulses <strong>Publicar resultados</strong>, después de completar y confirmar la revisión.
             </p>
           )}
 

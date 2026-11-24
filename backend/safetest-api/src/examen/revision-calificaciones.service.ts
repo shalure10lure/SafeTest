@@ -359,6 +359,117 @@ export class RevisionCalificacionesService {
     });
   }
 
+  /**
+   * HU-31: guarda varias valoraciones de UN estudiante en una sola transacción.
+   * Si una entrada es inválida, PostgreSQL revierte todas las modificaciones.
+   * Se recalcula la nota una sola vez, al terminar el lote.
+   */
+  async valorarIncisosEnLote(
+    examenId: number,
+    estudianteId: number,
+    docenteId: number,
+    datos: unknown,
+  ) {
+    if (typeof datos !== 'object' || datos === null || Array.isArray(datos)) {
+      throw new BadRequestException('Envía un objeto con la lista de revisiones.');
+    }
+
+    const revisiones = (datos as Record<string, unknown>).revisiones;
+    if (!Array.isArray(revisiones) || revisiones.length === 0 || revisiones.length > 300) {
+      throw new BadRequestException('Envía entre 1 y 300 revisiones.');
+    }
+
+    // Todas las validaciones de estructura y formato ANTES de escribir en BD.
+    const repetidas = new Set<string>();
+    const entradas = revisiones.map((dato: unknown, indice) => {
+      if (typeof dato !== 'object' || dato === null || Array.isArray(dato)) {
+        throw new BadRequestException(`La revisión ${indice + 1} debe ser un objeto.`);
+      }
+      const fila = dato as Record<string, unknown>;
+      if (!Number.isSafeInteger(fila.pregunta_id) || Number(fila.pregunta_id) <= 0 ||
+          typeof fila.letra !== 'string' || !fila.letra.trim() || fila.letra.length > 10) {
+        throw new BadRequestException(`Pregunta o inciso inválido en revisión ${indice + 1}.`);
+      }
+      const preguntaId = fila.pregunta_id as number;
+      const letra = fila.letra as string;
+      const identificador = `${preguntaId}:${letra}`;
+      if (repetidas.has(identificador)) {
+        throw new BadRequestException(`La pregunta ${preguntaId}, inciso ${letra}, está repetida.`);
+      }
+      repetidas.add(identificador);
+      return {
+        preguntaId,
+        letra,
+        valoracion: this.validarEntrada(fila),
+      };
+    });
+
+    return this.dataSource.transaction(async (manager) => {
+      // Mismo orden de bloqueos que valorarInciso/confirmar para evitar conflictos.
+      const examen = await this.verificarExamen(manager, examenId, docenteId, true);
+      this.asegurarEdicionPermitida(examen);
+      const rendicion = await manager.getRepository(Rendicion).findOne({
+        where: { examen_id: examenId, estudiante_id: estudianteId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!rendicion) throw new NotFoundException('La rendición no existe.');
+      if (!['enviada', 'corregida'].includes(rendicion.estado)) {
+        throw new ConflictException('Solo se pueden corregir rendiciones enviadas.');
+      }
+
+      const repositorio = manager.getRepository(RespuestaInciso);
+      for (const entrada of entradas) {
+        const { preguntaId, letra, valoracion } = entrada;
+        const asignacion = await manager.getRepository(AsignacionPregunta).findOne({
+          where: { examen_id: examenId, estudiante_id: estudianteId, pregunta_id: preguntaId },
+        });
+        if (!asignacion) {
+          throw new NotFoundException(`La pregunta ${preguntaId} no fue asignada al estudiante.`);
+        }
+        const inciso = await manager.getRepository(Inciso).findOne({
+          where: { pregunta_id: preguntaId, letra },
+        });
+        if (!inciso) {
+          throw new NotFoundException(`La pregunta ${preguntaId}, inciso ${letra}, no existe.`);
+        }
+        const maximo = Number(inciso.puntaje_max);
+        if (!Number.isFinite(maximo) || maximo <= 0 || valoracion.puntaje > maximo) {
+          throw new BadRequestException(
+            `La pregunta ${preguntaId}, inciso ${letra}: puntaje entre 0 y ${inciso.puntaje_max}.`,
+          );
+        }
+
+        const clave = {
+          examen_id: examenId,
+          estudiante_id: estudianteId,
+          pregunta_id: preguntaId,
+          letra,
+        };
+        const respuesta = (await repositorio.findOne({ where: clave })) ??
+          repositorio.create({ ...clave, respuesta_texto: null });
+        respuesta.estado_correccion =
+          respuesta.estado_correccion === 'automatica' || respuesta.estado_correccion === 'revisada'
+            ? 'revisada'
+            : 'manual';
+        respuesta.puntaje_obtenido = formatearPuntaje(valoracion.puntaje);
+        if (valoracion.retroalimentacion !== undefined) {
+          respuesta.retroalimentacion = valoracion.retroalimentacion;
+        }
+        await repositorio.save(respuesta);
+      }
+
+      const recalculo = await this.recalcularRendicion(manager, rendicion);
+      return {
+        examen_id: examenId,
+        estudiante_id: estudianteId,
+        guardadas: entradas.length,
+        pendientes_revision: recalculo.pendientes,
+        nota_final: recalculo.nota_final,
+        estado_rendicion: recalculo.estado,
+      };
+    });
+  }
+
   private validarEntrada(datos: unknown): EntradaValoracion {
     if (typeof datos !== 'object' || datos === null || Array.isArray(datos)) {
       throw new BadRequestException('Envía un objeto con puntaje numérico.');

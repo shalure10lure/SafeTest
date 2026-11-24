@@ -1,7 +1,11 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import type { IncisoCalificacion, RespuestaValoracion } from '../calificaciones.types';
+import type { IncisoCalificacion } from '../calificaciones.types';
+
+export interface BorradorValoracion {
+  puntaje: string;
+  retroalimentacion: string;
+}
 
 interface Props {
   id?: string;
@@ -11,7 +15,9 @@ interface Props {
   inciso: IncisoCalificacion;
   bloqueado: boolean;
   guardando: boolean;
-  onGuardar: (preguntaId: number, letra: string, datos: RespuestaValoracion) => Promise<void>;
+  borrador: BorradorValoracion;
+  onCambiar: (valoracion: BorradorValoracion) => void;
+  errorValidacion?: string;
   onSiguiente?: () => void;
 }
 
@@ -24,42 +30,14 @@ const etiquetas: Record<string, string> = {
 
 export default function FormularioValoracion({
   id, numeroPregunta, preguntaId, enunciadoPregunta, inciso, bloqueado, guardando,
-  onGuardar, onSiguiente,
+  borrador, onCambiar, errorValidacion, onSiguiente,
 }: Props) {
-  const [puntaje, setPuntaje] = useState(inciso.puntaje_obtenido ?? '');
-  const [retroalimentacion, setRetroalimentacion] = useState(inciso.retroalimentacion ?? '');
-  const [error, setError] = useState<string | null>(null);
-  const [guardado, setGuardado] = useState(false);
+  const { puntaje, retroalimentacion } = borrador;
 
-  const max = Number(inciso.puntaje_max);
-  const valor = Number(puntaje.replace(',', '.'));
-  const valido = puntaje.trim().length > 0 && Number.isFinite(valor) &&
-    valor >= 0 && valor <= max && Math.abs(valor * 100 - Math.round(valor * 100)) < 1e-7;
-  const cambiado = puntaje !== (inciso.puntaje_obtenido ?? '') ||
-    retroalimentacion !== (inciso.retroalimentacion ?? '');
   const sinTexto = !(inciso.respuesta_texto ?? '').trim();
   const opcionesElegidas = inciso.opciones.filter((o) => o.seleccionada);
   const contieneReferencia = inciso.solucion_referencia != null || inciso.solucion_numerica != null ||
     inciso.opciones.some((o) => o.correcta);
-
-  async function enviar(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault();
-    setError(null);
-    setGuardado(false);
-    if (!valido) {
-      setError(`El puntaje debe estar entre 0 y ${inciso.puntaje_max}, con máximo dos decimales.`);
-      return;
-    }
-    try {
-      await onGuardar(preguntaId, inciso.letra, {
-        puntaje: valor,
-        retroalimentacion: retroalimentacion.trim() || null,
-      });
-      setGuardado(true);
-    } catch (fallo: unknown) {
-      setError(fallo instanceof Error ? fallo.message : 'No se pudo guardar el puntaje.');
-    }
-  }
 
   return (
     <article id={id} className="scroll-mt-24 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -113,14 +91,14 @@ export default function FormularioValoracion({
           </details>
         )}
 
-        <form onSubmit={enviar} className="grid gap-4 sm:grid-cols-[minmax(130px,145px)_1fr]">
+        <div className="grid gap-4 sm:grid-cols-[minmax(130px,145px)_1fr]">
           <div>
             <label htmlFor={`nota-${preguntaId}-${inciso.letra}`} className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Puntaje asignado</label>
             <div className="flex items-center gap-1.5">
               <input
                 id={`nota-${preguntaId}-${inciso.letra}`} type="number" inputMode="decimal"
                 step="0.01" min="0" max={inciso.puntaje_max} value={puntaje}
-                onChange={(e) => { setPuntaje(e.target.value); setGuardado(false); }}
+                onChange={(e) => onCambiar({ ...borrador, puntaje: e.target.value })}
                 disabled={bloqueado || guardando}
                 placeholder="—"
                 className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-800"
@@ -134,21 +112,21 @@ export default function FormularioValoracion({
             <textarea
               id={`comentario-${preguntaId}-${inciso.letra}`} rows={3} maxLength={2000}
               disabled={bloqueado || guardando} value={retroalimentacion}
-              onChange={(e) => { setRetroalimentacion(e.target.value); setGuardado(false); }}
+              onChange={(e) => onCambiar({ ...borrador, retroalimentacion: e.target.value })}
               placeholder="Observaciones sobre la respuesta…"
               className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-800"
             />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:col-span-2">
-            <button type="submit" disabled={bloqueado || guardando || !valido || !cambiado} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-              {guardando ? 'Guardando…' : 'Guardar revisión'}
-            </button>
-            {onSiguiente && <button type="button" onClick={onSiguiente} className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700">Siguiente pendiente →</button>}
-          </div>
-          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-2">{error}</p>}
-          {guardado && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300 sm:col-span-2">Revisión guardada. Se actualizó la calificación en el backend.</p>}
+          {onSiguiente && (
+            <div className="flex justify-end border-t border-slate-100 pt-3 sm:col-span-2 dark:border-slate-800">
+              <button type="button" onClick={onSiguiente} disabled={bloqueado || guardando} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200">
+                Ir al siguiente inciso →
+              </button>
+            </div>
+          )}
+          {errorValidacion && <p role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-2">{errorValidacion}</p>}
           {bloqueado && <p className="text-xs text-slate-500 sm:col-span-2">La calificación no se puede editar: la rendición está en curso o la revisión ya fue confirmada/publicada.</p>}
-        </form>
+        </div>
       </div>
     </article>
   );

@@ -9,6 +9,7 @@ import type {
 } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
 import FormularioValoracion from './FormularioValoracion';
+import type { BorradorValoracion } from './FormularioValoracion';
 import EventosSeguridadEstudiante from './EventosSeguridadEstudiante';
 
 type FilaInciso = { pregunta: PreguntaCalificacion; inciso: IncisoCalificacion };
@@ -67,7 +68,10 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
-  const [guardando, setGuardando] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  // Un solo estado mantiene los borradores aunque se abra/cierre Ajustar automático.
+  const [borradores, setBorradores] = useState<Record<string, BorradorValoracion>>({});
+  const [erroresCampo, setErroresCampo] = useState<Record<string, string>>({});
   const [editandoAuto, setEditandoAuto] = useState<string | null>(null);
 
   const rutaGeneral = `/docente/evaluaciones/${examenId}/calificaciones`;
@@ -87,6 +91,8 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
     setMensaje(null);
     setDetalle(null);
     setResumen(null);
+    setBorradores({});
+    setErroresCampo({});
     Promise.all([
       calificacionesService.detalle(examenId, estudianteId),
       calificacionesService.resumen(examenId),
@@ -112,23 +118,110 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
   const siguiente = candidatos[indice + 1];
   const confirmadas = !!detalle?.calificaciones_revisadas_en;
   const publicados = !!detalle?.resultados_publicados_en;
-  const bloqueado = confirmadas || publicados || detalle?.estado_rendicion === 'en_curso' || !!guardando;
+  const bloqueado = confirmadas || publicados || detalle?.estado_rendicion === 'en_curso' || guardando;
   const completadas = filas.length - pendientes.length;
   const progreso = filas.length > 0 ? Math.round(completadas * 100 / filas.length) : 0;
 
-  async function guardarValoracion(preguntaId: number, letra: string, datos: RespuestaValoracion) {
-    const identificador = `${preguntaId}-${letra}`;
+  // El borrador conserva los cambios del docente hasta el guardado conjunto.
+  function obtenerBorrador(fila: FilaInciso): BorradorValoracion {
+    return borradores[clave(fila)] ?? {
+      puntaje: fila.inciso.puntaje_obtenido ?? '',
+      retroalimentacion: fila.inciso.retroalimentacion ?? '',
+    };
+  }
+
+  function cambiarBorrador(fila: FilaInciso, borrador: BorradorValoracion) {
+    const id = clave(fila);
+    setBorradores((actuales) => ({ ...actuales, [id]: borrador }));
+    setErroresCampo((actuales) => {
+      if (!(id in actuales)) return actuales;
+      const nuevos = { ...actuales };
+      delete nuevos[id];
+      return nuevos;
+    });
+    setMensaje(null);
+  }
+
+  function tieneCambios(fila: FilaInciso): boolean {
+    const borrador = obtenerBorrador(fila);
+    const original = fila.inciso;
+    return borrador.puntaje !== (original.puntaje_obtenido ?? '') ||
+      borrador.retroalimentacion.trim() !== (original.retroalimentacion ?? '').trim();
+  }
+
+  const cambiosPendientes = filas.filter((fila) => fila.inciso.pendiente_revision || tieneCambios(fila)).length;
+
+  async function guardarTodas() {
+    if (!detalle || bloqueado) return;
     setError(null);
     setMensaje(null);
-    setGuardando(identificador);
+
+    const errores: Record<string, string> = {};
+    const revisiones: Array<{ pregunta_id: number; letra: string; puntaje: number; retroalimentacion: string | null }> = [];
+    for (const fila of filas) {
+      if (!fila.inciso.pendiente_revision && !tieneCambios(fila)) continue;
+      const borrador = obtenerBorrador(fila);
+      const puntaje = Number(borrador.puntaje.replace(',', '.'));
+      const maximo = Number(fila.inciso.puntaje_max);
+      if (!borrador.puntaje.trim() || !Number.isFinite(puntaje) ||
+          !Number.isFinite(maximo) || maximo <= 0 || puntaje < 0 ||
+          puntaje > maximo || Math.abs(puntaje * 100 - Math.round(puntaje * 100)) > 1e-7) {
+        errores[clave(fila)] = `Ingresa un puntaje de 0 a ${fila.inciso.puntaje_max} con máximo dos decimales.`;
+        continue;
+      }
+      if (borrador.retroalimentacion.length > 2000) {
+        errores[clave(fila)] = 'La retroalimentación no puede superar 2000 caracteres.';
+        continue;
+      }
+      revisiones.push({
+        pregunta_id: fila.pregunta.pregunta_id,
+        letra: fila.inciso.letra,
+        puntaje,
+        retroalimentacion: borrador.retroalimentacion.trim() || null,
+      });
+    }
+
+    setErroresCampo(errores);
+    const primeraInvalida = filas.find((fila) => errores[clave(fila)] !== undefined);
+    if (primeraInvalida) {
+      // Para un ajuste automático que estaba contraído, abrir su formulario.
+      if (automaticas.some((fila) => clave(fila) === clave(primeraInvalida))) {
+        setEditandoAuto(clave(primeraInvalida));
+      }
+      setError(`Revisa ${Object.keys(errores).length} inciso(s) antes de guardar. No se modificó ninguna calificación.`);
+      window.requestAnimationFrame(() => irA(primeraInvalida));
+      return;
+    }
+
+    if (revisiones.length === 0) {
+      // Comprueba el estado real del servidor en vez de fiarse solo de la pantalla.
+      try {
+        await cargar();
+        setMensaje('No hay cambios pendientes. Las revisiones ya están guardadas.');
+      } catch (fallo: unknown) {
+        setError(mensajeErrorCalificaciones(fallo));
+      }
+      return;
+    }
+
+    setGuardando(true);
     try {
-      await calificacionesService.valorar(examenId, estudianteId, preguntaId, letra, datos);
-      await cargar();
-      setMensaje('Puntaje guardado y calificación recalculada correctamente.');
+      const resultado = await calificacionesService.valorarEnLote(examenId, estudianteId, revisiones);
+      // Solo se descartan los borradores después de confirmar que la API los guardó.
+      setBorradores({});
+      setErroresCampo({});
+      try {
+        await cargar();
+        setMensaje(resultado.pendientes_revision === 0
+          ? `${resultado.guardadas} revisión(es) guardada(s). Todos los incisos están calificados.`
+          : `${resultado.guardadas} revisión(es) guardada(s). Quedan ${resultado.pendientes_revision} inciso(s) pendientes.`);
+      } catch (fallo: unknown) {
+        setError(`El servidor guardó ${resultado.guardadas} revisión(es), pero no se pudo actualizar la pantalla: ${mensajeErrorCalificaciones(fallo)}. Recarga la página para comprobar el resultado.`);
+      }
     } catch (fallo: unknown) {
-      throw new Error(mensajeErrorCalificaciones(fallo));
+      setError(`No se pudo confirmar el guardado: ${mensajeErrorCalificaciones(fallo)}. Si hubo un corte de conexión, consulta el estado antes de reintentar; la transacción evita guardados parciales.`);
     } finally {
-      setGuardando(null);
+      setGuardando(false);
     }
   }
 
@@ -223,11 +316,14 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
               {automaticas.filter((fila) => clave(fila) === editandoAuto).map((fila) => (
                 <FormularioValoracion
                   key={`${clave(fila)}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
+                  id={`revision-${clave(fila)}`}
                   numeroPregunta={fila.pregunta.orden}
                   preguntaId={fila.pregunta.pregunta_id}
                   enunciadoPregunta={fila.pregunta.enunciado}
-                  inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando === clave(fila)}
-                  onGuardar={guardarValoracion}
+                  inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando}
+                  borrador={obtenerBorrador(fila)}
+                  onCambiar={(valoracion) => cambiarBorrador(fila, valoracion)}
+                  errorValidacion={erroresCampo[clave(fila)]}
                 />
               ))}
 
@@ -243,17 +339,16 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
                     key={`${clave(fila)}-${fila.inciso.puntaje_obtenido}-${fila.inciso.retroalimentacion}`}
                     id={`revision-${clave(fila)}`} numeroPregunta={fila.pregunta.orden}
                     preguntaId={fila.pregunta.pregunta_id} enunciadoPregunta={fila.pregunta.enunciado}
-                    inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando === clave(fila)}
-                    onGuardar={guardarValoracion}
+                    inciso={fila.inciso} bloqueado={bloqueado} guardando={guardando}
+                    borrador={obtenerBorrador(fila)}
+                    onCambiar={(valoracion) => cambiarBorrador(fila, valoracion)}
+                    errorValidacion={erroresCampo[clave(fila)]}
                     onSiguiente={pendientes.length > 1 && fila.inciso.pendiente_revision ? () => irAlSiguiente(fila) : undefined}
                   />
                 ))}
               </section>
-              <EventosSeguridadEstudiante
-                examenId={examenId}
-                estudianteId={estudianteId}
-              />
 
+              <EventosSeguridadEstudiante examenId={examenId} estudianteId={estudianteId} />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Link href={rutaGeneral} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700">← Revisión general</Link>
                 {siguiente && <Link href={`${rutaGeneral}/${siguiente.estudiante_id}`} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">Siguiente estudiante →</Link>}
@@ -261,6 +356,23 @@ export default function RevisionEstudiante({ examenId, estudianteId }: { examenI
             </div>
 
             <aside className="space-y-3 lg:sticky lg:top-5" aria-label="Progreso de corrección">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
+                <div>
+                  <h2 className="text-sm font-bold text-violet-950 dark:text-violet-100">Guardar todas las revisiones</h2>
+                  <p className="mt-1 text-xs text-violet-800 dark:text-violet-300">
+                    {cambiosPendientes} inciso(s) por completar o actualizar. Se validarán antes de guardar todo en una sola operación.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void guardarTodas()}
+                  disabled={bloqueado}
+                  className="rounded-lg bg-violet-700 px-5 py-3 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {guardando ? 'Guardando todas…' : 'Guardar todas las revisiones'}
+                </button>
+              </div>
+
               <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Revisión necesaria</h2>
                 <div className="mt-3 space-y-2">

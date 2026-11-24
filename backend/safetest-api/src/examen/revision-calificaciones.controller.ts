@@ -55,6 +55,21 @@ export class RevisionCalificacionesController {
     );
   }
 
+  @Patch(':estudianteId/respuestas')
+  valorarIncisosEnLote(
+    @Param('examenId', ParseIntPipe) examenId: number,
+    @Param('estudianteId', ParseIntPipe) estudianteId: number,
+    @Body() body: unknown,
+    @Req() request: { user: { id: number } },
+  ) {
+    return this.revision.valorarIncisosEnLote(
+      examenId,
+      estudianteId,
+      request.user.id,
+      body,
+    );
+  }
+
   @Post('confirmar')
   confirmar(
     @Param('examenId', ParseIntPipe) examenId: number,
