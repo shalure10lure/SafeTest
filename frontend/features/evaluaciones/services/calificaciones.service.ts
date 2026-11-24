@@ -62,6 +62,26 @@ export const calificacionesService = {
     return data;
   },
 
+  /** Una sola petición: todas las revisiones se guardan o ninguna se guarda. */
+  async valorarEnLote(
+    examenId: number,
+    estudianteId: number,
+    revisiones: Array<{ pregunta_id: number; letra: string } & RespuestaValoracion>,
+  ): Promise<{
+    examen_id: number;
+    estudiante_id: number;
+    guardadas: number;
+    pendientes_revision: number;
+    nota_final: string | null;
+    estado_rendicion: string;
+  }> {
+    const { data } = await cliente.patch(
+      `${ruta(examenId)}/${estudianteId}/respuestas`,
+      { revisiones },
+    );
+    return data;
+  },
+
   /** HU-32: publicación OFICIAL, posterior a la confirmación HU-31. */
   async publicarResultados(examenId: number): Promise<{
     examen_id: number;

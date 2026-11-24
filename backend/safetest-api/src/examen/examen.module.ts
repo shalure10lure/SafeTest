@@ -39,6 +39,10 @@ import { PublicacionResultadosService } from './publicacion-resultados.service';
 import { EnvioResultadosCorreoService } from './envio-resultados-correo.service';
 import { EnvioCalificacion } from '../enviocalificacion/entity/enviocalificacion.entity';
 import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module';
+import { EventoSeguridad } from '../eventoseguridad/entity/eventoseguridad.entity';
+import { Rendicion } from '../rendicion/entity/rendicion.entity';
+import { SeguridadRendicionService } from '../seguridad/seguridad-rendicion.service';
+import { SeguridadRendicionEstudianteController, SeguridadRendicionDocenteController } from '../seguridad/seguridad-rendicion.controller';
 
 @Module({
     imports: [
@@ -65,6 +69,8 @@ import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module'
             PreguntaModelo,
             RespuestaModelo,
             EnvioCalificacion,
+            EventoSeguridad,
+            Rendicion,
         ]),
         PreguntaModule,
         ReglaCorreccionModule,
@@ -77,6 +83,8 @@ import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module'
         RevisionCalificacionesController,
         PublicacionResultadosDocenteController,
         PublicacionResultadosEstudianteController,
+        SeguridadRendicionEstudianteController,
+        SeguridadRendicionDocenteController,
     ],
     providers: [
         ExamenService,
@@ -86,6 +94,7 @@ import { ConexionCorreoModule } from '../conexion-correo/conexion-correo.module'
         RevisionCalificacionesService,
         PublicacionResultadosService,
         EnvioResultadosCorreoService,
+        SeguridadRendicionService,
     ],
     exports: [RevisionCalificacionesService],
 })

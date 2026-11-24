@@ -16,21 +16,26 @@ import { useToast } from '@/components/ui/ToastProvider';
 import BandejaCorreccionesIa from './BandejaCorreccionesIa';
 import CorreoResultadosPanel from './CorreoResultadosPanel';
 
+// Filtros disponibles en la tabla de estudiantes
 type Filtro = 'todos' | 'pendientes' | 'listas';
 
+// Convierte un string numérico en número (o null si no es válido)
 const numero = (valor: string | null): number | null => {
   if (valor === null) return null;
   const n = Number(valor);
   return Number.isFinite(n) ? n : null;
 };
+// Formatea puntos con hasta 2 decimales en formato boliviano
 const puntos = (valor: number) => valor.toLocaleString('es-BO', { maximumFractionDigits: 2 });
 
+// Devuelve el texto y estilo del badge de estado de cada estudiante
 function estadoDe(e: EstudianteCalificacion) {
   if (e.estado === 'en_curso') return { texto: 'En curso', clase: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' };
   if (e.lista_para_publicar) return { texto: 'Lista para publicar', clase: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200' };
   return { texto: 'Revisión pendiente', clase: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' };
 }
 
+// Texto corto del estado general de la evaluación
 function resumenEstado(datos: ResumenCalificaciones) {
   if (datos.resultados_publicados_en) return 'Resultados publicados';
   if (datos.calificaciones_revisadas_en) return 'Listo para publicar';
@@ -46,6 +51,7 @@ interface MensajeEstado {
 /**
  * UN solo mensaje que resume en qué punto está la revisión y cuál es el
  * siguiente paso (antes eran varios banners de colores distintos).
+ * Es la mejora propia; reemplaza los banners sueltos que venían de main.
  */
 function mensajeDeEstado(p: {
   confirmadas: boolean;
@@ -100,29 +106,35 @@ function mensajeDeEstado(p: {
 export default function RevisionCalificaciones({ examenId }: { examenId: number }) {
   const router = useRouter();
   const toast = useToast();
+  // Estudiante al que se le está pidiendo revisión con IA (null si ninguno)
   const [revisandoEstudiante, setRevisandoEstudiante] = useState<number | null>(null);
+  // Resumen de calificaciones devuelto por el backend
   const [datos, setDatos] = useState<ResumenCalificaciones | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState<Filtro>('todos');
-  const [preguntarConfirmacion, setPreguntarConfirmacion] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
-  const [preguntarPublicacion, setPreguntarPublicacion] = useState(false);
   const [publicando, setPublicando] = useState(false);
-  const [preguntarSoluciones, setPreguntarSoluciones] = useState(false);
   const [publicandoSoluciones, setPublicandoSoluciones] = useState(false);
+  // Estados de los diálogos de confirmación (estaban sin declarar tras el merge)
+  const [preguntarConfirmacion, setPreguntarConfirmacion] = useState(false);
+  const [preguntarPublicacion, setPreguntarPublicacion] = useState(false);
+  const [preguntarSoluciones, setPreguntarSoluciones] = useState(false);
+  // Estados de la corrección asistida por IA
   const [solicitandoLote, setSolicitandoLote] = useState(false);
   const [seguimientoLote, setSeguimientoLote] = useState(false);
   const [resultadoLote, setResultadoLote] =
     useState<ResultadoLoteCorreccionIa | null>(null);
 
+  // Vuelve a pedir el resumen al backend
   const cargar = useCallback(async () => {
     const respuesta = await calificacionesService.resumen(examenId);
     setDatos(respuesta);
     return respuesta;
   }, [examenId]);
 
+  // Carga inicial (y cuando cambia el examen)
   useEffect(() => {
     let activo = true;
     setCargando(true);
@@ -135,6 +147,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     return () => { activo = false; };
   }, [examenId]);
 
+  // Valores derivados
   const estudiantes = datos?.estudiantes ?? [];
   const pendientes = estudiantes.filter((e) => !e.lista_para_publicar);
   const notas = estudiantes
@@ -152,26 +165,30 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     datos.total_rendiciones > 0 && datos.total_pendientes === 0;
   const puedePublicar = !!datos && confirmadas && !publicados && finalizado &&
     datos.total_rendiciones > 0 && datos.total_pendientes === 0;
+  // Callback estable para que la bandeja avise que terminó el seguimiento
   const finalizarSeguimientoLote = useCallback(
     () => setSeguimientoLote(false),
     [],
   );
 
+  // Estudiantes filtrados por búsqueda y por estado
   const visibles = useMemo(() => estudiantes.filter((e) => {
     if (!e.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) &&
-        !String(e.estudiante_id).includes(busqueda)) return false;
+      !String(e.estudiante_id).includes(busqueda)) return false;
     if (filtro === 'pendientes') return !e.lista_para_publicar;
     if (filtro === 'listas') return e.lista_para_publicar;
     return true;
   }), [estudiantes, busqueda, filtro]);
 
+  // Confirma la revisión (bloquea las notas, no las publica)
   async function confirmar() {
-    if (!puedeConfirmar) return;
+    if (!puedeConfirmar || confirmando) return;
     setConfirmando(true);
     setError(null);
     try {
       await calificacionesService.confirmar(examenId);
       await cargar();
+      // RESOLUCIÓN: se usa el toast propio (setNotificacion ya no existe)
       toast.exito(
         'Revisión confirmada',
         'Las calificaciones quedaron listas para publicar. Los estudiantes todavía no las ven.',
@@ -184,8 +201,9 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     }
   }
 
+  // Publica los resultados oficiales a los estudiantes
   async function publicar() {
-    if (!puedePublicar) return;
+    if (!puedePublicar || publicando) return;
     setPublicando(true);
     setError(null);
     try {
@@ -207,8 +225,9 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     }
   }
 
+  // Autoriza que los estudiantes vean las respuestas correctas
   async function publicarSoluciones() {
-    if (!publicados || solucionesPublicadas) return;
+    if (!publicados || solucionesPublicadas || publicandoSoluciones) return;
     setPublicandoSoluciones(true);
     setError(null);
     try {
@@ -230,6 +249,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     }
   }
 
+  // Pide a la IA propuestas para todos los incisos pendientes
   async function revisarTodoConIa() {
     if (confirmadas || publicados || solicitandoLote || seguimientoLote) return;
     setSolicitandoLote(true);
@@ -246,6 +266,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     }
   }
 
+  // Pide a la IA propuestas para un solo estudiante y abre su revisión
   async function revisarEstudianteConIa(estudianteId: number) {
     if (confirmadas || publicados || revisandoEstudiante !== null) return;
     setRevisandoEstudiante(estudianteId);
@@ -270,6 +291,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 text-slate-900 md:px-6 dark:text-slate-100">
+      {/* Cabecera con ruta, título y botones de acción */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
           <nav aria-label="Ruta de navegación" className="flex flex-wrap items-center gap-1 text-xs text-slate-400">
@@ -282,6 +304,13 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/docente/evaluaciones" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">← Mis evaluaciones</Link>
+          <Link
+            href={`/docente/evaluaciones/${examenId}/seguridad`}
+            className="inline-flex items-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+          >
+            Ver seguridad y bloqueos
+          </Link>
+          {/* Los botones ahora ABREN el diálogo de confirmación (antes llamaban directo) */}
           <button
             type="button"
             onClick={() => setPreguntarConfirmacion(true)}
@@ -289,7 +318,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
             title="Bloquea las notas, pero todavía no las publica"
           >
-            {confirmadas ? 'Revisión confirmada' : 'Confirmar revisión'}
+            {confirmando ? 'Confirmando…' : confirmadas ? 'Revisión confirmada' : 'Confirmar revisión'}
           </button>
           <button
             type="button"
@@ -298,7 +327,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             title={confirmadas ? 'Publicar las notas oficiales para los estudiantes' : 'Primero debes confirmar la revisión'}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {publicados ? 'Resultados publicados' : 'Publicar resultados'}
+            {publicando ? 'Publicando…' : publicados ? 'Resultados publicados' : 'Publicar resultados'}
           </button>
           <button
             type="button"
@@ -307,11 +336,12 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             title={!publicados ? 'Primero publica las calificaciones' : 'Autorizar respuestas correctas para los estudiantes'}
             className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {solucionesPublicadas ? 'Respuestas publicadas' : 'Publicar respuestas correctas'}
+            {publicandoSoluciones ? 'Publicando…' : solucionesPublicadas ? 'Respuestas publicadas' : 'Publicar respuestas correctas'}
           </button>
         </div>
       </div>
 
+      {/* Error general de la pantalla */}
       {error && (
         <Alerta tono="error" titulo="No se pudo completar la acción" onCerrar={() => setError(null)}>
           {error}
@@ -322,6 +352,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
         <div role="status" className="rounded-xl border border-slate-200 bg-white p-10 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando las calificaciones de la evaluación…</div>
       ) : datos ? (
         <>
+          {/* Tarjetas de resumen */}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Estado de calificaciones</p>
@@ -344,6 +375,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             </div>
           </div>
 
+          {/* RESOLUCIÓN: se usa el mensaje único (mejora propia) en vez de los banners de main */}
           {(() => {
             const estado = mensajeDeEstado({
               confirmadas,
@@ -355,8 +387,10 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             return <Alerta tono={estado.tono} titulo={estado.titulo}>{estado.texto}</Alerta>;
           })()}
 
+          {/* Panel de correo institucional */}
           <CorreoResultadosPanel examenId={examenId} publicados={publicados} />
 
+          {/* Corrección asistida por IA (solo mientras se puede editar) */}
           {!confirmadas && !publicados && (
             <section
               aria-label="Revisión de propuestas con IA"
@@ -411,6 +445,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             </section>
           )}
 
+          {/* Bandeja con las propuestas de la IA */}
           <BandejaCorreccionesIa
             examenId={examenId}
             seguimientoLote={seguimientoLote}
@@ -419,6 +454,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             onPropuestasAceptadas={() => void cargar()}
           />
 
+          {/* Tabla de resultados por estudiante */}
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" aria-label="Resultados de los estudiantes">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
               <div>
@@ -461,6 +497,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             <div className="border-t border-slate-100 px-4 py-3 text-right text-xs text-slate-400 dark:border-slate-800">{visibles.length} de {estudiantes.length} rendiciones</div>
           </section>
 
+          {/* RESOLUCIÓN: se conservan los diálogos de confirmación (mejora propia) */}
           <ConfirmDialog
             abierto={preguntarConfirmacion && puedeConfirmar}
             titulo="¿Confirmar todas las calificaciones?"
@@ -496,6 +533,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             <p>Quienes rindieron la evaluación podrán ver las opciones correctas, las soluciones numéricas y las rúbricas disponibles.</p>
             <p>Esta autorización no se puede deshacer desde la plataforma.</p>
           </ConfirmDialog>
+
           {publicados && datos.resultados_publicados_en && (
             <p className="text-sm text-emerald-700">
               Publicados el {new Date(datos.resultados_publicados_en).toLocaleString('es-BO')}.

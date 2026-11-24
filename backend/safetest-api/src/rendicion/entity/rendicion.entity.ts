@@ -39,6 +39,9 @@ export class Rendicion {
 
   @Column({ name: 'fecha_envio', type: 'timestamptz', nullable: true })
   fecha_envio: Date | null;
+  // HU-43: bloqueo temporal independiente del estado de entrega.
+  @Column({ name: 'bloqueada_seguridad_en', type: 'timestamptz', nullable: true })
+  bloqueada_seguridad_en: Date | null;
   // ---------- FIN NUEVO ----------
 
   @ManyToOne(

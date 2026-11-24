@@ -16,6 +16,7 @@ import { Inscripcion } from '../inscripcion/entity/inscripcion.entity';
 import { ParaleloExamen } from '../paraleloexamen/entity/paraleloexamen.entity';
 import { Pregunta } from '../pregunta/entity/pregunta.entity';
 import { Examen } from './entity/examen.entity';
+import { Rendicion } from '../rendicion/entity/rendicion.entity';
 import type {
   EstadoDisponibilidadEvaluacion,
   EvaluacionAsignadaDto,
@@ -108,6 +109,9 @@ export class ExamenAccesoService {
 
     @InjectRepository(Estudiante)
     private readonly estudianteRepository: Repository<Estudiante>,
+
+    @InjectRepository(Rendicion)
+    private readonly rendicionRepository: Repository<Rendicion>,
   ) {}
 
   /**
@@ -189,7 +193,7 @@ export class ExamenAccesoService {
           estudianteId,
         },
       )
-      .orderBy('examen.disponible_desde', 'ASC')
+      .orderBy('examen.disponible_desde', 'DESC')
       .addOrderBy('examen.examen_id', 'DESC')
       .getRawMany<{
         examen_id: number | string;
@@ -250,6 +254,7 @@ export class ExamenAccesoService {
         modo_asignacion: true,
         modo_seleccion: true,
         duracion_min: true,
+        bloquear_primer_cambio_pestana: true,
         disponible_desde: true,
         disponible_hasta: true,
         materia: { nombre: true },
@@ -306,6 +311,7 @@ export class ExamenAccesoService {
       materia: examen.materia?.nombre ?? null,
       docente: examen.docente?.nombre ?? null,
       duracion_min: examen.duracion_min,
+      bloquear_primer_cambio_pestana: examen.bloquear_primer_cambio_pestana,
       disponible_desde: examen.disponible_desde,
       disponible_hasta: examen.disponible_hasta,
       total_preguntas: totalPreguntas,
@@ -395,6 +401,16 @@ export class ExamenAccesoService {
 
     if (!asignado) {
       throw new NotFoundException('La evaluación no está disponible.');
+    }
+
+    // HU-43: la vista histórica de /examenes/:id/estudiante también revela
+    // preguntas; NO debe eludir el bloqueo del endpoint de rendición.
+    const rendicion = await this.rendicionRepository.findOne({
+      where: { examen_id: examenId, estudiante_id: estudianteId },
+      select: { estado: true, bloqueada_seguridad_en: true },
+    });
+    if (rendicion?.estado === 'en_curso' && rendicion.bloqueada_seguridad_en !== null) {
+      throw new ForbiddenException('HU43_RENDICION_BLOQUEADA: El docente debe revisar la rendición.');
     }
 
     const resultadosPublicados = examen.resultados_publicados_en !== null;

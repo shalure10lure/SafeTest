@@ -1,20 +1,30 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import type { IncisoCalificacion, RespuestaValoracion } from '../calificaciones.types';
+// Tipo del inciso que viene del backend
+import type { IncisoCalificacion } from '../calificaciones.types';
+
+// Borrador que el docente va escribiendo; vive en el componente padre
+// (RevisionEstudiante) para poder guardar todos los incisos de una sola vez
+export interface BorradorValoracion {
+  puntaje: string;
+  retroalimentacion: string;
+}
 
 interface Props {
-  id?: string;
+  id?: string; // id HTML para poder hacer scroll hasta este formulario
   numeroPregunta: number;
   preguntaId: number;
   enunciadoPregunta: string;
   inciso: IncisoCalificacion;
-  bloqueado: boolean;
-  guardando: boolean;
-  onGuardar: (preguntaId: number, letra: string, datos: RespuestaValoracion) => Promise<void>;
-  onSiguiente?: () => void;
+  bloqueado: boolean; // true si la revisión ya está confirmada/publicada o en curso
+  guardando: boolean; // true mientras se guarda el lote
+  borrador: BorradorValoracion; // valores actuales de los campos
+  onCambiar: (valoracion: BorradorValoracion) => void; // avisa al padre de cada cambio
+  errorValidacion?: string; // error del campo calculado por el padre
+  onSiguiente?: () => void; // salta al siguiente inciso pendiente
 }
 
+// Etiquetas legibles para el estado de corrección del inciso
 const etiquetas: Record<string, string> = {
   automatica: 'Automática',
   pendiente: 'Revisión necesaria',
@@ -24,45 +34,22 @@ const etiquetas: Record<string, string> = {
 
 export default function FormularioValoracion({
   id, numeroPregunta, preguntaId, enunciadoPregunta, inciso, bloqueado, guardando,
-  onGuardar, onSiguiente,
+  borrador, onCambiar, errorValidacion, onSiguiente,
 }: Props) {
-  const [puntaje, setPuntaje] = useState(inciso.puntaje_obtenido ?? '');
-  const [retroalimentacion, setRetroalimentacion] = useState(inciso.retroalimentacion ?? '');
-  const [error, setError] = useState<string | null>(null);
-  const [guardado, setGuardado] = useState(false);
+  // Valores actuales del borrador
+  const { puntaje, retroalimentacion } = borrador;
 
-  const max = Number(inciso.puntaje_max);
-  const valor = Number(puntaje.replace(',', '.'));
-  const valido = puntaje.trim().length > 0 && Number.isFinite(valor) &&
-    valor >= 0 && valor <= max && Math.abs(valor * 100 - Math.round(valor * 100)) < 1e-7;
-  const cambiado = puntaje !== (inciso.puntaje_obtenido ?? '') ||
-    retroalimentacion !== (inciso.retroalimentacion ?? '');
+  // true si el estudiante no escribió texto
   const sinTexto = !(inciso.respuesta_texto ?? '').trim();
+  // Opciones que el estudiante marcó
   const opcionesElegidas = inciso.opciones.filter((o) => o.seleccionada);
+  // true si existe alguna solución de referencia para mostrar
   const contieneReferencia = inciso.solucion_referencia != null || inciso.solucion_numerica != null ||
     inciso.opciones.some((o) => o.correcta);
 
-  async function enviar(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault();
-    setError(null);
-    setGuardado(false);
-    if (!valido) {
-      setError(`El puntaje debe estar entre 0 y ${inciso.puntaje_max}, con máximo dos decimales.`);
-      return;
-    }
-    try {
-      await onGuardar(preguntaId, inciso.letra, {
-        puntaje: valor,
-        retroalimentacion: retroalimentacion.trim() || null,
-      });
-      setGuardado(true);
-    } catch (fallo: unknown) {
-      setError(fallo instanceof Error ? fallo.message : 'No se pudo guardar el puntaje.');
-    }
-  }
-
   return (
     <article id={id} className="scroll-mt-24 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      {/* Cabecera: pregunta, inciso y estado */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-violet-700 dark:text-violet-300">Pregunta {numeroPregunta} · inciso {inciso.letra}</span>
@@ -73,12 +60,14 @@ export default function FormularioValoracion({
         </span>
       </div>
       <div className="space-y-4 p-4 sm:p-5">
+        {/* Enunciado de la pregunta y del inciso */}
         <div>
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Pregunta</p>
           <p className="whitespace-pre-wrap text-sm font-semibold">{enunciadoPregunta}</p>
           {inciso.enunciado_inciso && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{inciso.enunciado_inciso}</p>}
         </div>
 
+        {/* Respuesta del estudiante (texto, opciones y/o procedimiento) */}
         <div>
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Respuesta del estudiante</p>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950/40">
@@ -102,6 +91,7 @@ export default function FormularioValoracion({
           </div>
         </div>
 
+        {/* Solución esperada / rúbrica (desplegable) */}
         {contieneReferencia && (
           <details className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
             <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-600 hover:text-violet-700 dark:text-slate-300">Ver solución esperada / rúbrica</summary>
@@ -113,14 +103,15 @@ export default function FormularioValoracion({
           </details>
         )}
 
-        <form onSubmit={enviar} className="grid gap-4 sm:grid-cols-[minmax(130px,145px)_1fr]">
+        {/* Campos de puntaje y retroalimentación */}
+        <div className="grid gap-4 sm:grid-cols-[minmax(130px,145px)_1fr]">
           <div>
             <label htmlFor={`nota-${preguntaId}-${inciso.letra}`} className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Puntaje asignado</label>
             <div className="flex items-center gap-1.5">
               <input
                 id={`nota-${preguntaId}-${inciso.letra}`} type="number" inputMode="decimal"
                 step="0.01" min="0" max={inciso.puntaje_max} value={puntaje}
-                onChange={(e) => { setPuntaje(e.target.value); setGuardado(false); }}
+                onChange={(e) => onCambiar({ ...borrador, puntaje: e.target.value })}
                 disabled={bloqueado || guardando}
                 placeholder="—"
                 className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-800"
@@ -134,23 +125,23 @@ export default function FormularioValoracion({
             <textarea
               id={`comentario-${preguntaId}-${inciso.letra}`} rows={3} maxLength={2000}
               disabled={bloqueado || guardando} value={retroalimentacion}
-              onChange={(e) => { setRetroalimentacion(e.target.value); setGuardado(false); }}
+              onChange={(e) => onCambiar({ ...borrador, retroalimentacion: e.target.value })}
               placeholder="Observaciones sobre la respuesta…"
               className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-800"
             />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:col-span-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="submit" disabled={bloqueado || guardando || !valido || !cambiado} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                {guardando ? 'Guardando…' : 'Guardar revisión'}
+          {/* RESOLUCIÓN: se usa la versión de main. Ya no hay botón "Guardar revisión"
+              por inciso: el guardado se hace en lote desde RevisionEstudiante. */}
+          {onSiguiente && (
+            <div className="flex justify-end border-t border-slate-100 pt-3 sm:col-span-2 dark:border-slate-800">
+              <button type="button" onClick={onSiguiente} disabled={bloqueado || guardando} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200">
+                Ir al siguiente inciso →
               </button>
-              {onSiguiente && <button type="button" onClick={onSiguiente} className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700">Siguiente pendiente →</button>}
             </div>
-          </div>
-          {error && <p role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-2">{error}</p>}
-          {guardado && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300 sm:col-span-2">Revisión guardada. Se actualizó la calificación en el backend.</p>}
+          )}
+          {errorValidacion && <p role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-2">{errorValidacion}</p>}
           {bloqueado && <p className="text-xs text-slate-500 sm:col-span-2">La calificación no se puede editar: la rendición está en curso o la revisión ya fue confirmada/publicada.</p>}
-        </form>
+        </div>
       </div>
     </article>
   );

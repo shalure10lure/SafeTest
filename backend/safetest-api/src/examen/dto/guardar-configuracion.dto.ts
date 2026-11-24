@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+    IsBoolean,
+    IsOptional,
     IsDateString,
     IsIn,
     IsInt,
@@ -42,4 +44,9 @@ export class GuardarConfiguracionDto {
     )
     @IsPositive({ message: 'El puntaje total debe ser mayor que cero' })
     puntaje_total: number;
+
+    // Opcional para clientes antiguos; en el frontend nuevo se envía siempre.
+    @IsOptional()
+    @IsBoolean()
+    bloquear_primer_cambio_pestana?: boolean;
 }
