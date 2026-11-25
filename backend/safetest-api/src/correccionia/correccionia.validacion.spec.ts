@@ -156,11 +156,24 @@ describe('validarSolicitudCorreccionIa', () => {
     ).not.toThrow();
   });
 
+  it('permite desarrollo sin criterios: se usa el criterio predeterminado', () => {
+    expect(() =>
+      validarSolicitudCorreccionIa({
+        ...solicitudValida,
+        tipo_respuesta: 'desarrollo',
+        solucion_inciso: { valor_correcto: '0', rubrica: '  ' },
+        solucion_referencia: null,
+      }),
+    ).not.toThrow();
+  });
+
   it('rechaza criterios insuficientes con un motivo comprensible', () => {
     esperarError(
       () =>
         validarSolicitudCorreccionIa({
           ...solicitudValida,
+          tipo_respuesta: 'numerica',
+          respuesta_texto: '42',
           solucion_inciso: {
             valor_correcto: 'no numérico',
             rubrica: '  ',
@@ -279,3 +292,5 @@ describe('validarResultadoCorreccionIa', () => {
     );
   });
 });
+
+

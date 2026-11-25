@@ -226,3 +226,22 @@ describe('mensajeErrorCorreccionIa', () => {
     );
   });
 });
+
+
+
+
+describe('correccionIaService.revisarEstudiante', () => {
+  it('envía estudiante_id al endpoint de lote del examen', async () => {
+    mocks.post.mockReset();
+    mocks.post.mockResolvedValueOnce({
+      data: { solicitadas: 1, omitidas: 0, detalle_omitidas: [] },
+    });
+
+    const resultado = await correccionIaService.revisarEstudiante(12, 7);
+
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    expect(mocks.post.mock.calls[0][0]).toBe('/examenes/12/correcciones-ia/lote');
+    expect(mocks.post.mock.calls[0][1]).toEqual({ estudiante_id: 7 });
+    expect(resultado.solicitadas).toBe(1);
+  });
+});

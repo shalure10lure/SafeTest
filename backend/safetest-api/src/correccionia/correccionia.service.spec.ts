@@ -314,6 +314,7 @@ function crearPropuesta(cambios: Partial<CorreccionIa> = {}): CorreccionIa {
     criterio_fuente: 'rubrica',
     criterio_hash:
       crearHashCriterioActual(
+        'desarrollo',
         {
           valor_correcto: '10',
           tolerancia: '0',
@@ -454,7 +455,23 @@ describe('CorreccionIaService.solicitarPropuesta', () => {
       400,
       'RESPUESTA_VACIA',
     ],
-    ['criterios insuficientes', { soluciones: null }, 400, 'SIN_CRITERIOS'],
+    [
+      'criterios insuficientes en un inciso numérico',
+      {
+        soluciones: null,
+        inciso: { tipo_respuesta: 'numerica', puntaje_max: '10.00' },
+        respuesta: {
+          examen_id: 7,
+          estudiante_id: 21,
+          pregunta_id: 31,
+          letra: 'a',
+          estado_correccion: 'pendiente',
+          respuesta_texto: '42',
+        },
+      },
+      400,
+      'SIN_CRITERIOS',
+    ],
     [
       'puntaje máximo inválido',
       { inciso: { tipo_respuesta: 'desarrollo', puntaje_max: 'NaN' } },
@@ -1183,9 +1200,9 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     const contexto = crearServicio({
       detalle: propuestaAceptable(),
       soluciones: {
-        valor_correcto: '11',
+        valor_correcto: '0',
         tolerancia: '0',
-        rubrica: 'Criterios revisados',
+        rubrica: 'Criterios modificados después',
       },
     });
 
@@ -1200,6 +1217,21 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
       ],
     });
     expect(contexto.aplicarValoracionOficial).toHaveBeenCalledTimes(1);
+  });
+
+  it('no avisa de cambio de criterio si el valor correcto de relleno (0) no cambió el criterio de desarrollo', async () => {
+    const contexto = crearServicio({
+      detalle: propuestaAceptable(),
+      soluciones: {
+        valor_correcto: '0',
+        tolerancia: '0',
+        rubrica: 'Criterios revisados',
+      },
+    });
+
+    await expect(aceptar(contexto.servicio)).resolves.toMatchObject({
+      advertencias: [],
+    });
   });
 
   it('no altera la retroalimentación existente si se omite', async () => {
@@ -1582,3 +1614,5 @@ describe('CorreccionIaService.aceptarPropuesta', () => {
     await worker.onModuleDestroy();
   });
 });
+
+

@@ -17,17 +17,14 @@ interface ConfirmDialogProps {
     textoCancelar?: string;
     onConfirmar: () => void;
     onCancelar: () => void;
-    /** Deshabilita las acciones y evita el cierre mientras se guarda. */
     procesando?: boolean;
+    varianteConfirmar?: 'normal' | 'destructiva';
+    cerrarAlHacerClickFuera?: boolean;
 }
 
 const BOTON_BASE =
-    'inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
+    'inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto';
 
-/**
- * Diálogo de confirmación accesible y sin dependencias externas.
- * Se cierra con Escape y con el botón de cancelar, nunca mientras procesa.
- */
 export default function ConfirmDialog({
     abierto,
     titulo,
@@ -37,13 +34,14 @@ export default function ConfirmDialog({
     onConfirmar,
     onCancelar,
     procesando = false,
+    varianteConfirmar = 'normal',
+    cerrarAlHacerClickFuera = false,
 }: ConfirmDialogProps) {
     const tituloId = useId();
     const descripcionId = useId();
     const cancelarRef = useRef<HTMLButtonElement>(null);
     const dialogoRef = useRef<HTMLDivElement>(null);
 
-    // Al abrir, el foco va al botón secundario y se restaura al cerrar.
     useEffect(() => {
         if (!abierto) return;
 
@@ -59,7 +57,6 @@ export default function ConfirmDialog({
         };
     }, [abierto]);
 
-    // Escape cierra el diálogo, salvo mientras se está guardando.
     useEffect(() => {
         if (!abierto) return;
 
@@ -86,7 +83,8 @@ export default function ConfirmDialog({
                 }
 
                 const primero = elementosEnfocables[0];
-                const ultimo = elementosEnfocables[elementosEnfocables.length - 1];
+                const ultimo =
+                    elementosEnfocables[elementosEnfocables.length - 1];
 
                 if (
                     evento.shiftKey &&
@@ -121,11 +119,25 @@ export default function ConfirmDialog({
 
     if (!abierto) return null;
 
+    const estiloConfirmar =
+        varianteConfirmar === 'destructiva'
+            ? 'bg-destructive text-white hover:bg-destructive/90 focus-visible:outline-destructive'
+            : 'bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:outline-ring';
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-                className="absolute inset-0 bg-slate-900/40"
+                className="absolute inset-0 bg-black/50"
                 aria-hidden="true"
+                onClick={(evento) => {
+                    if (
+                        evento.target === evento.currentTarget &&
+                        cerrarAlHacerClickFuera &&
+                        !procesando
+                    ) {
+                        onCancelar();
+                    }
+                }}
             />
 
             <div
@@ -135,18 +147,18 @@ export default function ConfirmDialog({
                 aria-labelledby={tituloId}
                 aria-describedby={descripcionId}
                 tabIndex={-1}
-                className="relative w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl sm:p-6"
+                className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-2xl sm:p-6"
             >
                 <h2
                     id={tituloId}
-                    className="text-base font-semibold text-slate-900"
+                    className="text-base font-semibold text-foreground sm:text-lg"
                 >
                     {titulo}
                 </h2>
 
                 <div
                     id={descripcionId}
-                    className="mt-3 space-y-3 text-sm text-slate-600"
+                    className="mt-3 space-y-3 text-sm leading-relaxed text-muted-foreground"
                 >
                     {children}
                 </div>
@@ -159,7 +171,7 @@ export default function ConfirmDialog({
                         disabled={procesando}
                         className={cn(
                             BOTON_BASE,
-                            'border border-slate-200 bg-white text-slate-800 hover:bg-slate-50',
+                            'border border-border bg-background text-foreground hover:bg-muted focus-visible:outline-ring',
                         )}
                     >
                         {textoCancelar}
@@ -171,10 +183,10 @@ export default function ConfirmDialog({
                         disabled={procesando}
                         className={cn(
                             BOTON_BASE,
-                            'bg-violet-600 text-white hover:bg-violet-700',
+                            estiloConfirmar,
                         )}
                     >
-                        {procesando ? 'Guardando...' : textoConfirmar}
+                        {procesando ? 'Procesando...' : textoConfirmar}
                     </button>
                 </div>
             </div>

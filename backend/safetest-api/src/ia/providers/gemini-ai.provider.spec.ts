@@ -1,3 +1,5 @@
+import { jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import type {
   SolicitudCorreccionRespuesta,
   SolicitudGeneracionIa,
@@ -598,6 +600,48 @@ describe('GeminiAiProvider', () => {
     ).rejects.toMatchObject({ motivo: 'autenticacion', reintentable: false });
   });
 
+  it('registra en el log del servidor el estado HTTP y el detalle de Google sin exponer la clave', async () => {
+    const advertencia = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const error = Object.assign(
+      new Error('API key not valid. key=AIzaSyA1234567890abcdefghijklmnopqrstuv'),
+      { status: 403 },
+    );
+    const { proveedor } = crearProveedor(error);
+
+    await expect(
+      proveedor.generarPreguntas(crearSolicitud()),
+    ).rejects.toMatchObject({ motivo: 'autenticacion' });
+
+    const registrado = advertencia.mock.calls.map(([mensaje]) => String(mensaje)).join('\n');
+    expect(registrado).toContain('HTTP 403');
+    expect(registrado).toContain('API key not valid');
+    expect(registrado).not.toContain('AIzaSyA1234567890abcdefghijklmnopqrstuv');
+    advertencia.mockRestore();
+  });
+
+  it('también oculta claves con el formato AQ. en el log del servidor', async () => {
+    const advertencia = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const clave = 'AQ.Ab8RN6JsecretoSecretoSecreto1234567890';
+    const { proveedor } = crearProveedor(
+      Object.assign(new Error(`rechazada: ${clave}`), { status: 403 }),
+    );
+
+    await expect(
+      proveedor.generarPreguntas(crearSolicitud()),
+    ).rejects.toMatchObject({ motivo: 'autenticacion' });
+
+    const registrado = advertencia.mock.calls
+      .map(([mensaje]) => String(mensaje))
+      .join('\n');
+    expect(registrado).toContain('[clave-oculta]');
+    expect(registrado).not.toContain(clave);
+    advertencia.mockRestore();
+  });
+
   it('identifica un modelo Gemini inexistente o no disponible', async () => {
     const error = Object.assign(new Error('not found'), { status: 404 });
     const { proveedor } = crearProveedor(error);
@@ -678,3 +722,5 @@ describe('GeminiAiProvider', () => {
     expect(cliente.peticiones).toHaveLength(0);
   });
 });
+
+

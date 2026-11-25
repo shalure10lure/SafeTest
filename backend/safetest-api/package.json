@@ -20,6 +20,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:asignacion": "ts-node scripts/seed-asignacion.ts",
+    "ia:verificar": "node --env-file=.env scripts/verificar-gemini.mjs",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts"
@@ -75,3 +76,5 @@
     "typescript": "^6.0.2"
   }
 }
+
+

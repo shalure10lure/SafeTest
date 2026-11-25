@@ -54,9 +54,10 @@ beforeAll(async () => {
     () => ({ ReglaCorreccion }),
   );
 
-  ({ CorreccionRendicionService } = await import(
-    './correccion-rendicion.service'
-  ));
+  // Ruta en una variable: con `moduleResolution: nodenext` TypeScript exige
+  // extensión en los `import()` literales, mientras que Jest la resuelve sin ella.
+  const rutaServicio = './correccion-rendicion.service';
+  ({ CorreccionRendicionService } = await import(rutaServicio));
 });
 
 /**
@@ -150,6 +151,7 @@ interface Escenario {
 interface RepoSimulado {
   find: jest.Mock;
   save: jest.Mock;
+  create: jest.Mock;
 }
 
 function inciso(
@@ -241,7 +243,9 @@ function regla(
 function repo(filas: unknown[]): RepoSimulado {
   return {
     find: jest.fn(async () => filas),
-    save: jest.fn(async (entidades: unknown[]) => entidades),
+    save: jest.fn(async (entidades: unknown) => entidades),
+    // El servicio crea las respuestas vacías de los incisos sin respuesta.
+    create: jest.fn((datos: unknown) => datos),
   };
 }
 
@@ -530,7 +534,7 @@ describe('CorreccionRendicionService', () => {
     expect(resultado.notaFinal).toBe('5.00');
   });
 
-  it('deja pendiente el inciso cuando no existe una regla del docente propietario', async () => {
+  it('califica con la configuración predeterminada cuando el docente no registró ninguna regla', async () => {
     const respuestas = [respuesta(14, 'a')];
     const { servicio, manager, respuestaRepo } = montar({
       asignaciones: [{ pregunta_id: 14 }],
@@ -547,20 +551,61 @@ describe('CorreccionRendicionService', () => {
       ESTUDIANTE_ID,
     );
 
-    expect(resultado).toEqual({
-      respuestasAutomaticas: 0,
-      pendientesRevision: 1,
-      notaFinal: null,
-      completa: false,
-    });
+    expect(resultado.respuestasAutomaticas).toBe(1);
+    expect(resultado.pendientesRevision).toBe(0);
+    expect(resultado.completa).toBe(true);
     expect(respuestas[0]).toMatchObject({
-      puntaje_obtenido: null,
-      estado_correccion: 'pendiente',
+      puntaje_obtenido: '5.00',
+      estado_correccion: 'automatica',
     });
     expect(respuestaRepo.save).toHaveBeenCalledTimes(1);
   });
 
-  it('no aplica la regla de otro docente ni una regla incompatible', async () => {
+  it('con la configuración predeterminada una respuesta incorrecta obtiene 0 (todo o nada)', async () => {
+    const respuestas = [respuesta(14, 'a')];
+    const { servicio, manager } = montar({
+      asignaciones: [{ pregunta_id: 14 }],
+      incisos: [inciso(14, 'a', 'opcion_unica', 5)],
+      respuestas,
+      opciones: [marcada(14, 'a', 2)],
+      solucionesOpcion: [solucionOpcion(14, 'a', 1)],
+      reglas: [],
+    });
+
+    await servicio.corregirRendicion(manager, EXAMEN_ID, ESTUDIANTE_ID);
+
+    expect(respuestas[0]).toMatchObject({
+      puntaje_obtenido: '0.00',
+      estado_correccion: 'automatica',
+    });
+  });
+
+  it('deja pendiente el inciso cuando el docente desactivó su regla', async () => {
+    const respuestas = [respuesta(14, 'a')];
+    const { servicio, manager } = montar({
+      asignaciones: [{ pregunta_id: 14 }],
+      incisos: [inciso(14, 'a', 'opcion_unica', 5)],
+      respuestas,
+      opciones: [marcada(14, 'a', 1)],
+      solucionesOpcion: [solucionOpcion(14, 'a', 1)],
+      reglas: [{ ...regla(1, 'opcion_unica'), activo: false }],
+    });
+
+    const resultado = await servicio.corregirRendicion(
+      manager,
+      EXAMEN_ID,
+      ESTUDIANTE_ID,
+    );
+
+    expect(resultado.respuestasAutomaticas).toBe(0);
+    expect(resultado.pendientesRevision).toBe(1);
+    expect(respuestas[0]).toMatchObject({
+      puntaje_obtenido: null,
+      estado_correccion: 'pendiente',
+    });
+  });
+
+  it('no aplica la regla de otro docente y deja pendiente una regla propia inválida', async () => {
     const respuestas = [
       respuesta(15, 'a'),
       respuesta(15, 'b', '10'),
@@ -590,12 +635,14 @@ describe('CorreccionRendicionService', () => {
       ESTUDIANTE_ID,
     );
 
-    expect(resultado.respuestasAutomaticas).toBe(0);
-    expect(resultado.pendientesRevision).toBe(2);
+    // La regla de otro docente no cuenta: el inciso de selección usa la
+    // configuración predeterminada. La regla propia inválida (redondeo 99)
+    // deja la numérica pendiente.
+    expect(resultado.respuestasAutomaticas).toBe(1);
+    expect(resultado.pendientesRevision).toBe(1);
     expect(resultado.notaFinal).toBeNull();
-    expect(respuestas.every((fila) => fila.puntaje_obtenido === null)).toBe(
-      true,
-    );
+    expect(respuestas[0].estado_correccion).toBe('automatica');
+    expect(respuestas[1].puntaje_obtenido).toBeNull();
   });
 
   it('mantiene desarrollo pendiente de revisión manual, incluso si está vacío', async () => {
@@ -630,7 +677,17 @@ describe('CorreccionRendicionService', () => {
       puntaje_obtenido: null,
       estado_correccion: 'pendiente',
     });
-    expect(respuestaRepo.save).toHaveBeenCalledWith([respuestas[0]]);
+    // El inciso «b» no tenía respuesta: el servicio registra una fila vacía
+    // pendiente de revisión, junto con la respuesta existente.
+    expect(respuestaRepo.save).toHaveBeenCalledWith([
+      respuestas[0],
+      expect.objectContaining({
+        pregunta_id: 17,
+        letra: 'b',
+        estado_correccion: 'pendiente',
+        puntaje_obtenido: null,
+      }),
+    ]);
   });
 
   it('no otorga puntaje automático a respuestas vacías', async () => {
@@ -666,7 +723,7 @@ describe('CorreccionRendicionService', () => {
     expect(respuestas[1].puntaje_obtenido).toBe('0.00');
   });
 
-  it('deja pendiente una respuesta vacía si falta la regla compatible', async () => {
+  it('califica con 0 una respuesta vacía cuando no hay regla (configuración predeterminada)', async () => {
     const respuestas = [respuesta(22, 'a')];
     const { servicio, manager } = montar({
       asignaciones: [{ pregunta_id: 22 }],
@@ -682,19 +739,15 @@ describe('CorreccionRendicionService', () => {
       ESTUDIANTE_ID,
     );
 
-    expect(resultado).toEqual({
-      respuestasAutomaticas: 0,
-      pendientesRevision: 1,
-      notaFinal: null,
-      completa: false,
-    });
+    expect(resultado.respuestasAutomaticas).toBe(1);
+    expect(resultado.pendientesRevision).toBe(0);
     expect(respuestas[0]).toMatchObject({
-      puntaje_obtenido: null,
-      estado_correccion: 'pendiente',
+      puntaje_obtenido: '0.00',
+      estado_correccion: 'automatica',
     });
   });
 
-  it('no aplica la regla de un tipo de respuesta distinto', async () => {
+  it('ignora la regla de un tipo distinto y usa la configuración predeterminada', async () => {
     const respuestas = [respuesta(23, 'a')];
     const { servicio, manager } = montar({
       asignaciones: [{ pregunta_id: 23 }],
@@ -711,10 +764,11 @@ describe('CorreccionRendicionService', () => {
       ESTUDIANTE_ID,
     );
 
-    expect(resultado.respuestasAutomaticas).toBe(0);
-    expect(resultado.pendientesRevision).toBe(1);
-    expect(respuestas[0].estado_correccion).toBe('pendiente');
-    expect(respuestas[0].puntaje_obtenido).toBeNull();
+    // La regla es de otro tipo: para verdadero/falso no hay regla propia y se
+    // usa la configuración predeterminada.
+    expect(resultado.respuestasAutomaticas).toBe(1);
+    expect(resultado.pendientesRevision).toBe(0);
+    expect(respuestas[0].estado_correccion).toBe('automatica');
   });
 
   it('deja pendiente el inciso cuando hay reglas duplicadas del mismo tipo', async () => {
@@ -901,8 +955,9 @@ describe('CorreccionRendicionService', () => {
       where: {
         docente_id: expect.anything(),
         tipo_respuesta: expect.anything(),
-        activo: true,
       },
     });
   });
 });
+
+

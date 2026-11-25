@@ -253,6 +253,29 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
     ).toBe('');
   });
 
+  it('avisa que se usó un criterio predeterminado y pide revisión especial', async () => {
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta({ criterio_fuente: 'predeterminado', confianza: '0.50' })],
+    });
+    await cargarPantalla();
+
+    const aviso = await screen.findByRole('note');
+    expect(aviso.textContent).toContain('criterio predeterminado');
+    expect(aviso.textContent).toContain('especial cuidado');
+  });
+
+  it('no muestra el aviso de criterio predeterminado cuando hay rúbrica o solución', async () => {
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta({ criterio_fuente: 'rubrica' })],
+    });
+    await cargarPantalla();
+
+    await screen.findByText(/Puntaje sugerido/);
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
   it('conserva la valoración manual sin depender del servicio de IA', async () => {
     await cargarPantalla();
     fireEvent.change(screen.getByLabelText('Puntaje asignado'), {
@@ -547,5 +570,21 @@ describe('RevisionEstudiante — propuestas de corrección IA', () => {
       (screen.getByRole('button', { name: 'Descartar' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+});
+
+
+
+describe('propuesta modificada', () => {
+  it('no ofrece «Modificar» de nuevo (el backend solo lo permite en estado generada) pero sí aceptar y descartar', async () => {
+    mocks.listarPorExamen.mockResolvedValue({
+      total: 1,
+      propuestas: [propuesta({ estado: 'modificada', puntaje_sugerido: '3.00' })],
+    });
+    await cargarPantalla();
+
+    await screen.findByRole('button', { name: 'Aceptar' });
+    expect(screen.queryByRole('button', { name: 'Modificar' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Descartar' })).toBeDefined();
   });
 });

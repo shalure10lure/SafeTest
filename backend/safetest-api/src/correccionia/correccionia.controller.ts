@@ -18,6 +18,7 @@ import type { Request } from 'express';
 import { DocenteGuard } from '../auth/guards/docente.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CuerpoVacioDto } from './dto/cuerpo-vacio.dto';
+import { SolicitarLoteCorreccionIaDto } from './dto/solicitar-lote-correccion-ia.dto';
 import {
   ListarCorreccionesIaDto,
   ListarHistorialCorreccionesIaDto,
@@ -117,14 +118,18 @@ export class CorreccionIaController {
   }
 
   @Post('correcciones-ia/lote')
-  @ValidarEntradaCorreccionIa('body', CuerpoVacioDto)
+  @ValidarEntradaCorreccionIa('body', SolicitarLoteCorreccionIaDto)
   @HttpCode(HttpStatus.OK)
   solicitarLote(
     @Param('examenId', ParseIntPipe) examenId: number,
-    @Body() _cuerpo: CuerpoVacioDto,
+    @Body() cuerpo: SolicitarLoteCorreccionIaDto,
     @Req() request: Request,
   ) {
-    return this.correccionIa.solicitarLote(examenId, this.docenteId(request));
+    return this.correccionIa.solicitarLote(
+      examenId,
+      this.docenteId(request),
+      cuerpo?.estudiante_id,
+    );
   }
 
   @Get('correcciones-ia')
@@ -150,3 +155,5 @@ export class CorreccionIaController {
     );
   }
 }
+
+

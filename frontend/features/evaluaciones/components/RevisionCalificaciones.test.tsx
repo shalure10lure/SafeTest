@@ -14,6 +14,12 @@ const mocks = vi.hoisted(() => ({
   resumen: vi.fn(),
   listarPorExamen: vi.fn(),
   revisarTodo: vi.fn(),
+  revisarEstudiante: vi.fn(),
+  push: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mocks.push }),
 }));
 
 vi.mock('next/link', () => ({
@@ -37,6 +43,7 @@ vi.mock('../services/correccion-ia.service', () => ({
   correccionIaService: {
     listarPorExamen: mocks.listarPorExamen,
     revisarTodo: mocks.revisarTodo,
+    revisarEstudiante: mocks.revisarEstudiante,
   },
   mensajeErrorCorreccionIa: () => 'Error de propuestas',
 }));
@@ -107,6 +114,12 @@ function propuesta(): CorreccionIa {
 }
 
 beforeEach(() => {
+  mocks.push.mockReset();
+  mocks.revisarEstudiante.mockReset().mockResolvedValue({
+    solicitadas: 1,
+    omitidas: 0,
+    detalle_omitidas: [],
+  });
   mocks.resumen.mockReset().mockResolvedValue(resumen());
   mocks.revisarTodo.mockReset().mockResolvedValue({
     solicitadas: 0,
@@ -225,4 +238,82 @@ it('sigue mostrando la bandeja histórica, solo de lectura, tras confirmar y pub
   expect(screen.queryByRole('button', { name: 'Aceptar' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Modificar' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Descartar' })).toBeNull();
+});
+
+
+
+
+const pendiente = () =>
+  resumen({
+    calificaciones_revisadas_en: null,
+    resultados_publicados_en: null,
+    total_pendientes: 1,
+    estudiantes: [
+      {
+        estudiante_id: 46,
+        nombre_completo: 'Ana Pérez',
+        estado: 'enviada',
+        nota_final: null,
+        fecha_envio: null,
+        total_incisos: 2,
+        pendientes_revision: 2,
+        lista_para_publicar: false,
+      },
+    ],
+  });
+
+it('muestra «Revisar con IA» junto a «Revisar resultado» y envía el estudiante_id', async () => {
+  mocks.resumen.mockResolvedValue(pendiente());
+  render(<RevisionCalificaciones examenId={12} />);
+
+  const ia = await screen.findByRole('button', { name: /Revisar con IA/ });
+  const enlace = screen.getByRole('link', { name: /Revisar resultado/ });
+  expect(enlace.parentElement).toBe(ia.parentElement);
+
+  fireEvent.click(ia);
+
+  await waitFor(() => expect(mocks.push).toHaveBeenCalledWith('/docente/evaluaciones/12/calificaciones/46'));
+  expect(mocks.revisarEstudiante).toHaveBeenCalledExactlyOnceWith(12, 46);
+  expect(mocks.revisarTodo).not.toHaveBeenCalled();
+});
+
+it('no ofrece «Revisar con IA» por estudiante si no hay pendientes o la revisión está cerrada', async () => {
+  mocks.resumen.mockResolvedValue(resumen());
+  render(<RevisionCalificaciones examenId={12} />);
+  await screen.findByRole('link', { name: /Revisar resultado/ });
+  expect(screen.queryByRole('button', { name: /Revisar con IA/ })).toBeNull();
+});
+
+it('no navega y explica el motivo cuando la IA no pudo solicitar nada', async () => {
+  mocks.resumen.mockResolvedValue(pendiente());
+  mocks.revisarEstudiante.mockResolvedValue({
+    solicitadas: 0,
+    omitidas: 1,
+    detalle_omitidas: [
+      { estudiante_id: 46, pregunta_id: 1, letra: 'a', motivo: 'No hay un valor correcto finito.' },
+    ],
+  });
+  render(<RevisionCalificaciones examenId={12} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Revisar con IA/ }));
+
+  const alerta = await screen.findByRole('alert');
+  expect(alerta.textContent).toContain('No hay un valor correcto finito.');
+  expect(mocks.push).not.toHaveBeenCalled();
+});
+
+it('abre la revisión si solo había propuestas activas ya existentes', async () => {
+  mocks.resumen.mockResolvedValue(pendiente());
+  mocks.revisarEstudiante.mockResolvedValue({
+    solicitadas: 0,
+    omitidas: 1,
+    detalle_omitidas: [
+      { estudiante_id: 46, pregunta_id: 1, letra: 'a', motivo: 'Ya existe una propuesta activa.' },
+    ],
+  });
+  render(<RevisionCalificaciones examenId={12} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Revisar con IA/ }));
+
+  await waitFor(() => expect(mocks.push).toHaveBeenCalled());
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EstudianteCalificacion, ResumenCalificaciones } from '../calificaciones.types';
 import { calificacionesService, mensajeErrorCalificaciones } from '../services/calificaciones.service';
@@ -34,6 +35,8 @@ function resumenEstado(datos: ResumenCalificaciones) {
 }
 
 export default function RevisionCalificaciones({ examenId }: { examenId: number }) {
+  const router = useRouter();
+  const [revisandoEstudiante, setRevisandoEstudiante] = useState<number | null>(null);
   const [datos, setDatos] = useState<ResumenCalificaciones | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -168,6 +171,29 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
       setError(mensajeErrorCorreccionIa(fallo));
     } finally {
       setSolicitandoLote(false);
+    }
+  }
+
+  async function revisarEstudianteConIa(estudianteId: number) {
+    if (confirmadas || publicados || revisandoEstudiante !== null) return;
+    setRevisandoEstudiante(estudianteId);
+    setError(null);
+    setNotificacion(null);
+    try {
+      const resultado = await correccionIaService.revisarEstudiante(examenId, estudianteId);
+      // Si no se pudo solicitar nada por un motivo distinto a «ya hay propuesta
+      // activa», se informa aquí en lugar de abrir una pantalla sin propuestas.
+      const soloActivas = resultado.detalle_omitidas.every((o) => /propuesta activa/i.test(o.motivo));
+      if (resultado.solicitadas === 0 && resultado.omitidas > 0 && !soloActivas) {
+        const motivos = [...new Set(resultado.detalle_omitidas.map((o) => o.motivo))].slice(0, 3).join(' ');
+        setError(`La IA no pudo revisar a este estudiante. ${motivos}`);
+        return;
+      }
+      router.push(`/docente/evaluaciones/${examenId}/calificaciones/${estudianteId}`);
+    } catch (fallo: unknown) {
+      setError(mensajeErrorCorreccionIa(fallo));
+    } finally {
+      setRevisandoEstudiante(null);
     }
   }
 
@@ -321,6 +347,8 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
             examenId={examenId}
             seguimientoLote={seguimientoLote}
             onSeguimientoFinalizado={finalizarSeguimientoLote}
+            soloLectura={confirmadas || publicados}
+            onPropuestasAceptadas={() => void cargar()}
           />
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" aria-label="Resultados de los estudiantes">
@@ -354,7 +382,7 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
                         <td className="px-4 py-3"><span className="font-semibold">{estudiante.nota_final === null ? '—' : puntos(Number(estudiante.nota_final))}</span><span className="text-xs text-slate-400">/{total === null ? '—' : puntos(total)}</span>{estudiante.nota_final === null && <p className="text-[11px] text-slate-400">Sin nota definitiva</p>}</td>
                         <td className="px-4 py-3">{estudiante.pendientes_revision > 0 ? <span className="font-semibold text-amber-600">{estudiante.pendientes_revision}</span> : '0'}</td>
                         <td className="px-4 py-3"><span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.clase}`}>{badge.texto}</span></td>
-                        <td className="px-4 py-3 text-right"><Link href={`/docente/evaluaciones/${examenId}/calificaciones/${estudiante.estudiante_id}`} className="inline-flex whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:border-violet-300 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">Revisar resultado →</Link></td>
+                        <td className="px-4 py-3 text-right"><div className="flex flex-wrap justify-end gap-2"><Link href={`/docente/evaluaciones/${examenId}/calificaciones/${estudiante.estudiante_id}`} className="inline-flex whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:border-violet-300 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">Revisar resultado →</Link>{estudiante.estado !== 'en_curso' && estudiante.pendientes_revision > 0 && !confirmadas && !publicados && (<button type="button" onClick={() => void revisarEstudianteConIa(estudiante.estudiante_id)} disabled={revisandoEstudiante !== null} title="Pide propuestas de corrección a la IA; tú decides si las aceptas" className="inline-flex whitespace-nowrap rounded-lg bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{revisandoEstudiante === estudiante.estudiante_id ? 'Solicitando…' : '✦ Revisar con IA'}</button>)}</div></td>
                       </tr>
                     );
                   })}
@@ -420,3 +448,5 @@ export default function RevisionCalificaciones({ examenId }: { examenId: number 
     </main>
   );
 }
+
+

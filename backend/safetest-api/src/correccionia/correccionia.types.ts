@@ -9,7 +9,8 @@ export const ALMACEN_CORRECCION_IA = Symbol('ALMACEN_CORRECCION_IA');
 export type FuenteCriterioCorreccionIa =
   | 'solucion_inciso'
   | 'rubrica'
-  | 'solucion_referencia';
+  | 'solucion_referencia'
+  | 'predeterminado';
 
 /**
  * Datos que necesita el worker para corregir una propuesta reclamada.
@@ -84,3 +85,5 @@ export interface AlmacenCorreccionIa {
     maxIntentos: number,
   ): Promise<ResultadoRecuperacionCorreccionIa>;
 }
+
+

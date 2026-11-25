@@ -453,6 +453,7 @@ export class CorreccionIaService {
   async solicitarLote(
     examenId: number,
     docenteId: number,
+    estudianteId?: number,
   ): Promise<ResultadoLoteCorreccionIa> {
     const examen = await this.dataSource.getRepository(Examen).findOne({
       where: { examen_id: examenId, docente_id: docenteId },
@@ -478,6 +479,7 @@ export class CorreccionIaService {
       where: {
         examen_id: examenId,
         estado: In(['enviada', 'corregida']),
+        ...(estudianteId === undefined ? {} : { estudiante_id: estudianteId }),
       },
       select: { estudiante_id: true, estado: true },
       order: { estudiante_id: 'ASC' },
@@ -726,7 +728,15 @@ export class CorreccionIaService {
           },
           order: { revisada_en: 'DESC' },
         });
+      const incisoActual = await manager.getRepository(Inciso).findOne({
+        where: {
+          pregunta_id: propuesta.pregunta_id,
+          letra: propuesta.letra,
+        },
+        select: { pregunta_id: true, letra: true, tipo_respuesta: true },
+      });
       const hashCriterioActual = crearHashCriterioActual(
+        incisoActual?.tipo_respuesta ?? '',
         solucionActual,
         referenciaActual,
       );
@@ -1489,3 +1499,5 @@ function esColisionIndiceActivo(error: unknown): boolean {
     driverError.constraint === INDICE_PROPUESTA_ACTIVA
   );
 }
+
+

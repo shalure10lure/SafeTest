@@ -301,6 +301,11 @@ export default function PropuestaCorreccionIa({
           <p className="sm:col-span-2">
             <strong>Valoración:</strong> {propuesta.valoracion ?? '—'}
           </p>
+          {propuesta.criterio_fuente === 'predeterminado' && (
+            <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Evaluada con un criterio predeterminado: no hay rúbrica ni solución de referencia para este inciso. Revisa la propuesta con especial cuidado; la confianza es solo una estimación del modelo.
+            </p>
+          )}
           <p className="whitespace-pre-wrap sm:col-span-2">
             <strong>Explicación:</strong> {propuesta.explicacion ?? '—'}
           </p>
@@ -478,6 +483,9 @@ export default function PropuestaCorreccionIa({
               >
                 {ocupado ? 'Aceptando…' : 'Aceptar'}
               </button>
+              {/* El backend solo permite modificar una propuesta en estado
+                  «generada»; una ya modificada solo puede aceptarse o descartarse. */}
+              {estado === 'generada' && (
               <button
                 type="button"
                 onClick={() => iniciarEdicion(propuesta)}
@@ -486,6 +494,7 @@ export default function PropuestaCorreccionIa({
               >
                 Modificar
               </button>
+              )}
               <button
                 type="button"
                 onClick={descartar}
@@ -531,3 +540,5 @@ export default function PropuestaCorreccionIa({
     </article>
   );
 }
+
+

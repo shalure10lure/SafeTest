@@ -350,7 +350,7 @@ describe('EvaluacionInfoForm — advertencia de reinicio de asignaciones', () =>
 
         const dialogoAbierto = screen.getByRole('dialog');
         const guardar = within(dialogoAbierto).getByRole('button', {
-            name: 'Guardando...',
+            name: 'Procesando...',
         });
         expect(guardar).toBeTruthy();
         expect(guardar).toHaveProperty('disabled', true);
@@ -448,3 +448,5 @@ describe('EvaluacionInfoForm — advertencia de reinicio de asignaciones', () =>
         );
     });
 });
+
+

@@ -35,7 +35,8 @@ interface GeminiAiProviderOptions {
 
 const PROVEEDOR = 'gemini';
 const MAX_LONGITUD_MENSAJE = 200;
-const PATRON_CLAVE = /AIza[0-9A-Za-z_-]{10,}/g;
+// Claves clásicas (AIza…) y el formato nuevo de Google AI Studio (AQ.…).
+const PATRON_CLAVE = /(?:AIza|AQ\.)[0-9A-Za-z._-]{10,}/g;
 
 /**
  * Proveedor real sobre la Google Gemini API.
@@ -262,6 +263,14 @@ export class GeminiAiProvider implements AiProvider {
           );
     }
 
+    // Diagnóstico solo para el log del servidor: el docente ve un mensaje
+    // genérico, pero quien administra necesita saber qué respondió Google
+    // (p. ej. «API key not valid» o «API has not been used in project»).
+    // `describirError` oculta cualquier clave y recorta el mensaje.
+    this.logger.warn(
+      `Gemini falló (HTTP ${leerEstadoHttp(error) ?? 'sin respuesta'}): ${describirError(error)}`,
+    );
+
     if (esTimeout(error)) {
       return new ErrorGeneracionIa(
         'timeout',
@@ -384,3 +393,5 @@ function describirError(error: unknown): string {
       .trim() || 'error desconocido'
   );
 }
+
+

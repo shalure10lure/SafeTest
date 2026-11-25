@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import type { CriterioCorreccionIa } from '../ia/ai.types';
+import { criterioPredeterminado } from './correccionia.criterio-predeterminado';
+import type { FuenteCriterioCorreccionIa } from './correccionia.types';
 import type { IaSolucionReferencia } from '../iasolucionreferencia/entity/iasolucionreferencia.entity';
 import type { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
 
@@ -25,15 +27,32 @@ export function crearHashCriterio(criterio: CriterioCorreccionIa): string {
   return createHash('sha256').update(JSON.stringify(normalizado)).digest('hex');
 }
 
-export function crearHashCriterioActual(
+/**
+ * Única fuente de verdad del criterio con el que se corrige un inciso. La usan
+ * el worker (para pedir la propuesta) y la aceptación (para detectar si el
+ * criterio cambió), de modo que ambos siempre coinciden.
+ *
+ * - `valor_correcto` solo cuenta en incisos numéricos: en `solucion_inciso` la
+ *   columna es NOT NULL y vale 0 por omisión, de modo que en un inciso de
+ *   desarrollo ese 0 es un marcador y NO una respuesta correcta.
+ * - Rúbrica y solución de referencia revisada se envían juntas si existen.
+ * - Solo si no hay nada, y solo para desarrollo, se usa el criterio
+ *   predeterminado. Devuelve `null` si no hay criterio utilizable.
+ */
+export function resolverCriterio(
+  tipoRespuesta: string,
   solucion: Pick<
     SolucionInciso,
     'valor_correcto' | 'tolerancia' | 'rubrica'
   > | null,
   referencia: Pick<IaSolucionReferencia, 'contenido'> | null,
-): string | null {
-  const valorCorrecto = convertirNumero(solucion?.valor_correcto);
+): { criterio: CriterioCorreccionIa; fuente: FuenteCriterioCorreccionIa } | null {
   const rubrica = solucion?.rubrica?.trim() ?? '';
+  const textoReferencia = textoDesdeContenido(referencia?.contenido);
+  const valorCorrecto =
+    tipoRespuesta === 'numerica'
+      ? convertirNumero(solucion?.valor_correcto)
+      : null;
 
   if (valorCorrecto !== null) {
     const criterio: CriterioCorreccionIa = {
@@ -43,17 +62,36 @@ export function crearHashCriterioActual(
     if (rubrica) {
       criterio.rubrica = rubrica;
     }
-    return crearHashCriterio(criterio);
+    return { criterio, fuente: 'solucion_inciso' };
   }
 
-  if (rubrica) {
-    return crearHashCriterio({ rubrica });
+  if (rubrica || textoReferencia) {
+    const criterio: CriterioCorreccionIa = {};
+    if (rubrica) {
+      criterio.rubrica = rubrica;
+    }
+    if (textoReferencia) {
+      criterio.solucion_referencia = textoReferencia;
+    }
+    return { criterio, fuente: rubrica ? 'rubrica' : 'solucion_referencia' };
   }
 
-  const textoReferencia = textoDesdeContenido(referencia?.contenido);
-  return textoReferencia
-    ? crearHashCriterio({ solucion_referencia: textoReferencia })
+  const predeterminado = criterioPredeterminado(tipoRespuesta);
+  return predeterminado
+    ? { criterio: predeterminado, fuente: 'predeterminado' }
     : null;
+}
+
+export function crearHashCriterioActual(
+  tipoRespuesta: string,
+  solucion: Pick<
+    SolucionInciso,
+    'valor_correcto' | 'tolerancia' | 'rubrica'
+  > | null,
+  referencia: Pick<IaSolucionReferencia, 'contenido'> | null,
+): string | null {
+  const resuelto = resolverCriterio(tipoRespuesta, solucion, referencia);
+  return resuelto ? crearHashCriterio(resuelto.criterio) : null;
 }
 
 function convertirNumero(
@@ -92,3 +130,5 @@ function textoDesdeContenido(contenido: unknown): string {
   }
   return partes.join('\n');
 }
+
+

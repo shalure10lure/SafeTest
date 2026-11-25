@@ -1,4 +1,5 @@
 import { incisoRespondido } from '../rendicion/validacion-respuesta';
+import { admiteCriterioPredeterminado } from './correccionia.criterio-predeterminado';
 import type { IaSolucionReferencia } from '../iasolucionreferencia/entity/iasolucionreferencia.entity';
 import type { SolucionInciso } from '../solucioninciso/entity/solucioninciso.entity';
 
@@ -130,11 +131,13 @@ function validarPuntajeMaximo(valor: number | string): number {
 function validarCriteriosSuficientes(
   entrada: Pick<
     EntradaValidacionSolicitudCorreccionIa,
-    'solucion_inciso' | 'solucion_referencia'
+    'solucion_inciso' | 'solucion_referencia' | 'tipo_respuesta'
   >,
 ): void {
   const valorCorrecto = entrada.solucion_inciso?.valor_correcto;
+  // En incisos que no son numéricos `valor_correcto` es solo un 0 de relleno.
   const tieneValorCorrectoFinito =
+    entrada.tipo_respuesta === 'numerica' &&
     convertirNumeroFinito(valorCorrecto) !== null;
   const rubrica = entrada.solucion_inciso?.rubrica;
   const tieneRubrica = typeof rubrica === 'string' && rubrica.trim().length > 0;
@@ -143,9 +146,21 @@ function validarCriteriosSuficientes(
     fechaRevision instanceof Date && Number.isFinite(fechaRevision.getTime());
 
   if (!tieneValorCorrectoFinito && !tieneRubrica && !tieneReferenciaRevisada) {
+    // Los incisos de desarrollo se corrigen con el criterio predeterminado,
+    // para que el docente no tenga que configurar nada antes de usar la IA.
+    if (admiteCriterioPredeterminado(entrada.tipo_respuesta)) {
+      return;
+    }
+
+    const esObjetivo = ['opcion_unica', 'opcion_multiple', 'verdadero_falso'].includes(
+      entrada.tipo_respuesta,
+    );
+
     throw new ErrorValidacionCorreccionIa(
       'SIN_CRITERIOS',
-      'No hay un valor correcto finito, una rúbrica no vacía ni una solución de referencia revisada.',
+      esObjetivo
+        ? 'Las preguntas de selección y verdadero/falso se corrigen automáticamente con la respuesta correcta del banco; no se envían a la IA. Si siguen pendientes, revisa su regla de corrección o su solución.'
+        : 'No hay un valor correcto finito, una rúbrica no vacía ni una solución de referencia revisada.',
     );
   }
 }
@@ -178,3 +193,5 @@ function puntajeAusente(valor: number | string | null | undefined): boolean {
 function tieneMaximoDosDecimales(valor: number): boolean {
   return Math.abs(valor * 100 - Math.round(valor * 100)) <= 1e-7;
 }
+
+
