@@ -11,6 +11,13 @@
 **/.next/
 **/coverage/
 
+# Archivos subidos / almacenamiento local
+**/storage/
+
+# Respaldos de base de datos (pueden contener datos personales)
+*.dump
+*.bak
+
 # Logs
 *.log
 
@@ -27,5 +34,3 @@
 # Archivos locales de Postman
 .postman/
 postman/
-
-AGENTS.md
